@@ -227,143 +227,62 @@ class SlurmJobSubmitter:
             logging.error(f"Failed to backup log file in {task_dir}: {e}")
 
 
-class BatchFolderProcessor:
-    """
-    A class to handle processing of shuffle and round folders.
-    """
+# def slurm_submission(
+#     shuffle_dir: Optional[str],
+#     num_shuffles: int,
+#     conda_env_path: str,
+#     slurm_account: str,
+#     slurm_output: str,
+#     slurm_error: str,
+#     slurm_nodes: int,
+#     slurm_gpus_per_task: int,
+#     slurm_tasks: int,
+#     slurm_cpus_per_task: int,
+#     slurm_time: str,
+#     random_seed: int,
+#     num_models: int,
+#     check_interval: int,
+# ):
+#     """
+#     Entry point for submitting SLURM jobs for shuffle and/or round directories.
 
-    def __init__(self, slurm_submitter: SlurmJobSubmitter):
-        """
-        Initialize the BatchFolderProcessor with a SlurmJobSubmitter instance.
+#     Args:
+#         shuffle_dir (Optional[str]): Directory containing shuffle folders.
+#         round_dir (Optional[str]): Directory containing round folders.
+#         num_shuffles (int): Number of shuffle folders to process.
+#         conda_env_path (str): Path to the Conda environment.
+#         slurm_account (str): SLURM account name.
+#         slurm_output (str): SLURM job output path.
+#         slurm_error (str): SLURM job error path.
+#         slurm_nodes (int): Number of nodes.
+#         slurm_gpus_per_task (int): Number of GPUs per task.
+#         slurm_tasks (int): Number of tasks.
+#         slurm_cpus_per_task (int): Number of CPUs per task.
+#         slurm_time (str): SLURM job time limit.
+#         random_seed (int): Random seed for the job.
+#         num_models (int): Number of models for the job.
+#         check_interval (int): Time in seconds between status checks.
+#     """
+#     slurm_submitter = SlurmJobSubmitter(
+#         conda_env_path=conda_env_path,
+#         slurm_account=slurm_account,
+#         slurm_output=slurm_output,
+#         slurm_error=slurm_error,
+#         slurm_nodes=slurm_nodes,
+#         slurm_gpus_per_task=slurm_gpus_per_task,
+#         slurm_tasks=slurm_tasks,
+#         slurm_cpus_per_task=slurm_cpus_per_task,
+#         slurm_time=slurm_time,
+#         random_seed=random_seed,
+#         num_models=num_models,
+#         check_interval=check_interval,
+#     )
 
-        Args:
-            slurm_submitter (SlurmJobSubmitter): An instance of SlurmJobSubmitter.
-        """
-        self.slurm_submitter = slurm_submitter
+#     if shuffle_dir:
+#         logging.info(f"Processing shuffle folders in: {shuffle_dir}")
+#         shuffle_folders = [os.path.join(shuffle_dir, f"shuffle_{i}") for i in range(1, num_shuffles + 1)]
+#         job_ids = [f"shuffle_{i}" for i in range(1, num_shuffles + 1)]
+#         slurm_submitter.process_folders_concurrently(shuffle_folders, job_ids, max_workers=num_shuffles)
 
-    def process_shuffle_folders(self, shuffle_dir: str, num_shuffles: int):
-        """
-        Process shuffle folders concurrently.
-
-        Args:
-            shuffle_dir (str): The directory containing shuffle folders.
-            num_shuffles (int): Number of shuffle folders to process.
-        """
-        logging.info(f"Processing shuffle folders in: {shuffle_dir}")
-        shuffle_folders = [os.path.join(shuffle_dir, f"shuffle_{i}") for i in range(1, num_shuffles + 1)]
-        job_ids = [f"shuffle_{i}" for i in range(1, num_shuffles + 1)]
-
-        self.slurm_submitter.process_folders_concurrently(shuffle_folders, job_ids, max_workers=num_shuffles)
-
-    def process_round_folders(self, round_dir: str):
-        """
-        Process round folders, organizing files and submitting jobs.
-
-        Args:
-            round_dir (str): The directory containing round folders.
-        """
-        logging.info(f"Processing round folders in: {round_dir}")
-        round_subdirs = sorted([
-            d for d in os.listdir(round_dir)
-            if d.endswith('_cluster-msa') and d.startswith('Round')
-        ])
-
-        if not round_subdirs:
-            logging.warning(f"No round subdirectories found in {round_dir}.")
-            return
-
-        round_dirs = [os.path.join(round_dir, subdir) for subdir in round_subdirs]
-        round_ids = [subdir.split('_')[0] for subdir in round_subdirs]
-
-        for subdir_path, round_id in zip(round_dirs, round_ids):
-            self._organize_round_subdir(subdir_path, round_id)
-
-        self.slurm_submitter.process_folders_concurrently(
-            round_dirs,
-            round_ids,
-            # max_workers=len(round_dirs),
-            max_workers=8
-        )
-
-    def _organize_round_subdir(self, subdir_path: str, round_id: str):
-        """
-        Organize files within a round subdirectory.
-
-        Args:
-            subdir_path (str): Path to the round subdirectory.
-            round_id (str): Identifier for the round.
-        """
-        non_a3m_dir = os.path.join(subdir_path, 'non_a3m')
-        os.makedirs(non_a3m_dir, exist_ok=True)
-
-        for filename in os.listdir(subdir_path):
-            file_path = os.path.join(subdir_path, filename)
-            if os.path.isfile(file_path) and not filename.endswith('.a3m'):
-                try:
-                    shutil.move(file_path, os.path.join(non_a3m_dir, filename))
-                    logging.info(f"Moved {filename} to non_a3m directory in {subdir_path}")
-                except shutil.Error as e:
-                    logging.error(f"Failed to move {filename} in {subdir_path}: {e}")
-
-
-def slurm_submission(
-    shuffle_dir: Optional[str],
-    round_dir: Optional[str],
-    num_shuffles: int,
-    conda_env_path: str,
-    slurm_account: str,
-    slurm_output: str,
-    slurm_error: str,
-    slurm_nodes: int,
-    slurm_gpus_per_task: int,
-    slurm_tasks: int,
-    slurm_cpus_per_task: int,
-    slurm_time: str,
-    random_seed: int,
-    num_models: int,
-    check_interval: int,
-):
-    """
-    Entry point for submitting SLURM jobs for shuffle and/or round directories.
-
-    Args:
-        shuffle_dir (Optional[str]): Directory containing shuffle folders.
-        round_dir (Optional[str]): Directory containing round folders.
-        num_shuffles (int): Number of shuffle folders to process.
-        conda_env_path (str): Path to the Conda environment.
-        slurm_account (str): SLURM account name.
-        slurm_output (str): SLURM job output path.
-        slurm_error (str): SLURM job error path.
-        slurm_nodes (int): Number of nodes.
-        slurm_gpus_per_task (int): Number of GPUs per task.
-        slurm_tasks (int): Number of tasks.
-        slurm_cpus_per_task (int): Number of CPUs per task.
-        slurm_time (str): SLURM job time limit.
-        random_seed (int): Random seed for the job.
-        num_models (int): Number of models for the job.
-        check_interval (int): Time in seconds between status checks.
-    """
-    slurm_submitter = SlurmJobSubmitter(
-        conda_env_path=conda_env_path,
-        slurm_account=slurm_account,
-        slurm_output=slurm_output,
-        slurm_error=slurm_error,
-        slurm_nodes=slurm_nodes,
-        slurm_gpus_per_task=slurm_gpus_per_task,
-        slurm_tasks=slurm_tasks,
-        slurm_cpus_per_task=slurm_cpus_per_task,
-        slurm_time=slurm_time,
-        random_seed=random_seed,
-        num_models=num_models,
-        check_interval=check_interval,
-    )
-    batch_processor = BatchFolderProcessor(slurm_submitter)
-
-    if shuffle_dir:
-        batch_processor.process_shuffle_folders(shuffle_dir, num_shuffles)
-
-    if round_dir:
-        batch_processor.process_round_folders(round_dir)
-
-    if not shuffle_dir and not round_dir:
-        logging.warning("No directories provided for processing. Please specify shuffle_dir or round_dir.")
+#     if not shuffle_dir :
+#         logging.warning("No directories provided for processing. Please specify shuffle_dir or round_dir.")

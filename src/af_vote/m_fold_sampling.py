@@ -145,7 +145,7 @@ def process_iterations(base_dir: str,
     )
     
     sampling_dirs = [d for d in os.listdir(base_dir) if d.startswith('sampling_')]
-    job_ids = [f"sample_{i+1}" for i in range(len(sampling_dirs))]
+    job_folders = [f"sample_{i+1}" for i in range(len(sampling_dirs))]
     
     sampling_paths = [os.path.join(base_dir, d) for d in sampling_dirs]
-    slurm_submitter.process_folders_concurrently(sampling_paths, job_ids, max_workers=max_workers)
+    slurm_submitter.process_folders_concurrently(sampling_paths, job_folders, max_workers=max_workers)
