@@ -1,16 +1,17 @@
 import argparse
 import logging
 import os
-import random
-from af_vote.m_fold_sampling import process_iterations
+from af_vote.slurm_utils import SlurmJobSubmitter
 from af_vote.sequence_processing import (
     read_a3m_to_dict,
-    filter_a3m_by_coverage, 
+    filter_a3m_by_coverage,
     write_a3m,
     process_all_sequences,
-    read_sequences,
-    process_sequences
+    collect_a3m_files,
+    concatenate_a3m_content
 )
+from af_vote import structure_analysis
+from typing import Dict, Any, List, Optional
 
 def parse_args():
     parser = argparse.ArgumentParser(description='Perform iterative sequence shuffling')
@@ -26,6 +27,12 @@ def parse_args():
                       help='Number of shuffles')
     parser.add_argument('--coverage_threshold', type=float, default=0.8,
                       help='Minimum required sequence coverage (default: 0.8)')
+    parser.add_argument('--num_iterations', type=int, default=3,
+                      help='Number of iterations to run')
+    parser.add_argument('--quantile', type=float, default=0.6,
+                      help='Quantile threshold for filtering')
+    parser.add_argument('--config_file', required=True,
+                      help='Path to config file with filter criteria and indices')
     
     parser.add_argument('--conda_env_path', 
                       default="/fs/ess/PAA0203/xing244/.conda/envs/colabfold",
@@ -74,6 +81,69 @@ def log_arguments(args) -> None:
         logging.info(f"{arg}: {value}")
     logging.info("====================")
 
+def process_iteration(args,
+                      iteration: int, 
+                      input_a3m: str, 
+                      iter_base_dir: str, 
+                      config: Dict[str, Any]) -> Optional[str]:
+    """Process a single iteration"""
+    iter_dir = os.path.join(iter_base_dir, f'Iteration_{iteration}')
+    os.makedirs(iter_dir, exist_ok=True)
+    logging.info(f'Processing iteration {iteration}...')
+
+    # Process sequences with shuffling
+    process_all_sequences(
+        dir_path=iter_dir,
+        file_path=input_a3m,
+        num_shuffles=args.num_shuffles,
+        seq_num_per_shuffle=args.group_size,
+        reference_pdb=args.default_pdb
+    )
+
+    # Submit SLURM jobs
+    slurm_submitter = SlurmJobSubmitter(
+        conda_env_path=args.conda_env_path,
+        slurm_account=args.slurm_account,
+        slurm_output=args.slurm_output,
+        slurm_error=args.slurm_error,
+        slurm_nodes=args.slurm_nodes,
+        slurm_gpus_per_task=args.slurm_gpus_per_task,
+        slurm_tasks=args.slurm_tasks,
+        slurm_cpus_per_task=args.slurm_cpus_per_task,
+        slurm_time=args.slurm_time,
+        random_seed=args.random_seed,
+        num_models=args.num_models,
+        check_interval=args.check_interval
+    )
+
+    # Get shuffle directories and submit jobs
+    shuffle_dirs = [d for d in os.listdir(iter_dir) if d.startswith('shuffle_')]
+    job_folders = [f"shuffle_{i+1}" for i, _ in enumerate(shuffle_dirs)]
+    all_paths = [os.path.join(iter_dir, d) for d in shuffle_dirs]
+    slurm_submitter.process_folders_concurrently(all_paths, job_folders, max_workers=args.max_workers)
+    
+    # Get results and apply filters
+    result_df = structure_analysis.get_result_df(
+        parent_dir=iter_dir,
+        filter_criteria=config['filter_criteria'],
+        indices=config['indices']
+    )
+    
+    result_df_filtered = result_df[result_df['plddt'] > 75]
+    filtered_df = structure_analysis.apply_filters(
+        df_threshold=result_df_filtered,
+        df_operate=result_df_filtered,
+        filter_criteria=config['filter_criteria'],
+        quantile=args.quantile
+    )
+
+    # Collect and concatenate filtered sequences
+    a3m_files = collect_a3m_files([filtered_df])
+    concatenated_a3m_path = os.path.join(iter_dir, f'combined_filtered_iteration_{iteration}.a3m')
+    concatenate_a3m_content(a3m_files, args.default_pdb, concatenated_a3m_path)
+    
+    return concatenated_a3m_path
+
 def main():
     args = parse_args()
     
@@ -88,7 +158,10 @@ def main():
     log_arguments(args)
     
     try:
-        # Read and filter sequences
+        # Load config file
+        config = structure_analysis.load_filter_modes(args.config_file)
+        
+        # Initial sequence filter by coverage
         sequences = read_a3m_to_dict(args.input_a3m)
         filtered_sequences = filter_a3m_by_coverage(sequences, args.coverage_threshold)
         logging.info(f"Filtered sequences from {len(sequences)} to {len(filtered_sequences)} "
@@ -97,37 +170,24 @@ def main():
         if not filtered_sequences:
             raise ValueError("No sequences remained after filtering")
             
-        # Write filtered sequences
         filtered_a3m_path = os.path.join(iter_shuffle_base, "filtered_sequences.a3m")
         write_a3m(filtered_sequences, filtered_a3m_path, reference_pdb=args.default_pdb)
 
-        # Process all sequences with shuffling
-        process_all_sequences(
-            dir_path=iter_shuffle_base,
-            file_path=filtered_a3m_path,
-            num_shuffles=args.num_shuffles,
-            seq_num_per_shuffle=args.group_size,
-            reference_pdb=args.default_pdb
-        )
-
-        # Submit SLURM jobs
-        process_iterations(
-            base_dir=iter_shuffle_base,
-            conda_env_path=args.conda_env_path,
-            slurm_account=args.slurm_account,
-            slurm_output=args.slurm_output,
-            slurm_error=args.slurm_error,
-            slurm_nodes=args.slurm_nodes,
-            slurm_gpus_per_task=args.slurm_gpus_per_task,
-            slurm_tasks=args.slurm_tasks,
-            slurm_cpus_per_task=args.slurm_cpus_per_task,
-            slurm_time=args.slurm_time,
-            random_seed=args.random_seed,
-            num_models=args.num_models,
-            check_interval=args.check_interval,
-            max_workers=args.max_workers
-        )
-        logging.info("Submitted all SLURM jobs")
+        # Iterative processing
+        current_input = filtered_a3m_path
+        for iteration in range(1, args.num_iterations + 1):
+            logging.info(f"Starting iteration {iteration}")
+            current_input = process_iteration(
+                iteration=iteration,
+                input_a3m=current_input,
+                args=args,
+                iter_base_dir=iter_shuffle_base,
+                config=config
+            )
+            if current_input is None:
+                break
+                
+        logging.info("All iterations completed successfully")
         
     except Exception as e:
         logging.error(f"An error occurred: {str(e)}")

@@ -97,66 +97,66 @@ def create_sampling_splits(init_dir: str,
             output_file = os.path.join(sample_dir, f'group_{j}.a3m')
             write_a3m(group, output_file, reference_pdb=reference_pdb)
 
-def process_iterations(base_dir: str, 
-                      conda_env_path: str,
-                      slurm_account: str,
-                      slurm_output: str,
-                      slurm_error: str, 
-                      slurm_nodes: int,
-                      slurm_gpus_per_task: int,
-                      slurm_tasks: int,
-                      slurm_cpus_per_task: int, 
-                      slurm_time: str,
-                      random_seed: int,
-                      num_models: int,
-                      check_interval: int,
-                      max_workers: int):
-    """Process all sampling directories with SLURM jobs.
+# def process_iterations(base_dir: str, 
+#                       conda_env_path: str,
+#                       slurm_account: str,
+#                       slurm_output: str,
+#                       slurm_error: str, 
+#                       slurm_nodes: int,
+#                       slurm_gpus_per_task: int,
+#                       slurm_tasks: int,
+#                       slurm_cpus_per_task: int, 
+#                       slurm_time: str,
+#                       random_seed: int,
+#                       num_models: int,
+#                       check_interval: int,
+#                       max_workers: int):
+#     """Process all sampling directories with SLURM jobs.
     
-    Args:
-        base_dir: Base directory containing sampling splits
-        conda_env_path: Path to conda environment
-        slurm_account: SLURM account name
-        slurm_output: Path for SLURM output files
-        slurm_error: Path for SLURM error files
-        slurm_nodes: Number of nodes per job
-        slurm_gpus_per_task: GPUs per task
-        slurm_tasks: Number of tasks per job
-        slurm_cpus_per_task: CPUs per task
-        slurm_time: Wall time limit
-        random_seed: Random seed for reproducibility
-        num_models: Number of models to generate
-        check_interval: Interval to check job status
-        max_workers: Maximum concurrent workers
-    """
-    slurm_submitter = SlurmJobSubmitter(
-        conda_env_path=conda_env_path,
-        slurm_account=slurm_account,
-        slurm_output=slurm_output,
-        slurm_error=slurm_error,
-        slurm_nodes=slurm_nodes,
-        slurm_gpus_per_task=slurm_gpus_per_task,
-        slurm_tasks=slurm_tasks,
-        slurm_cpus_per_task=slurm_cpus_per_task,
-        slurm_time=slurm_time,
-        random_seed=random_seed,
-        num_models=num_models,
-        check_interval=check_interval
-    )
+#     Args:
+#         base_dir: Base directory containing sampling splits
+#         conda_env_path: Path to conda environment
+#         slurm_account: SLURM account name
+#         slurm_output: Path for SLURM output files
+#         slurm_error: Path for SLURM error files
+#         slurm_nodes: Number of nodes per job
+#         slurm_gpus_per_task: GPUs per task
+#         slurm_tasks: Number of tasks per job
+#         slurm_cpus_per_task: CPUs per task
+#         slurm_time: Wall time limit
+#         random_seed: Random seed for reproducibility
+#         num_models: Number of models to generate
+#         check_interval: Interval to check job status
+#         max_workers: Maximum concurrent workers
+#     """
+#     slurm_submitter = SlurmJobSubmitter(
+#         conda_env_path=conda_env_path,
+#         slurm_account=slurm_account,
+#         slurm_output=slurm_output,
+#         slurm_error=slurm_error,
+#         slurm_nodes=slurm_nodes,
+#         slurm_gpus_per_task=slurm_gpus_per_task,
+#         slurm_tasks=slurm_tasks,
+#         slurm_cpus_per_task=slurm_cpus_per_task,
+#         slurm_time=slurm_time,
+#         random_seed=random_seed,
+#         num_models=num_models,
+#         check_interval=check_interval
+#     )
     
-    # Get both sampling and shuffle directories
-    sampling_dirs = [d for d in os.listdir(base_dir) if d.startswith('sampling_')]
-    shuffle_dirs = [d for d in os.listdir(base_dir) if d.startswith('shuffle_')]
-    all_dirs = sampling_dirs + shuffle_dirs
+#     # Get both sampling and shuffle directories
+#     sampling_dirs = [d for d in os.listdir(base_dir) if d.startswith('sampling_')]
+#     shuffle_dirs = [d for d in os.listdir(base_dir) if d.startswith('shuffle_')]
+#     all_dirs = sampling_dirs + shuffle_dirs
     
-    # Create job folder names
-    job_folders = []
-    for i, d in enumerate(all_dirs):
-        if d.startswith('sampling_'):
-            job_folders.append(f"sample_{i+1}")
-        else:
-            job_folders.append(f"shuffle_{i+1}")
+#     # Create job folder names
+#     job_folders = []
+#     for i, d in enumerate(all_dirs):
+#         if d.startswith('sampling_'):
+#             job_folders.append(f"sample_{i+1}")
+#         else:
+#             job_folders.append(f"shuffle_{i+1}")
     
-    # Get full paths
-    all_paths = [os.path.join(base_dir, d) for d in all_dirs]
-    slurm_submitter.process_folders_concurrently(all_paths, job_folders, max_workers=max_workers)
+#     # Get full paths
+#     all_paths = [os.path.join(base_dir, d) for d in all_dirs]
+#     slurm_submitter.process_folders_concurrently(all_paths, job_folders, max_workers=max_workers)

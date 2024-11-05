@@ -3,10 +3,10 @@ import logging
 import os
 from af_vote.m_fold_sampling import (
     initial_random_split,
-    create_sampling_splits,
-    process_iterations
+    create_sampling_splits
 )
 from af_vote.sequence_processing import read_a3m_to_dict, filter_a3m_by_coverage, write_a3m
+from af_vote.slurm_utils import SlurmJobSubmitter
 
 def parse_args():
     parser = argparse.ArgumentParser(description='Perform Bayesian sampling of sequences')
@@ -21,6 +21,7 @@ def parse_args():
     parser.add_argument('--coverage_threshold', type=float, default=0.8,
                       help='Minimum required sequence coverage (default: 0.8)')
     
+    # SLURM configuration arguments
     parser.add_argument('--conda_env_path', default="/fs/ess/PAA0203/xing244/.conda/envs/colabfold",
                       help='Path to conda environment')
     parser.add_argument('--slurm_account', default="PAA0203",
@@ -49,13 +50,9 @@ def parse_args():
                       help='Maximum number of concurrent workers')
     return parser.parse_args()
 
-def main():
-
-    args = parse_args()
-
-    os.makedirs(args.base_dir, exist_ok=True)
-    
-    log_file = os.path.join(args.base_dir, "bayesian_sampling_run.log")
+def setup_logging(base_dir: str):
+    """Set up logging configuration"""
+    log_file = os.path.join(base_dir, "bayesian_sampling_run.log")
     logging.basicConfig(
         level=logging.INFO,
         format='%(asctime)s - %(levelname)s - %(message)s',
@@ -65,38 +62,67 @@ def main():
         ]
     )
 
-    # Log all input arguments
+def create_directory_structure(base_dir: str) -> tuple:
+    """Create and return required directory paths"""
+    init_dir = os.path.join(base_dir, "01_init_random_split")
+    sampling_base_dir = os.path.join(base_dir, "02_sampling")
+    os.makedirs(init_dir, exist_ok=True)
+    os.makedirs(sampling_base_dir, exist_ok=True)
+    return init_dir, sampling_base_dir
+
+def filter_and_write_sequences(input_a3m: str, init_dir: str, coverage_threshold: float, default_pdb: str) -> str:
+    """Filter sequences based on coverage and write to temporary file"""
+    sequences = read_a3m_to_dict(input_a3m)
+    filtered_sequences = filter_a3m_by_coverage(sequences, coverage_threshold)
+    logging.info(f"Filtered sequences from {len(sequences)} to {len(filtered_sequences)} "
+                f"based on coverage threshold {coverage_threshold}")
+    
+    filtered_a3m_path = os.path.join(init_dir, "filtered_sequences.a3m")
+    write_a3m(filtered_sequences, filtered_a3m_path, reference_pdb=default_pdb)
+    return filtered_a3m_path
+
+def main():
+    args = parse_args()
+    os.makedirs(args.base_dir, exist_ok=True)
+    
+    # Setup logging
+    setup_logging(args.base_dir)
     logging.info("=== Input Arguments ===")
     for arg, value in vars(args).items():
         logging.info(f"{arg}: {value}")
     logging.info("====================")
     
-    # Create directory structure
-    init_dir = os.path.join(args.base_dir, "01_init_random_split")
-    os.makedirs(init_dir, exist_ok=True)
-    sampling_base_dir = os.path.join(args.base_dir, "02_sampling")
-    os.makedirs(sampling_base_dir, exist_ok=True)
+    # Create directories
+    init_dir, sampling_base_dir = create_directory_structure(args.base_dir)
     
-    # Read and filter sequences based on coverage
-    sequences = read_a3m_to_dict(args.input_a3m)
-    filtered_sequences = filter_a3m_by_coverage(sequences, args.coverage_threshold)
-    logging.info(f"Filtered sequences from {len(sequences)} to {len(filtered_sequences)} based on coverage threshold {args.coverage_threshold}")
+    # Filter and prepare sequences
+    filtered_a3m_path = filter_and_write_sequences(
+        args.input_a3m, 
+        init_dir,
+        args.coverage_threshold,
+        args.default_pdb
+    )
     
-    # Write filtered sequences to temporary a3m file
-    filtered_a3m_path = os.path.join(init_dir, "filtered_sequences.a3m")
-    write_a3m(filtered_sequences, filtered_a3m_path, reference_pdb=args.default_pdb)
-    
-    # Step 1: Initial random split with filtered sequences
-    num_groups = initial_random_split(filtered_a3m_path, init_dir, args.default_pdb, args.group_size)
+    # Initial random split
+    num_groups = initial_random_split(
+        filtered_a3m_path, 
+        init_dir, 
+        args.default_pdb, 
+        args.group_size
+    )
     logging.info(f"Created {num_groups} initial groups")
 
-    # Step 2: Create sampling splits
-    create_sampling_splits(init_dir, sampling_base_dir, args.default_pdb, args.group_size)
+    # Create sampling splits
+    create_sampling_splits(
+        init_dir, 
+        sampling_base_dir, 
+        args.default_pdb, 
+        args.group_size
+    )
     logging.info(f"Created {num_groups-1} sampling splits")
 
-    # Step 3: Submit SLURM jobs
-    process_iterations(
-        base_dir=sampling_base_dir,
+    # Initialize SLURM job submitter
+    slurm_submitter = SlurmJobSubmitter(
         conda_env_path=args.conda_env_path,
         slurm_account=args.slurm_account,
         slurm_output=args.slurm_output,
@@ -108,7 +134,17 @@ def main():
         slurm_time=args.slurm_time,
         random_seed=args.random_seed,
         num_models=args.num_models,
-        check_interval=args.check_interval,
+        check_interval=args.check_interval
+    )
+
+    # Get sampling directories and process with SLURM
+    sampling_dirs = [d for d in os.listdir(sampling_base_dir) if d.startswith('sampling_')]
+    sampling_paths = [os.path.join(sampling_base_dir, d) for d in sampling_dirs]
+    job_ids = [f"sample_{i+1}" for i in range(len(sampling_dirs))]
+    
+    slurm_submitter.process_folders_concurrently(
+        sampling_paths,
+        job_ids, 
         max_workers=args.max_workers
     )
     logging.info("Submitted all SLURM jobs")
