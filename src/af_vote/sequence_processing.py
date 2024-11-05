@@ -1,6 +1,6 @@
 import logging
 import os
-
+import random
 from Bio import SeqIO
 from Bio.PDB import PDBParser, PPBuilder
 from typing import List, Dict, Any
