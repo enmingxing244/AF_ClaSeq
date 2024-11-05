@@ -1,0 +1,12 @@
+Metadata-Version: 1.2
+Name: af-vote
+Version: 0.1
+Summary: Package for analyzing AlphaFold predictions through voting
+Home-page: UNKNOWN
+Author: Xing
+License: UNKNOWN
+Description: UNKNOWN
+Platform: UNKNOWN
+Classifier: Programming Language :: Python :: 3
+Classifier: Operating System :: OS Independent
+Requires-Python: >=3.6

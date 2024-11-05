@@ -1,0 +1,6 @@
+setup.py
+src/af_vote.egg-info/PKG-INFO
+src/af_vote.egg-info/SOURCES.txt
+src/af_vote.egg-info/dependency_links.txt
+src/af_vote.egg-info/requires.txt
+src/af_vote.egg-info/top_level.txt
