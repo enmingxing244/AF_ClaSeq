@@ -1,7 +1,7 @@
 import argparse
 import logging
 import os
-from af_vote.bayesian_sampling import (
+from af_vote.m_fold_sampling import (
     initial_random_split,
     create_sampling_splits,
     process_iterations
@@ -10,53 +10,51 @@ from af_vote.sequence_processing import read_a3m_to_dict, filter_a3m_by_coverage
 
 def parse_args():
     parser = argparse.ArgumentParser(description='Perform Bayesian sampling of sequences')
-    parser.add_argument('--input-a3m', required=True,
-                      help='Path to input A3M file as the source for bootstrapping and voting')
-    parser.add_argument('--reference-pdb', required=True,
+    parser.add_argument('--input_a3m', required=True,
+                      help='Path to input A3M file as the source for M-fold sampling')
+    parser.add_argument('--default_pdb', required=True,
                       help='Path to reference PDB file')
-    parser.add_argument('--base-dir', required=True,
+    parser.add_argument('--base_dir', required=True,
                       help='Base directory for output')
-    parser.add_argument('--group-size', type=int, default=10,
+    parser.add_argument('--group_size', type=int, default=10,
                       help='Size of each sequence group')
-    parser.add_argument('--coverage-threshold', type=float, default=0.8,
+    parser.add_argument('--coverage_threshold', type=float, default=0.8,
                       help='Minimum required sequence coverage (default: 0.8)')
     
-    parser.add_argument('--conda-env-path', default="/fs/ess/PAA0203/xing244/.conda/envs/colabfold",
+    parser.add_argument('--conda_env_path', default="/fs/ess/PAA0203/xing244/.conda/envs/colabfold",
                       help='Path to conda environment')
-    parser.add_argument('--slurm-account', default="PAA0203",
+    parser.add_argument('--slurm_account', default="PAA0203",
                       help='SLURM account name')
-    parser.add_argument('--slurm-output', default="/dev/null",
+    parser.add_argument('--slurm_output', default="/dev/null",
                       help='SLURM output file path')
-    parser.add_argument('--slurm-error', default="/dev/null",
+    parser.add_argument('--slurm_error', default="/dev/null",
                       help='SLURM error file path')
-    parser.add_argument('--slurm-nodes', type=int, default=1,
+    parser.add_argument('--slurm_nodes', type=int, default=1,
                       help='Number of nodes per SLURM job')
-    parser.add_argument('--slurm-gpus-per-task', type=int, default=1,
+    parser.add_argument('--slurm_gpus_per_task', type=int, default=1,
                       help='Number of GPUs per task')
-    parser.add_argument('--slurm-tasks', type=int, default=1,
+    parser.add_argument('--slurm_tasks', type=int, default=1,
                       help='Number of tasks per SLURM job')
-    parser.add_argument('--slurm-cpus-per-task', type=int, default=4,
+    parser.add_argument('--slurm_cpus_per_task', type=int, default=4,
                       help='Number of CPUs per task')
-    parser.add_argument('--slurm-time', default='04:00:00',
+    parser.add_argument('--slurm_time', default='04:00:00',
                       help='Wall time limit for SLURM jobs')
-    parser.add_argument('--random-seed', type=int, default=42,
+    parser.add_argument('--random_seed', type=int, default=42,
                       help='Random seed for reproducibility')
-    parser.add_argument('--num-models', type=int, default=1,
+    parser.add_argument('--num_models', type=int, default=1,
                       help='Number of models to generate')
-    parser.add_argument('--check-interval', type=int, default=60,
+    parser.add_argument('--check_interval', type=int, default=60,
                       help='Interval to check job status in seconds')
-    parser.add_argument('--max-workers', type=int, default=64,
+    parser.add_argument('--max_workers', type=int, default=64,
                       help='Maximum number of concurrent workers')
     return parser.parse_args()
 
 def main():
-    # Parse arguments
+
     args = parse_args()
 
-    # Create base directory
     os.makedirs(args.base_dir, exist_ok=True)
     
-    # Set up logging to both file and console
     log_file = os.path.join(args.base_dir, "bayesian_sampling_run.log")
     logging.basicConfig(
         level=logging.INFO,
@@ -86,14 +84,14 @@ def main():
     
     # Write filtered sequences to temporary a3m file
     filtered_a3m_path = os.path.join(init_dir, "filtered_sequences.a3m")
-    write_a3m(filtered_sequences, filtered_a3m_path, reference_pdb=args.reference_pdb)
+    write_a3m(filtered_sequences, filtered_a3m_path, reference_pdb=args.default_pdb)
     
     # Step 1: Initial random split with filtered sequences
-    num_groups = initial_random_split(filtered_a3m_path, init_dir, args.reference_pdb, args.group_size)
+    num_groups = initial_random_split(filtered_a3m_path, init_dir, args.default_pdb, args.group_size)
     logging.info(f"Created {num_groups} initial groups")
 
     # Step 2: Create sampling splits
-    create_sampling_splits(init_dir, sampling_base_dir, args.reference_pdb, args.group_size)
+    create_sampling_splits(init_dir, sampling_base_dir, args.default_pdb, args.group_size)
     logging.info(f"Created {num_groups-1} sampling splits")
 
     # Step 3: Submit SLURM jobs

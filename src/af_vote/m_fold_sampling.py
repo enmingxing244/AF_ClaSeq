@@ -144,8 +144,19 @@ def process_iterations(base_dir: str,
         check_interval=check_interval
     )
     
+    # Get both sampling and shuffle directories
     sampling_dirs = [d for d in os.listdir(base_dir) if d.startswith('sampling_')]
-    job_folders = [f"sample_{i+1}" for i in range(len(sampling_dirs))]
+    shuffle_dirs = [d for d in os.listdir(base_dir) if d.startswith('shuffle_')]
+    all_dirs = sampling_dirs + shuffle_dirs
     
-    sampling_paths = [os.path.join(base_dir, d) for d in sampling_dirs]
-    slurm_submitter.process_folders_concurrently(sampling_paths, job_folders, max_workers=max_workers)
+    # Create job folder names
+    job_folders = []
+    for i, d in enumerate(all_dirs):
+        if d.startswith('sampling_'):
+            job_folders.append(f"sample_{i+1}")
+        else:
+            job_folders.append(f"shuffle_{i+1}")
+    
+    # Get full paths
+    all_paths = [os.path.join(base_dir, d) for d in all_dirs]
+    slurm_submitter.process_folders_concurrently(all_paths, job_folders, max_workers=max_workers)
