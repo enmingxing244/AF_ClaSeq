@@ -3,104 +3,154 @@ import logging
 import json
 import argparse
 from typing import Dict, Any
-import csv
 import pandas as pd
+import matplotlib.pyplot as plt
+import numpy as np
 from pathlib import Path
 from collections import defaultdict
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import ProcessPoolExecutor, as_completed
 
 from af_vote.voting import VotingAnalyzer
-from af_vote.sequence_processing import read_a3m_to_dict
-from af_vote.slurm_utils import SlurmJobSubmitter
+
+def hex2color(hex_str):
+    """Convert hex string to RGB tuple"""
+    hex_str = hex_str.lstrip('#')
+    return tuple(int(hex_str[i:i+2], 16)/255.0 for i in (0, 2, 4))
+
+def plot_bin_distribution(results_df, 
+                          output_dir, 
+                          n_plot_bins, 
+                          initial_color,
+                          end_color=None,  # Default is None - will use initial_color if not provided
+                          is_2d=False, 
+                          figsize: tuple = (10, 5),
+                          y_min: float = None,
+                          y_max: float = None,
+                          x_ticks: list = None):
+    if is_2d:
+        print("2D bin distribution not implemented yet")
+    else:
+        plt.figure(figsize=figsize, dpi=600)
+
+        # Set font parameters
+        plt.rcParams.update({
+            'font.size': 24,
+            'axes.labelsize': 24,
+            'axes.titlesize': 24,
+            'xtick.labelsize': 24,
+            'ytick.labelsize': 24,
+            'legend.fontsize': 24
+        })
+
+        bins = np.arange(1, n_plot_bins + 2)  # 1 to n_plot_bins+1
+        
+        # Create histogram data without plotting
+        counts, bins, _ = plt.hist(results_df['Bin_Assignment'], bins=bins)
+        plt.clf()  # Clear the figure
+
+        if end_color is not None:  # Only create gradient if end_color is provided
+            # Create color gradient
+            initial_rgb = hex2color(initial_color)
+            end_rgb = hex2color(end_color)
+            colors = []
+            for i in range(len(bins)-1):
+                ratio = i / (len(bins)-2)  # Linear gradient from 0 to 1
+                r = initial_rgb[0] + (end_rgb[0] - initial_rgb[0]) * ratio
+                g = initial_rgb[1] + (end_rgb[1] - initial_rgb[1]) * ratio
+                b = initial_rgb[2] + (end_rgb[2] - initial_rgb[2]) * ratio
+                colors.append((r, g, b))
+
+            # Plot each bar centered on bin numbers with gradient colors
+            for i, (count, color) in enumerate(zip(counts, colors)):
+                plt.bar(bins[i], count, width=1.0, align='center',
+                       color=color, edgecolor=None)
+        else:
+            # Use single color if no end_color provided
+            plt.bar(bins[:-1], counts, width=1.0, align='center',
+                   color=hex2color(initial_color), edgecolor=None)
+
+        # Add vertical dashed lines at bin boundaries
+        for bin_edge in bins:
+            plt.axvline(x=bin_edge - 0.5, color='gray', linestyle='--', alpha=0.5)
+
+        plt.xlabel('Bin Assignment')
+        plt.ylabel('Count')
+        # plt.title('Distribution of Bin Assignments')
+        
+        plt.yscale('log')
+        
+        # Set x-axis limits and ticks
+        plt.xlim(0.5, n_plot_bins + 0.5)
+        
+        # Set custom x ticks if provided, otherwise use all bins
+        if x_ticks is not None:
+            plt.xticks(x_ticks)
+
+            
+        # Set y-axis limits if provided
+        if y_min is not None and y_max is not None:
+            plt.ylim(y_min, y_max)
+        
+        # Save plot
+        os.makedirs(output_dir, exist_ok=True)
+        plot_path = os.path.join(output_dir, '03_voting_distribution.png')
+        # plt.tight_layout()
+        plt.savefig(plot_path, dpi=600, bbox_inches='tight')
+        plt.close()
 
 def parse_args():
-    parser = argparse.ArgumentParser(description='Run voting analysis and recompile sequences')
-    parser.add_argument('--base-dir', required=True,
-                      help='Base directory for output')
-    parser.add_argument('--sampling-dir', required=True,
-                      help='Directory containing sampling results')
-    parser.add_argument('--source-msa', required=True,
-                      help='Path to source MSA file')
-    parser.add_argument('--config-path', required=True,
-                      help='Path to configuration JSON file')
-    parser.add_argument('--num-bins', type=int, default=20,
-                      help='Number of bins for voting')
-    
-    # SLURM arguments
-    parser.add_argument('--conda-env-path', default="/fs/ess/PAA0203/xing244/.conda/envs/colabfold",
-                      help='Path to conda environment')
-    parser.add_argument('--slurm-account', default="PAA0203",
-                      help='SLURM account name')
-    parser.add_argument('--slurm-output', default="/dev/null",
-                      help='SLURM output file path')
-    parser.add_argument('--slurm-error', default="/dev/null",
-                      help='SLURM error file path')
-    parser.add_argument('--slurm-nodes', type=int, default=1,
-                      help='Number of nodes per SLURM job')
-    parser.add_argument('--slurm-gpus-per-task', type=int, default=1,
-                      help='Number of GPUs per task')
-    parser.add_argument('--slurm-tasks', type=int, default=1,
-                      help='Number of tasks per SLURM job')
-    parser.add_argument('--slurm-cpus-per-task', type=int, default=4,
-                      help='Number of CPUs per task')
-    parser.add_argument('--slurm-time', default='04:00:00',
-                      help='Wall time limit for SLURM jobs')
-    parser.add_argument('--random-seed', type=int, default=42,
-                      help='Random seed for reproducibility')
-    parser.add_argument('--num-models', type=int, default=1,
-                      help='Number of models to generate')
-    parser.add_argument('--check-interval', type=int, default=60,
-                      help='Interval to check job status in seconds')
-    parser.add_argument('--max-workers', type=int, default=64,
-                      help='Maximum number of concurrent workers')
-    return parser.parse_args()
+    parser = argparse.ArgumentParser(description='Run voting analysis')
 
-def recompile_sequences(voting_results: Dict[str, tuple], source_msa: str, bin_num: int, output_file: str):
-    """Recompile sequences for a specific bin into new A3M file"""
-    # Get headers for specified bin
-    bin_headers = [header for header, (bin_assignment, _, _) in voting_results.items() 
-                  if bin_assignment == bin_num]
+    parser.add_argument('--sampling_dir', required=True,
+                      help='Directory containing sampling results')
+    parser.add_argument('--source_msa', required=True,
+                      help='Path to source MSA file')
+    parser.add_argument('--config_path', required=True,
+                      help='Path to configuration JSON file')
+    parser.add_argument('--num_bins', type=int, default=20,
+                      help='Number of bins for voting')
+    parser.add_argument('--max_workers', type=int, default=88,
+                      help='Maximum number of concurrent workers')
+    parser.add_argument('--vote_threshold', type=float, default=0.0,
+                      help='Threshold for vote filtering (between 0 and 1)')
+    parser.add_argument('--output_dir', required=True,
+                      help='Output directory where the voting results will be saved')
+    parser.add_argument('--min_value', type=float, default=None,
+                      help='Minimum value for 1D metric binning range')
+    parser.add_argument('--max_value', type=float, default=None,
+                      help='Maximum value for 1D metric binning range')
+    parser.add_argument('--initial_color', type=str, default='#d3b0b0',
+                      help='Initial color for bin distribution plot')
+    parser.add_argument('--end_color', type=str, default=None,
+                      help='End color for bin distribution plot')
+    parser.add_argument('--use_focused_bins', action='store_true',
+                      help='Use focused 1D binning with outlier bins')
+    parser.add_argument('--precomputed_metrics', type=str, default=None,
+                      help='Path to precomputed metrics CSV file')
+    parser.add_argument('--plddt_threshold', type=float, default=0,
+                      help='pLDDT threshold for filtering structures (default: 0, no filtering)')
+    parser.add_argument('--figsize', type=float, nargs=2, default=(10, 5),
+                      help='Figure size in inches (width, height) (default: 10 5)')
+    parser.add_argument('--y_min', type=float, default=None,
+                      help='Minimum y-axis value for distribution plot')
+    parser.add_argument('--y_max', type=float, default=None,
+                      help='Maximum y-axis value for distribution plot')
+    parser.add_argument('--x_ticks', type=int, nargs='+', default=None,
+                      help='Custom x-axis tick positions')
+    parser.add_argument('--hierarchical_sampling', action='store_true',
+                      help='Use hierarchical sampling directories structure')
     
-    # Read source MSA and extract sequences
-    try:
-        sequences = read_a3m_to_dict(source_msa)
-    except FileNotFoundError:
-        logging.error(f"Source MSA file not found: {source_msa}")
-        return
-    except Exception as e:
-        logging.error(f"Error reading MSA file {source_msa}: {str(e)}")
-        return
-        
-    query_seq = sequences.get('>seq')
-    if not query_seq:
-        logging.error("No query sequence (>seq) found in MSA file")
-        return
-    
-    # Create output directory if it doesn't exist
-    os.makedirs(os.path.dirname(output_file), exist_ok=True)
-    
-    # Write new A3M file
-    try:
-        with open(output_file, 'w') as f:
-            # Write query sequence first
-            f.write('>seq\n')
-            f.write(query_seq + '\n')
-            
-            # Write bin sequences
-            for header in bin_headers:
-                if header in sequences:
-                    f.write(f'>{header}\n')
-                    f.write(sequences[header] + '\n')
-    except IOError as e:
-        logging.error(f"Error writing output file {output_file}: {str(e)}")
-        return
+    return parser.parse_args()
 
 def main():
     args = parse_args()
     
+    voting_dir = os.path.join(args.output_dir)
+    results_file = os.path.join(voting_dir, "03_voting_results.csv")
+
     # Setup logging
-    os.makedirs(args.base_dir, exist_ok=True)
-    log_file = os.path.join(args.base_dir, "voting_run.log")
+    os.makedirs(voting_dir, exist_ok=True)
+    log_file = os.path.join(voting_dir, "03_voting_run.log")
     
     logging.basicConfig(
         level=logging.INFO,
@@ -110,6 +160,35 @@ def main():
             logging.StreamHandler()
         ]
     )
+
+    # Load configuration
+    try:
+        with open(args.config_path) as f:
+            config = json.load(f)
+    except Exception as e:
+        logging.error(f"Error reading config file: {str(e)}")
+        return
+
+    # Determine if we need 2D binning based on config
+    is_2d = len(config['filter_criteria']) >= 2
+    is_3d = len(config['filter_criteria']) >= 3
+
+    # Check if results file already exists
+    if os.path.exists(results_file):
+        logging.info("Found existing results file, loading and plotting distribution...")
+        results_df = pd.read_csv(results_file)
+        plot_bin_distribution(results_df, 
+                              voting_dir, 
+                              args.num_bins, 
+                              args.initial_color, 
+                              args.end_color, 
+                              is_2d, 
+                              args.figsize,
+                              args.y_min,
+                              args.y_max,
+                              args.x_ticks)
+        logging.info("Distribution plot created")
+        return
     
     # Validate paths
     for path, name in [
@@ -119,126 +198,125 @@ def main():
     ]:
         if not os.path.exists(path):
             raise FileNotFoundError(f"{name} not found: {path}")
-    
-    # Load configuration
-    try:
-        with open(args.config_path) as f:
-            config = json.load(f)
-    except Exception as e:
-        logging.error(f"Error reading config file: {str(e)}")
-        return
 
-    # Initialize analyzer
-    analyzer = VotingAnalyzer(config, num_bins=args.num_bins)
-    
-    # Get PDB files
-    pdb_files = [
-        str(p) for p in Path(args.sampling_dir).rglob('*.pdb')
-        if 'non_a3m' not in str(p)
-    ]
-    
-    if not pdb_files:
-        logging.error("No PDB files found in sampling directory")
-        return
+    # Initialize VotingAnalyzer
+    analyzer = VotingAnalyzer(max_workers=args.max_workers)
 
-    # Setup directories
-    voting_dir = os.path.join(args.base_dir, "03_voting")
-    os.makedirs(voting_dir, exist_ok=True)
+    # Process sampling directories and get metrics
+    logging.info("Processing sampling directories...")
+    results = analyzer.process_sampling_dirs(args.sampling_dir, 
+                                          config['filter_criteria'], 
+                                          config['basics'],
+                                          precomputed_metrics_file=args.precomputed_metrics,
+                                          plddt_threshold=args.plddt_threshold,
+                                          hierarchical=args.hierarchical_sampling)
 
-    # Process structures
-    bins, pdb_assignments, pdb_properties = analyzer.process_structures(pdb_files)
-    
-    # Save structure criteria
-    criteria_data = {
-        'pdb_file': list(pdb_assignments.keys()),
-        'bin_assignment': list(pdb_assignments.values())
-    }
-    criteria_file = os.path.join(voting_dir, "structure_criteria.csv")
-    pd.DataFrame(criteria_data).to_csv(criteria_file, index=False)
+    # Create bins based on dimensionality
+    logging.info("Creating metric bins...")
+    if is_3d:
+        metric_names = [criterion['name'] for criterion in config['filter_criteria'][:3]]
+        bins, pdb_bins = analyzer.create_3d_metric_bins(results,
+                                                      metric_names, 
+                                                      num_bins=args.num_bins)
+    elif is_2d:
+        metric_names = [criterion['name'] for criterion in config['filter_criteria'][:2]]
+        bins, pdb_bins = analyzer.create_2d_metric_bins(results,
+                                                      metric_names, 
+                                                      num_bins=args.num_bins)
+    else:
+        if args.use_focused_bins:
+            bins, pdb_bins = analyzer.create_focused_1d_bins(results,
+                                                           config['filter_criteria'][0]['name'],
+                                                           args.num_bins,
+                                                           args.min_value,
+                                                           args.max_value)
+        else:
+            bins, pdb_bins = analyzer.create_1d_metric_bins(results, 
+                                                          config['filter_criteria'][0]['name'], 
+                                                          num_bins=args.num_bins,
+                                                          min_value=args.min_value,
+                                                          max_value=args.max_value)
 
-    # Get source headers from MSA
-    source_headers = set()
-    with open(args.source_msa) as f:
-        for line in f:
-            if line.startswith('>'):
-                header = line.strip()[1:]
-                if header != 'seq':
-                    source_headers.add(header)
-
-    # Process A3M files in batches
-    a3m_files = [(root, f) for root, _, files in os.walk(args.sampling_dir) 
-                 for f in files if f.endswith('.a3m')]
+    # Get sequence votes
+    logging.info("Processing sequence votes...")
+    sequence_votes, all_votes = analyzer.get_sequence_votes(args.source_msa, 
+                                                          args.sampling_dir, 
+                                                          pdb_bins, 
+                                                          is_2d=is_2d,
+                                                          is_3d=is_3d,
+                                                          vote_threshold=args.vote_threshold,
+                                                          hierarchical=args.hierarchical_sampling)
     
-    batch_votes = analyzer.process_a3m_batch(a3m_files, pdb_assignments, source_headers)
+    # Save raw sequence votes for later analysis
+    logging.info("Saving raw sequence votes...")
+    raw_votes_file = os.path.join(voting_dir, "raw_sequence_votes.json")
     
-    # Process voting results
-    voting_results = {}
-    for header, votes in batch_votes.items():
-        if votes:
-            vote_counts = defaultdict(int)
-            for vote in votes:
-                vote_counts[vote] += 1
-            most_common_bin = max(vote_counts.items(), key=lambda x: x[1])[0]
-            voting_results[header] = (most_common_bin, vote_counts[most_common_bin], len(votes))
+    # Convert votes to serializable format
+    serializable_votes = {}
+    for header, votes in all_votes.items():
+        if is_3d:
+            serializable_votes[header] = [[int(v[0]), int(v[1]), int(v[2])] for v in votes]
+        elif is_2d:
+            serializable_votes[header] = [[int(v[0]), int(v[1])] for v in votes]
+        else:
+            serializable_votes[header] = [int(v) for v in votes]
+        
+    with open(raw_votes_file, 'w') as f:
+        json.dump(serializable_votes, f)
+    
+    logging.info(f"Raw sequence votes saved to {raw_votes_file}")
 
     # Save voting results
-    results_df = pd.DataFrame([
-        {
-            "Sequence_Header": header,
-            "Bin_Assignment": bin_num,
-            "Vote_Count": vote_count,
-            "Total_Votes": total_votes
-        }
-        for header, (bin_num, vote_count, total_votes) in voting_results.items()
-    ])
-    results_df.to_csv(os.path.join(voting_dir, "voting_results.csv"), index=False)
+    if is_3d:
+        results_df = pd.DataFrame([
+            {
+                "Sequence_Header": header,
+                "Bin_Assignment_1": bin_nums[0],
+                "Bin_Assignment_2": bin_nums[1],
+                "Bin_Assignment_3": bin_nums[2],
+                "Vote_Count": vote_count,
+                "Total_Votes": total_votes
+            }
+            for header, (bin_nums, vote_count, total_votes) in sequence_votes.items()
+        ])
+    elif is_2d:
+        results_df = pd.DataFrame([
+            {
+                "Sequence_Header": header,
+                "Bin_Assignment_1": bin_nums[0],
+                "Bin_Assignment_2": bin_nums[1],
+                "Vote_Count": vote_count,
+                "Total_Votes": total_votes
+            }
+            for header, (bin_nums, vote_count, total_votes) in sequence_votes.items()
+        ])
+    else:
+        results_df = pd.DataFrame([
+            {
+                "Sequence_Header": header,
+                "Bin_Assignment": bin_num,
+                "Vote_Count": vote_count,
+                "Total_Votes": total_votes
+            }
+            for header, (bin_num, vote_count, total_votes) in sequence_votes.items()
+        ])
+    results_df.to_csv(results_file, index=False)
 
-    # Process bins and submit predictions
-    recompile_dir = os.path.join(args.base_dir, "04_recompiled")
-    os.makedirs(recompile_dir, exist_ok=True)
+    # Create distribution plot
+    plot_bin_distribution(results_df, 
+                          voting_dir, 
+                          args.num_bins, 
+                          args.initial_color, 
+                          args.end_color, 
+                          is_2d, 
+                          args.figsize,
+                          args.y_min,
+                          args.y_max,
+                          args.x_ticks)
 
-    slurm_submitter = SlurmJobSubmitter(
-        conda_env_path=args.conda_env_path,
-        slurm_account=args.slurm_account,
-        slurm_output=args.slurm_output,
-        slurm_error=args.slurm_error,
-        slurm_nodes=args.slurm_nodes,
-        slurm_gpus_per_task=args.slurm_gpus_per_task,
-        slurm_tasks=args.slurm_tasks,
-        slurm_cpus_per_task=args.slurm_cpus_per_task,
-        slurm_time=args.slurm_time,
-        random_seed=args.random_seed,
-        num_models=args.num_models,
-        check_interval=args.check_interval
-    )
-
-    # Process bins in parallel using ThreadPoolExecutor
-    with ThreadPoolExecutor(max_workers=args.max_workers) as executor:
-        futures = []
-        for bin_num in range(args.num_bins):
-            output_file = os.path.join(recompile_dir, f"bin{bin_num}_sequences.a3m")
-            recompile_sequences(voting_results, args.source_msa, bin_num, output_file)
-            
-            output_dir = os.path.join(args.base_dir, f"05_predictions/bin{bin_num}")
-            os.makedirs(output_dir, exist_ok=True)
-            
-            futures.append(executor.submit(
-                slurm_submitter.process_folders_concurrently,
-                [output_file],
-                [f"predict_bin{bin_num}"],
-                output_dir=output_dir,
-                max_workers=1  # Process one folder at a time within each bin
-            ))
-            
-        # Wait for all jobs to complete
-        for future in as_completed(futures):
-            try:
-                future.result()
-            except Exception as e:
-                logging.error(f"Error in bin processing: {str(e)}")
-                continue
-
-    logging.info("Completed voting analysis and submitted prediction jobs")
+    logging.info(f"Processed {len(sequence_votes)} sequences")
+    logging.info(f"Metric bins: {bins}")
+    logging.info("Completed voting analysis and created distribution plot")
 
 if __name__ == "__main__":
     main()

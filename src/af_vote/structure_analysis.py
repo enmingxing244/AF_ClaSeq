@@ -7,6 +7,7 @@ import pandas as pd
 from joblib import Parallel, delayed
 from Bio.PDB import PDBParser, Superimposer, PPBuilder
 import json
+from tqdm import tqdm
 
 from af_path.sequence_processing import count_sequences_in_a3m
 
@@ -124,16 +125,19 @@ class StructureAnalyzer:
         self,
         reference_pdb: str,
         target_pdb: str,
-        residue_indices: List[int],
+        superposition_indices: List[int],
+        rmsd_indices: List[int],
         chain_id: str = "A",
     ) -> float:
         """
-        Calculate the RMSD of CA atoms between a reference PDB and a target PDB for specified residues.
+        Calculate the RMSD of CA atoms between a reference PDB and a target PDB for specified residues,
+        using a separate set of residues for superposition.
 
         Args:
             reference_pdb (str): Path to the reference PDB file.
             target_pdb (str): Path to the target PDB file.
-            residue_indices (List[int]): Residue indices for RMSD calculation.
+            superposition_indices (List[int]): Residue indices used for superposition.
+            rmsd_indices (List[int]): Residue indices used for RMSD calculation.
             chain_id (str, optional): Chain identifier. Defaults to "A".
 
         Returns:
@@ -146,35 +150,62 @@ class StructureAnalyzer:
             ref_structure = self.pdb_parser.get_structure("reference", reference_pdb)
             target_structure = self.pdb_parser.get_structure("target", target_pdb)
 
-            ref_atoms = []
-            target_atoms = []
-
-            for res_id in residue_indices:
+            # Get atoms for superposition
+            ref_sup_atoms = []
+            target_sup_atoms = []
+            for res_id in superposition_indices:
                 try:
                     ref_res = ref_structure[0][chain_id][res_id]
                     target_res = target_structure[0][chain_id][res_id]
-
-                    ref_ca = ref_res["CA"]
-                    target_ca = target_res["CA"]
-
-                    ref_atoms.append(ref_ca)
-                    target_atoms.append(target_ca)
+                    ref_sup_atoms.append(ref_res["CA"])
+                    target_sup_atoms.append(target_res["CA"])
                 except KeyError:
-                    logging.warning(f"Residue {res_id} not found in both structures. Skipping.")
+                    logging.warning(f"Residue {res_id} not found for superposition. Skipping.")
 
-            if not ref_atoms or not target_atoms:
+            if not ref_sup_atoms or not target_sup_atoms:
+                logging.warning("No CA atoms found for superposition.")
+                return float('nan')
+
+            # Perform superposition
+            super_imposer = Superimposer()
+            super_imposer.set_atoms(ref_sup_atoms, target_sup_atoms)
+            super_imposer.apply(target_structure.get_atoms())
+
+            # Get atoms for RMSD calculation
+            ref_rmsd_atoms = []
+            target_rmsd_atoms = []
+            for res_id in rmsd_indices:
+                try:
+                    ref_res = ref_structure[0][chain_id][res_id]
+                    target_res = target_structure[0][chain_id][res_id]
+                    ref_rmsd_atoms.append(ref_res["CA"])
+                    target_rmsd_atoms.append(target_res["CA"])
+                except KeyError:
+                    logging.warning(f"Residue {res_id} not found for RMSD calculation. Skipping.")
+
+            if not ref_rmsd_atoms or not target_rmsd_atoms:
                 logging.warning("No CA atoms found for RMSD calculation.")
                 return float('nan')
 
-            super_imposer = Superimposer()
-            super_imposer.set_atoms(ref_atoms, target_atoms)
-            super_imposer.apply(target_structure.get_atoms())
-
-            rmsd = super_imposer.rms
+            # Calculate RMSD for specified residues
+            rmsd = self._calculate_rmsd(ref_rmsd_atoms, target_rmsd_atoms)
             return rmsd
+
         except Exception as e:
             logging.error(f"Error calculating CA RMSD: {e}")
             raise
+
+    def _calculate_rmsd(self, atoms1: List, atoms2: List) -> float:
+        """Helper method to calculate RMSD between two lists of atoms."""
+        if len(atoms1) != len(atoms2):
+            raise ValueError("Atom lists must have same length")
+        
+        squared_sum = 0.0
+        for a1, a2 in zip(atoms1, atoms2):
+            diff = a1.get_coord() - a2.get_coord()
+            squared_sum += np.dot(diff, diff)
+        
+        return np.sqrt(squared_sum / len(atoms1))
 
     def calculate_tm_score(
         self,
@@ -221,7 +252,9 @@ class StructureAnalyzer:
             logging.error(f"Error calculating TM-score: {e}")
             raise
 
-    def plddt_process(self, pdb_file_path: str, residue_indices: List[int]) -> Optional[float]:
+    def plddt_process(self,
+                      pdb_file_path: str,
+                      residue_indices: List[int]) -> Optional[float]:
         """
         Calculate the average pLDDT score for specified residues in a PDB file.
 
@@ -300,17 +333,16 @@ class StructureAnalyzer:
                 atoms.extend(residue.get_atoms())
         return atoms
 
-
 def get_result_df(parent_dir: str, 
                   filter_criteria: List[Dict[str, Any]], 
-                  indices: Dict[str, Any]) -> pd.DataFrame:
+                  basics: Dict[str, Any]) -> pd.DataFrame:
     """
     Generate a DataFrame containing calculated properties for each PDB file in the directory.
 
     Args:
         parent_dir (str): Path to the parent directory containing PDB files.
         filter_criteria (List[Dict[str, Any]]): List of criteria for filtering and calculation.
-        indices (Dict[str, Any]): Indices required for calculations.
+        basics (Dict[str, Any]): Basic information required for calculations, usuallu full protein index list and rmsd refernce pdb.
 
     Returns:
         pd.DataFrame: DataFrame with results.
@@ -337,14 +369,36 @@ def get_result_df(parent_dir: str,
         if 'seq_count' in properties_to_calculate:
             a3m_file = pdb.split("_unrelaxed")[0] + '.a3m'
             result['seq_count'] = count_sequences_in_a3m(a3m_file)
-
-        if 'plddt' in properties_to_calculate and 'full_index' in indices:
-            full_index = indices['full_index']
-            if isinstance(full_index, dict) and 'start' in full_index and 'end' in full_index:
-                full_index = range(int(full_index['start']), int(full_index['end']) + 1)
-            elif isinstance(full_index, list):
-                full_index = [int(i) for i in full_index]
-            result['plddt'] = analyzer.plddt_process(pdb, list(full_index))
+        if 'plddt' in properties_to_calculate:
+            # Calculate full protein pLDDT if full_index is provided
+            if 'full_index' in basics:
+                full_index = []
+                if isinstance(basics['full_index'], list):
+                    # Multiple ranges
+                    for range_dict in basics['full_index']:
+                        full_index.extend(range(range_dict['start'], range_dict['end'] + 1))
+                else:
+                    # Single range (backward compatibility)
+                    if isinstance(basics['full_index'], dict) and 'start' in basics['full_index'] and 'end' in basics['full_index']:
+                        full_index = range(int(basics['full_index']['start']), int(basics['full_index']['end']) + 1)
+                    elif isinstance(basics['full_index'], list):
+                        full_index = [int(i) for i in basics['full_index']]
+                result['plddt'] = analyzer.plddt_process(pdb, list(full_index))
+            
+            # Calculate local pLDDT if local_index is provided
+            if 'local_index' in basics:
+                local_index = []
+                if isinstance(basics['local_index'], list):
+                    # Multiple ranges
+                    for range_dict in basics['local_index']:
+                        local_index.extend(range(range_dict['start'], range_dict['end'] + 1))
+                else:
+                    # Single range (backward compatibility)
+                    if isinstance(basics['local_index'], dict) and 'start' in basics['local_index'] and 'end' in basics['local_index']:
+                        local_index = range(int(basics['local_index']['start']), int(basics['local_index']['end']) + 1)
+                    elif isinstance(basics['local_index'], list):
+                        local_index = [int(i) for i in basics['local_index']]
+                result['local_plddt'] = analyzer.plddt_process(pdb, list(local_index))
 
         for criterion in filter_criteria:
             if criterion['type'] == 'distance':
@@ -359,16 +413,45 @@ def get_result_df(parent_dir: str,
                                                  criterion['indices']['hinge'])
                 result[criterion['name']] = angle
             elif criterion['type'] == 'rmsd':
-                rmsd_indices = range(criterion['indices']['start'], criterion['indices']['end'] + 1)
-                rmsd = analyzer.calculate_ca_rmsd(indices['reference_pdb'], pdb, list(rmsd_indices))
+                assert 'superposition_indices' in criterion and 'rmsd_indices' in criterion, "Both 'superposition_indices' and 'rmsd_indices' must be defined in the criterion"
+                assert 'ref_pdb' in criterion, "'ref_pdb' must be defined in the criterion"
+                
+                # Handle superposition indices
+                superposition_indices = []
+                if isinstance(criterion['superposition_indices'], list):
+                    # Multiple ranges
+                    for range_dict in criterion['superposition_indices']:
+                        superposition_indices.extend(range(range_dict['start'], range_dict['end'] + 1))
+                else:
+                    # Single range (backward compatibility)
+                    superposition_indices = range(criterion['superposition_indices']['start'],
+                                               criterion['superposition_indices']['end'] + 1)
+                
+                # Handle multiple ranges of RMSD indices
+                rmsd_indices = []
+                if isinstance(criterion['rmsd_indices'], list):
+                    # Multiple ranges
+                    for range_dict in criterion['rmsd_indices']:
+                        rmsd_indices.extend(range(range_dict['start'], range_dict['end'] + 1))
+                else:
+                    # Single range (backward compatibility)
+                    rmsd_indices = range(criterion['rmsd_indices']['start'],
+                                      criterion['rmsd_indices']['end'] + 1)
+                
+                rmsd = analyzer.calculate_ca_rmsd(criterion['ref_pdb'], 
+                                                pdb,
+                                                list(superposition_indices),
+                                                list(rmsd_indices),
+                                                chain_id='A')
                 result[criterion['name']] = rmsd
             elif criterion['type'] == 'tmscore':
-                tm_score = analyzer.calculate_tm_score(pdb, indices['reference_pdb'])
+                assert 'ref_pdb' in criterion, "'ref_pdb' must be defined in the criterion"
+                tm_score = analyzer.calculate_tm_score(pdb, criterion['ref_pdb'])
                 result[criterion['name']] = tm_score
 
         return result
 
-    results = Parallel(n_jobs=-1)(delayed(process_pdb)(pdb) for pdb in pdb_files)
+    results = Parallel(n_jobs=-1)(delayed(process_pdb)(pdb) for pdb in tqdm(pdb_files, desc="Processing PDB files"))
     results_df = pd.DataFrame(results)
 
     return results_df

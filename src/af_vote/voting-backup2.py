@@ -20,23 +20,14 @@ class VotingAnalyzer:
             level=logging.INFO,
             format='%(asctime)s - %(levelname)s - %(message)s'
         )
+
     def process_sampling_dirs(self, 
                               base_dir: str, 
                               filter_criteria: List[Dict[str, Any]], 
                               basics: Dict[str, Any],
                               precomputed_metrics_file: str = None,
-                              plddt_threshold: float = 0,
-                              hierarchical: bool = False) -> Dict[str, Dict[str, float]]:
-        """Process sampling directories to calculate metrics in parallel.
-        
-        Args:
-            base_dir: Base directory containing sampling results
-            filter_criteria: List of criteria for filtering structures
-            basics: Basic configuration parameters
-            precomputed_metrics_file: Optional path to precomputed metrics CSV
-            plddt_threshold: Minimum pLDDT score threshold
-            hierarchical: Whether to process hierarchical sampling directories
-        """
+                              plddt_threshold: float = 0) -> Dict[str, Dict[str, float]]:
+        """Process all sampling directories to calculate metrics in parallel."""
         results = {}
 
         # Check if precomputed metrics file exists and should be used
@@ -61,43 +52,20 @@ class VotingAnalyzer:
                 
             return results
 
+        # If no precomputed metrics or file doesn't exist, calculate metrics
+        sampling_dirs = [d for d in os.listdir(base_dir) if d.startswith('sampling_')]
+        
         # Collect all PDB files
         pdb_files = []
-        
-        if hierarchical:
-            # Get all sampling round directories
-            sampling_rounds = [d for d in os.listdir(base_dir) if d.startswith('sampling_round_')]
-            
-            for round_dir in sampling_rounds:
-                sampling_path = os.path.join(base_dir, round_dir, '02_sampling')
-                if not os.path.exists(sampling_path):
-                    continue
-                    
-                sampling_dirs = [d for d in os.listdir(sampling_path) if d.startswith('sampling_')]
-                
-                for sampling_dir in sampling_dirs:
-                    dir_path = os.path.join(sampling_path, sampling_dir)
-                    for group_dir in os.listdir(dir_path):
-                        if group_dir.startswith('group_'):
-                            group_path = os.path.join(dir_path, group_dir)
-                            if group_path.endswith('.a3m'):
-                                base_name = os.path.splitext(group_path)[0]
-                                pdb_name = f"{base_name}_unrelaxed_rank_001_alphafold2_ptm_model_1_seed_042.pdb"
-                                if os.path.exists(pdb_name):
-                                    pdb_files.append((pdb_name, filter_criteria, basics, plddt_threshold))
-        else:
-            # Get regular sampling directories
-            sampling_dirs = [d for d in os.listdir(base_dir) if d.startswith('sampling_')]
-            
-            for sampling_dir in sampling_dirs:
-                dir_path = os.path.join(base_dir, sampling_dir)
-                for f in os.listdir(dir_path):
-                    if f.endswith('.a3m'):
-                        base_name = os.path.splitext(f)[0]
-                        pdb_name = f"{base_name}_unrelaxed_rank_001_alphafold2_ptm_model_1_seed_042.pdb"
-                        pdb_path = os.path.join(dir_path, pdb_name)
-                        if os.path.exists(pdb_path):
-                            pdb_files.append((pdb_path, filter_criteria, basics, plddt_threshold))
+        for sampling_dir in sampling_dirs:
+            dir_path = os.path.join(base_dir, sampling_dir)
+            for f in os.listdir(dir_path):
+                if f.endswith('.a3m'):
+                    base_name = os.path.splitext(f)[0]
+                    pdb_name = f"{base_name}_unrelaxed_rank_001_alphafold2_ptm_model_1_seed_042.pdb"
+                    pdb_path = os.path.join(dir_path, pdb_name)
+                    if os.path.exists(pdb_path):
+                        pdb_files.append((pdb_path, filter_criteria, basics, plddt_threshold))
 
         if not pdb_files:
             logging.warning("No PDB files found in sampling directories")
@@ -116,8 +84,6 @@ class VotingAnalyzer:
             logging.warning("No valid results obtained from PDB processing")
             
         return results
-
-
 
     def _process_pdb_file(self, args):
         """Process a single PDB file and return metrics if valid."""
@@ -174,7 +140,6 @@ class VotingAnalyzer:
             return None
             
         return None
-    
     def create_1d_metric_bins(self, 
                            results: Dict[str, Dict[str, float]], 
                            metric_name: str, 
@@ -305,62 +270,13 @@ class VotingAnalyzer:
 
         return [bins1, bins2], pdb_bins
 
-    def create_3d_metric_bins(self,
-                            results: Dict[str, Dict[str, float]],
-                            metric_names: List[str],
-                            num_bins: int = 10) -> Tuple[List[np.ndarray], Dict[str, Tuple[int, int, int]]]:
-        """Create 3D bins using three metrics and assign PDBs to 3D bin coordinates.
-        
-        Args:
-            results: Dictionary mapping PDB IDs to their metric values
-            metric_names: List of three metric names to use for binning
-            num_bins: Number of bins to create for each dimension
-            
-        Returns:
-            Tuple containing:
-            - List of three bin edge arrays (one for each dimension)
-            - Dictionary mapping PDB IDs to 3D bin coordinates (x,y,z)
-            
-        Raises:
-            ValueError: If input data is invalid
-        """
-        if not results or len(metric_names) != 3:
-            raise ValueError("Need results and exactly three metric names for 3D binning")
-
-        metric1_name, metric2_name, metric3_name = metric_names
-        
-        # Get values for all three metrics
-        metric1_values = [metrics[metric1_name] for metrics in results.values() if metric1_name in metrics]
-        metric2_values = [metrics[metric2_name] for metrics in results.values() if metric2_name in metrics]
-        metric3_values = [metrics[metric3_name] for metrics in results.values() if metric3_name in metrics]
-        
-        if not metric1_values or not metric2_values or not metric3_values:
-            raise ValueError("No valid values found for one or more metrics")
-
-        # Create bins for each dimension
-        bins1 = np.linspace(min(metric1_values), max(metric1_values), num_bins + 1)
-        bins2 = np.linspace(min(metric2_values), max(metric2_values), num_bins + 1)
-        bins3 = np.linspace(min(metric3_values), max(metric3_values), num_bins + 1)
-
-        # Assign each PDB to a 3D bin coordinate
-        pdb_bins = {}
-        for pdb, metrics in results.items():
-            if all(m in metrics for m in metric_names):
-                bin_idx1 = np.digitize(metrics[metric1_name], bins1) - 1
-                bin_idx2 = np.digitize(metrics[metric2_name], bins2) - 1
-                bin_idx3 = np.digitize(metrics[metric3_name], bins3) - 1
-                pdb_bins[pdb] = (bin_idx1, bin_idx2, bin_idx3)
-
-        return [bins1, bins2, bins3], pdb_bins
     def get_sequence_votes(self, 
                          source_msa: str, 
                          sampling_base_dir: str, 
-                         pdb_bins: Union[Dict[str, int], Dict[str, Tuple[int, int]], Dict[str, Tuple[int, int, int]]],
+                         pdb_bins: Union[Dict[str, int], Dict[str, Tuple[int, int]]],
                          is_2d: bool = False,
-                         is_3d: bool = False,
-                         vote_threshold: float = 0.2,
-                         hierarchical: bool = False) -> Tuple[Dict[str, Union[Tuple[int, int, int], Tuple[Tuple[int, int], int, int], Tuple[Tuple[int, int, int], int, int]]], Dict[str, List]]:
-        """Get votes for each sequence based on metric bins (1D, 2D or 3D)."""
+                         vote_threshold: float = 0.2) -> Tuple[Dict[str, Union[Tuple[int, int, int], Tuple[Tuple[int, int], int, int]]], Dict[str, List]]:
+        """Get votes for each sequence based on metric bins (1D or 2D)."""
         if not os.path.exists(source_msa):
             raise FileNotFoundError(f"Source MSA file not found: {source_msa}")
             
@@ -372,36 +288,17 @@ class VotingAnalyzer:
         
         # Collect all A3M files
         a3m_files = []
-        if hierarchical:
-            # Handle hierarchical directory structure
-            sampling_rounds = [d for d in os.listdir(sampling_base_dir) if d.startswith('sampling_round_')]
-            for round_dir in sampling_rounds:
-                sampling_path = os.path.join(sampling_base_dir, round_dir, '02_sampling')
-                if os.path.exists(sampling_path):
-                    sampling_dirs = [d for d in os.listdir(sampling_path) if d.startswith('sampling_')]
-                    for sampling_dir in sampling_dirs:
-                        dir_path = os.path.join(sampling_path, sampling_dir)
-                        for group_file in os.listdir(dir_path):
-                            if group_file.endswith('.a3m'):
-                                a3m_path = os.path.join(dir_path, group_file)
-                                base_name = os.path.splitext(group_file)[0]
-                                pdb_name = f"{base_name}_unrelaxed_rank_001_alphafold2_ptm_model_1_seed_042.pdb"
-                                pdb_file = os.path.join(dir_path, pdb_name)
-                                if os.path.exists(pdb_file):
-                                    a3m_files.append((a3m_path, pdb_file))
-        else:
-            # Handle flat sampling directory structure
-            for sampling_dir in os.listdir(sampling_base_dir):
-                if sampling_dir.startswith('sampling_'):
-                    dir_path = os.path.join(sampling_base_dir, sampling_dir)
-                    for a3m_file in os.listdir(dir_path):
-                        if a3m_file.endswith('.a3m'):
-                            a3m_path = os.path.join(dir_path, a3m_file)
-                            base_name = os.path.splitext(a3m_file)[0]
-                            pdb_name = f"{base_name}_unrelaxed_rank_001_alphafold2_ptm_model_1_seed_042.pdb"
-                            pdb_file = os.path.join(dir_path, pdb_name)
-                            if os.path.exists(pdb_file):
-                                a3m_files.append((a3m_path, pdb_file))
+        for sampling_dir in os.listdir(sampling_base_dir):
+            if sampling_dir.startswith('sampling_'):
+                dir_path = os.path.join(sampling_base_dir, sampling_dir)
+                for a3m_file in os.listdir(dir_path):
+                    if a3m_file.endswith('.a3m'):
+                        a3m_path = os.path.join(dir_path, a3m_file)
+                        base_name = os.path.splitext(a3m_file)[0]
+                        pdb_name = f"{base_name}_unrelaxed_rank_001_alphafold2_ptm_model_1_seed_042.pdb"
+                        pdb_file = os.path.join(dir_path, pdb_name)
+                        if os.path.exists(pdb_file):
+                            a3m_files.append((a3m_path, pdb_file))
 
         if not a3m_files:
             raise ValueError("No valid A3M/PDB file pairs found")
@@ -411,7 +308,7 @@ class VotingAnalyzer:
         
         all_votes = defaultdict(list)
         with ProcessPoolExecutor(max_workers=self.max_workers) as executor:
-            batch_args = [(batch, pdb_bins, source_headers, is_2d, is_3d) for batch in batches]
+            batch_args = [(batch, pdb_bins, source_headers, is_2d) for batch in batches]
             futures = [executor.submit(self._process_a3m_batch, args) for args in batch_args]
             
             for future in tqdm(as_completed(futures), total=len(futures), desc="Processing A3M batches"):
@@ -423,17 +320,7 @@ class VotingAnalyzer:
         for header, votes in all_votes.items():
             if votes:
                 total_votes = len(votes)
-                if is_3d:
-                    # Handle 3D votes
-                    vote_array = np.array(votes)
-                    unique_votes, vote_counts = np.unique(vote_array, axis=0, return_counts=True)
-                    most_common_idx = np.argmax(vote_counts)
-                    most_common_bin = tuple(unique_votes[most_common_idx])
-                    most_common_count = vote_counts[most_common_idx]
-                    
-                    if most_common_count / total_votes >= vote_threshold:
-                        sequence_votes[header] = (most_common_bin, most_common_count, total_votes)
-                elif is_2d:
+                if is_2d:
                     # Handle 2D votes
                     vote_array = np.array(votes)
                     unique_votes, vote_counts = np.unique(vote_array, axis=0, return_counts=True)
@@ -441,6 +328,7 @@ class VotingAnalyzer:
                     most_common_bin = tuple(unique_votes[most_common_idx])
                     most_common_count = vote_counts[most_common_idx]
                     
+                    # Only include if vote percentage exceeds threshold
                     if most_common_count / total_votes >= vote_threshold:
                         sequence_votes[header] = (most_common_bin, most_common_count, total_votes)
                 else:
@@ -451,6 +339,7 @@ class VotingAnalyzer:
                     most_common_bin = unique_votes[most_common_idx]
                     most_common_count = vote_counts[most_common_idx]
                     
+                    # Only include if vote percentage exceeds threshold
                     if most_common_count / total_votes >= vote_threshold:
                         sequence_votes[header] = (most_common_bin, most_common_count, total_votes)
 
@@ -458,11 +347,10 @@ class VotingAnalyzer:
             logging.warning("No sequence votes met the threshold criteria")
 
         return sequence_votes, dict(all_votes)
-    
 
     def _process_a3m_batch(self, batch_args):
         """Process a batch of A3M files in parallel"""
-        a3m_files_batch, pdb_bins, source_headers, is_2d, is_3d = batch_args
+        a3m_files_batch, pdb_bins, source_headers, is_2d = batch_args
         batch_votes = defaultdict(list)
         
         for a3m_path, pdb_file in a3m_files_batch:
@@ -473,9 +361,7 @@ class VotingAnalyzer:
                         
                     for header in headers:
                         if header in source_headers:
-                            if is_3d:
-                                batch_votes[header].append(list(pdb_bins[pdb_file]))  # Convert tuple to list for numpy
-                            elif is_2d:
+                            if is_2d:
                                 batch_votes[header].append(list(pdb_bins[pdb_file]))  # Convert tuple to list for numpy
                             else:
                                 batch_votes[header].append(pdb_bins[pdb_file])

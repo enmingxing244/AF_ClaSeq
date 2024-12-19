@@ -5,7 +5,6 @@ from Bio import SeqIO
 from Bio.PDB import PDBParser, PPBuilder
 from typing import List, Dict, Any
 
-
 def read_a3m_to_dict(a3m_file_path: str) -> Dict[str, str]:
     """
     Reads an A3M file and returns a dictionary mapping headers to sequences.
@@ -18,18 +17,18 @@ def read_a3m_to_dict(a3m_file_path: str) -> Dict[str, str]:
     """
     try:
         sequences = {}
+        current_header = None
         with open(a3m_file_path, 'r') as file:
-            current_header = ''
             for line in file:
                 line = line.strip()
                 if line.startswith('>'):
-                    if '\t' in line:
-                        current_header = line.split('\t')[0]
+                    if '\t' in line or ' ' in line:
+                        current_header = line.split('\t')[0] if '\t' in line else line.split()[0]
                     else:
-                        current_header = line.split(' ')[0]
+                        current_header = line
                     sequences[current_header] = ''
-                else:
-                    sequences[current_header] += ''.join([char for char in line if not char.islower()])
+                elif current_header is not None:  # Only add sequence if we have a header
+                    sequences[current_header] += "".join([char for char in line if not char.islower()])
         return sequences
     except FileNotFoundError:
         logging.error(f"File not found: {a3m_file_path}")
@@ -211,16 +210,15 @@ def combine_sequences(extracted_sequences: Dict[str, str], output_file: str) -> 
         logging.error(f"Error combining sequences: {e}")
         raise
 
-
 def read_sequences(file_path: str) -> List[str]:
     """
-    Reads all sequences from a file.
+    Reads all sequences from a file, keeping only uppercase letters and gaps.
 
     Args:
         file_path (str): Path to the sequence file.
 
     Returns:
-        List[str]: A list of sequence strings.
+        List[str]: A list of sequence strings with only uppercase letters and gaps.
     """
     try:
         sequences = []
@@ -231,9 +229,12 @@ def read_sequences(file_path: str) -> List[str]:
                     if current_sequence:
                         sequences.append(current_sequence)
                         current_sequence = ""
-                    current_sequence += line.strip() + '\n'
+                    # Split header by space or tab and take first part
+                    header = line.strip().split()[0] + '\n'  # split() handles both space and tab
+                    current_sequence += header
                 else:
-                    current_sequence += line
+                    # Keep only uppercase letters and gaps
+                    current_sequence += ''.join([char for char in line if not char.islower()])
             if current_sequence:
                 sequences.append(current_sequence)
         return sequences
@@ -241,6 +242,48 @@ def read_sequences(file_path: str) -> List[str]:
         logging.error(f"Error reading sequences: {e}")
         raise
 
+
+# def process_sequences(
+#     dir_path: str,
+#     sequences: List[str],
+#     shuffle_num: int,
+#     seq_num_per_shuffle: int,
+#     protein_sequence: str
+# ) -> None:
+#     """
+#     Processes and writes shuffled sequences into separate files and groups.
+
+#     Args:
+#         dir_path (str): Directory to store shuffled files.
+#         sequences (List[str]): List of sequences to process.
+#         shuffle_num (int): Shuffle iteration number.
+#         seq_num_per_shuffle (int): Number of sequences per shuffle.
+#         protein_sequence (str): Reference protein sequence.
+#     """
+#     try:
+#         random.shuffle(sequences)
+#         groups = [
+#             sequences[x:x + seq_num_per_shuffle]
+#             for x in range(0, len(sequences), seq_num_per_shuffle)
+#         ]
+#         shuffle_dir = os.path.join(dir_path, f'shuffle_{shuffle_num}')
+#         os.makedirs(shuffle_dir, exist_ok=True)
+
+#         shuffle_file_path = os.path.join(shuffle_dir, f'shuffle_{shuffle_num}.shuf')
+#         with open(shuffle_file_path, 'w') as f:
+#             for seq in sequences:
+#                 f.write(seq)
+
+#         for i, group in enumerate(groups, start=1):
+#             group_file_path = os.path.join(shuffle_dir, f'group_{i}.a3m')
+#             with open(group_file_path, 'w') as g:
+#                 g.write('>101\n')
+#                 g.write(protein_sequence + '\n')
+#                 for seq in group:
+#                     g.write(seq)
+#     except Exception as e:
+#         logging.error(f"Error processing sequences: {e}")
+#         raise
 
 def process_sequences(
     dir_path: str,
@@ -261,10 +304,15 @@ def process_sequences(
     """
     try:
         random.shuffle(sequences)
+        
+        # If total sequences is less than seq_num_per_shuffle, use all sequences in one group
+        actual_seq_per_shuffle = min(seq_num_per_shuffle, len(sequences))
+        
         groups = [
-            sequences[x:x + seq_num_per_shuffle]
-            for x in range(0, len(sequences), seq_num_per_shuffle)
+            sequences[x:x + actual_seq_per_shuffle]
+            for x in range(0, len(sequences), actual_seq_per_shuffle)
         ]
+        
         shuffle_dir = os.path.join(dir_path, f'shuffle_{shuffle_num}')
         os.makedirs(shuffle_dir, exist_ok=True)
 
@@ -363,10 +411,12 @@ def concatenate_a3m_content(
                     elif current_header:
                         sequence = "".join([char for char in line if char.isupper() or char == '-'])
                         entry = (current_header, sequence)
+                        
 
                         if entry not in seen_entries:
                             concatenated_content += f"{current_header}\n{sequence}\n"
                             seen_entries.add(entry)
+                            
         except FileNotFoundError:
             logging.error(f"File not found: {file_name}")
         except Exception as e:

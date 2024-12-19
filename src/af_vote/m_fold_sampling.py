@@ -49,6 +49,7 @@ def initial_random_split(input_a3m: str,
     """
     os.makedirs(output_dir, exist_ok=True)
     sequences = read_a3m_to_dict(input_a3m)
+    print(f"Number of sequences: {len(sequences)}")
     
     headers = list(sequences.keys())
     random.shuffle(headers)
