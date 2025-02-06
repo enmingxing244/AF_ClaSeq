@@ -27,6 +27,7 @@ class SlurmJobSubmitter:
         num_models: int,
         check_interval: int,
         job_name_prefix: str = "fold",
+        num_seeds: int = 1,
     ):
         """
         Initialize the SlurmJobSubmitter with configuration parameters.
@@ -45,6 +46,7 @@ class SlurmJobSubmitter:
             num_models (int): Number of models for the job.
             check_interval (int): Time in seconds between status checks.
             job_name_prefix (str): Prefix for job names. Defaults to "fold".
+            num_seeds (int): Number of seeds for the job. Defaults to 1.
         """
         self.conda_env_path = conda_env_path
         self.slurm_account = slurm_account
@@ -55,10 +57,11 @@ class SlurmJobSubmitter:
         self.slurm_tasks = slurm_tasks
         self.slurm_cpus_per_task = slurm_cpus_per_task
         self.slurm_time = slurm_time
-        self.random_seed = random_seed
+        self.random_seed = random_seed if num_seeds == 1 else None
         self.num_models = num_models
         self.check_interval = check_interval
         self.job_name_prefix = job_name_prefix
+        self.num_seeds = num_seeds
 
     def submit_job(self, task_dir: str, job_id: str) -> str:
         """
@@ -84,10 +87,13 @@ class SlurmJobSubmitter:
         )
 
         job_name = f"{self.job_name_prefix}_{job_id}"
+        colabfold_cmd = f"colabfold_batch {task_dir} {task_dir} --num-models {self.num_models} --num-seeds {self.num_seeds}"
+        if self.random_seed is not None:
+            colabfold_cmd += f" --random-seed {self.random_seed}"
+
         command = (
             f"{slurm_command} --job-name={job_name} "
-            f"--wrap='{env_setup} && colabfold_batch {task_dir} {task_dir} "
-            f"--random-seed {self.random_seed} --num-models {self.num_models}'"
+            f"--wrap='{env_setup} && {colabfold_cmd}'"
         )
 
         logging.info(f"Submitting job for {task_dir} (Job ID: {job_id})")

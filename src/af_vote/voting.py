@@ -365,7 +365,7 @@ class VotingAnalyzer:
             raise FileNotFoundError(f"Source MSA file not found: {source_msa}")
             
         with open(source_msa) as f:
-            source_headers = {line.strip()[1:] for line in f if line.startswith('>')}
+            source_headers = {line.strip()[1:].split('\t')[0] for line in f if line.startswith('>')}
             
         if not source_headers:
             raise ValueError("No headers found in source MSA file")
@@ -469,7 +469,7 @@ class VotingAnalyzer:
             if pdb_file in pdb_bins:
                 try:
                     with open(a3m_path) as f:
-                        headers = [line.strip()[1:] for line in f if line.startswith('>')]
+                        headers = [line.strip()[1:].split('\t')[0] for line in f if line.startswith('>')]
                         
                     for header in headers:
                         if header in source_headers:

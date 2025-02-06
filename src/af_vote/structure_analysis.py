@@ -12,7 +12,7 @@ from tqdm import tqdm
 from af_path.sequence_processing import count_sequences_in_a3m
 
 # Default path for TMalign executable
-DEFAULT_TMALIGN_PATH = "/fs/ess/PAA0203/xing244/AF_Path/src/TMalign"
+DEFAULT_TMALIGN_PATH = "/fs/ess/PAA0203/xing244/TMalign"
 
 
 class StructureAnalyzer:

@@ -199,12 +199,12 @@ def plot_m_fold_sampling_1d(results_dir: str,
     colors = []
     for i in range(len(bins)-1):
         if linear_gradient:
-            ratio = 1 - i / (len(bins)-2) if gradient_ascending else i / (len(bins)-2)
+            ratio = i / (len(bins)-2) if gradient_ascending else 1 - i / (len(bins)-2)
         else:
             if gradient_ascending:
-                ratio = np.exp(-3 * (1 - i / (len(bins)-2)))  # Ascending gradient
+                ratio = 1- i / (len(bins)-2)  # Linear ascending gradient
             else:
-                ratio = 1 - np.exp(-3 * i / (len(bins)-2))  # Descending gradient
+                ratio = i / (len(bins)-2)  # Linear descending gradient
             
         if gradient_ascending:
             r = end_color[0] + (initial_color[0] - end_color[0]) * ratio
@@ -348,12 +348,17 @@ def plot_m_fold_sampling_2d(results_dir: str,
             plt.xticks(x_ticks)
         else:
             plt.xticks(np.arange(x_min, x_max + 1, 5))
+        # Move x-axis ticks away from axis
+        plt.tick_params(axis='x', which='major', pad=10)
+            
     if y_min is not None and y_max is not None:
         plt.ylim(y_min, y_max)
         if y_ticks is not None:
             plt.yticks(y_ticks)
         else:
             plt.yticks(np.arange(y_min, y_max + 1, 5))
+        # Move y-axis ticks away from axis    
+        plt.tick_params(axis='y', which='major', pad=10)
 
     plt.tight_layout()
     plot_path = os.path.join(output_dir, f'{metric_name1}_{metric_name2}_scatter_plddt.png')
@@ -386,12 +391,17 @@ def plot_m_fold_sampling_2d(results_dir: str,
                 plt.xticks(x_ticks)
             else:
                 plt.xticks(np.arange(x_min, x_max + 1, 5))
+            # Move x-axis ticks away from axis
+            plt.tick_params(axis='x', which='major', pad=10)
+                
         if y_min is not None and y_max is not None:
             plt.ylim(y_min, y_max)
             if y_ticks is not None:
                 plt.yticks(y_ticks)
             else:
                 plt.yticks(np.arange(y_min, y_max + 1, 5))
+            # Move y-axis ticks away from axis
+            plt.tick_params(axis='y', which='major', pad=10)
 
         plt.tight_layout()
         plot_path = os.path.join(output_dir, f'{metric_name1}_{metric_name2}_scatter_local_plddt.png')

@@ -20,6 +20,8 @@ def parse_args():
                       help='Size of each sequence group')
     parser.add_argument('--coverage_threshold', type=float, default=0.0,
                       help='Minimum required sequence coverage (default: 0.0, no filtering)')
+    parser.add_argument('--random_select_num_seqs', type=int, default=None,
+                      help='Number of sequences to randomly select after coverage filtering')
     
     # SLURM configuration arguments
     parser.add_argument('--conda_env_path', default="/fs/ess/PAA0203/xing244/.conda/envs/colabfold",
@@ -106,7 +108,8 @@ def main():
         input_a3m, 
         init_dir, 
         args.default_pdb, 
-        args.group_size
+        args.group_size,
+        args.random_select_num_seqs
     )
     logging.info(f"Created {num_groups} initial groups")
 

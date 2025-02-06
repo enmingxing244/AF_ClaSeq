@@ -2,3 +2,6 @@
 __pycache__/
 results/
 test/
+af_cluster_compar/
+pyrightconfig.json
+af_cluster_compar\

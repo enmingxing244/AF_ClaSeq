@@ -187,7 +187,8 @@ def process_prediction_dir(pred_dir, config):
                         'metric1': get_metric_from_structure(pdb_file, config, criteria[0]['name']),
                         'metric2': None,
                         'seed': seed_num,
-                        'bin_pattern': bin_pattern
+                        'bin_pattern': bin_pattern,
+                        'pdb_path': os.path.abspath(pdb_file)  # Store full path
                     }
                     
                     if len(criteria) > 1:
@@ -247,7 +248,8 @@ def process_selection_dir(sel_dir, config):
                         'plddt': get_plddt_from_pdb(pdb_file, config['basics']['full_index']),
                         'metric1': get_metric_from_structure(pdb_file, config, criteria[0]['name']),
                         'metric2': None,
-                        'bin_pattern': bin_pattern
+                        'bin_pattern': bin_pattern,
+                        'pdb_path': os.path.abspath(pdb_file)  # Store full path
                     }
                     
                     if len(criteria) > 1:
@@ -442,14 +444,20 @@ def plot_metric_correlation(data,
         vmax=100
     )
     
+    
     plt.colorbar(scatter, label='pLDDT Score')
     plt.xlabel(metric1_name)
     plt.ylabel(metric2_name) 
-    plt.title(f"{title} - {bin_pattern}")
+    plt.title(f"{title} - {bin_pattern}", pad=20)
     if xlim: plt.xlim(xlim)
     if ylim: plt.ylim(ylim)
-    if xticks is not None: plt.xticks(xticks)
-    if yticks is not None: plt.yticks(yticks)
+    if xticks is not None: 
+        plt.xticks(xticks)
+        plt.tick_params(axis='x', which='major', pad=10)
+    if yticks is not None: 
+        plt.yticks(yticks)
+        plt.tick_params(axis='y', which='major', pad=10)
+
     
     plt.tight_layout()
     plt.savefig(output_path, bbox_inches='tight', dpi=PLOT_PARAMS['dpi'])
@@ -574,7 +582,7 @@ def main():
                 args.yticks
             )
             
-            # Generate correlation plots if second metric exists
+            # Generate correlation plots and CSV files if second metric exists
             if metric2_name:
                 for data, name in [
                     (bin_pred_data, 'prediction'),
@@ -582,6 +590,7 @@ def main():
                     (bin_sel_data, 'selection'),
                     (bin_control_sel_data, 'control_selection')
                 ]:
+                    # Generate correlation plot
                     plot_metric_correlation(
                         data,
                         os.path.join(bin_output_dir, f'{name}_metric_correlation.png'),
@@ -594,6 +603,17 @@ def main():
                         args.xticks2,
                         args.yticks2
                     )
+                    
+                    # Save metrics to CSV
+                    if not data.empty:
+                        metrics_df = pd.DataFrame({
+                            metric1_name: data['metric1'],
+                            metric2_name: data['metric2'],
+                            'pLDDT': data['plddt'],
+                            'pdb_path': data['pdb_path']
+                        })
+                        csv_path = os.path.join(bin_output_dir, f'{name}_metrics.csv')
+                        metrics_df.to_csv(csv_path, index=False)
                 
     except Exception as e:
         print(f"Error in main execution: {str(e)}")

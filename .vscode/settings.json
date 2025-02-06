@@ -1,3 +1,4 @@
 {
-    "svg.preview.background": "white"
+    "svg.preview.background": "black",
+    "python.analysis.typeCheckingMode": "basic"
 }

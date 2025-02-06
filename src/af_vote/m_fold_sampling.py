@@ -35,7 +35,8 @@ def split_into_groups(sequences: Dict[str, str],
 def initial_random_split(input_a3m: str, 
                         output_dir: str,
                         reference_pdb: str,
-                        group_size: int) -> int:  # Added missing group_size parameter
+                        group_size: int,
+                        random_select_num_seqs: int = None) -> int:
     """Perform initial random split of sequences.
     
     Args:
@@ -43,19 +44,25 @@ def initial_random_split(input_a3m: str,
         output_dir: Directory to write output files
         reference_pdb: Path to reference PDB file
         group_size: Size of each sequence group
+        random_select_num_seqs: Number of sequences to randomly select, if specified
         
     Returns:
         Number of groups created
     """
     os.makedirs(output_dir, exist_ok=True)
     sequences = read_a3m_to_dict(input_a3m)
-    print(f"Number of sequences: {len(sequences)}")
+    logging.info(f"Number of sequences: {len(sequences)}")
     
     headers = list(sequences.keys())
     random.shuffle(headers)
+
+    if random_select_num_seqs is not None:
+        headers = headers[:random_select_num_seqs]
+        logging.info(f"Randomly selected {len(headers)} sequences")
+    
     shuffled_sequences = {h: sequences[h] for h in headers}
     
-    groups = split_into_groups(shuffled_sequences, group_size)  # Pass group_size
+    groups = split_into_groups(shuffled_sequences, group_size)
     
     for i, group in enumerate(groups, 1):
         output_file = os.path.join(output_dir, f'group_{i}.a3m')
@@ -66,7 +73,7 @@ def initial_random_split(input_a3m: str,
 def create_sampling_splits(init_dir: str, 
                          output_base_dir: str, 
                          reference_pdb: str,
-                         group_size: int):  # Added missing group_size parameter
+                         group_size: int):
     """Create sampling splits by exhaustively leaving one group out at a time.
     
     Args:
@@ -92,7 +99,7 @@ def create_sampling_splits(init_dir: str,
         headers = list(all_sequences.keys())
         random.shuffle(headers)
         shuffled_sequences = {h: all_sequences[h] for h in headers}
-        new_groups = split_into_groups(shuffled_sequences, group_size)  # Pass group_size
+        new_groups = split_into_groups(shuffled_sequences, group_size)
         
         for j, group in enumerate(new_groups, 1):
             output_file = os.path.join(sample_dir, f'group_{j}.a3m')

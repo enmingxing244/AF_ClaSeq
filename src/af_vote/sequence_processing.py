@@ -24,6 +24,7 @@ def read_a3m_to_dict(a3m_file_path: str) -> Dict[str, str]:
                 if line.startswith('>'):
                     if '\t' in line or ' ' in line:
                         current_header = line.split('\t')[0] if '\t' in line else line.split()[0]
+                        # current_header = line
                     else:
                         current_header = line
                     sequences[current_header] = ''
