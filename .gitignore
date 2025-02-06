@@ -1,0 +1,8 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+results/
+test/
+af_cluster_compar/
+pyrightconfig.json
+af_cluster_compar\
+v0-0-2_backup_code/
