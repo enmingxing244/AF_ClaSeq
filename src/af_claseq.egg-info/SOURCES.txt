@@ -1,0 +1,8 @@
+LICENSE
+README.md
+setup.py
+src/af_claseq.egg-info/PKG-INFO
+src/af_claseq.egg-info/SOURCES.txt
+src/af_claseq.egg-info/dependency_links.txt
+src/af_claseq.egg-info/requires.txt
+src/af_claseq.egg-info/top_level.txt

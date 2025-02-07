@@ -1,4 +1,10 @@
 {
     "svg.preview.background": "black",
-    "python.analysis.typeCheckingMode": "basic"
+    "python.analysis.typeCheckingMode": "basic",
+    "python.analysis.diagnosticMode": "openFilesOnly",
+    "python.analysis.diagnosticSeverityOverrides": {
+        "reportArgumentType": "none",
+        "reportGeneralTypeIssues": "none"
+    }
+
 }

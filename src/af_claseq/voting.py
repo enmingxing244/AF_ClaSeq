@@ -7,7 +7,7 @@ from typing import Dict, List, Tuple, Any, Union
 from tqdm import tqdm
 import pandas as pd
 
-from af_vote.structure_analysis import StructureAnalyzer
+from af_claseq.structure_analysis import StructureAnalyzer
 
 class VotingAnalyzer:
     def __init__(self, max_workers: int = 32):

@@ -1,0 +1,12 @@
+Metadata-Version: 2.1
+Name: af_claseq
+Version: 1.0.0
+Summary: Package for analyzing AlphaFold predictions through ClaSeq
+Author: Enming Xing
+Classifier: Programming Language :: Python :: 3
+Classifier: Operating System :: OS Independent
+Requires-Python: >=3.10
+License-File: LICENSE
+Requires-Dist: numpy
+Requires-Dist: biopython
+Requires-Dist: tqdm
