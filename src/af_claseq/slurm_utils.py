@@ -4,30 +4,26 @@ import logging
 import time
 import shutil
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from typing import Optional, List
+from typing import Optional, List, Dict, Any, Union
 
 
 class SlurmJobSubmitter:
-    """
-    A class to manage SLURM job submissions and monitoring.
-    """
+    """A unified class to manage SLURM job submissions and monitoring."""
 
     def __init__(
         self,
         conda_env_path: str,
         slurm_account: str,
-        slurm_output: str,
-        slurm_error: str,
-        slurm_nodes: int,
-        slurm_gpus_per_task: int,
-        slurm_tasks: int,
-        slurm_cpus_per_task: int,
-        slurm_time: str,
-        random_seed: int,
-        num_models: int,
-        check_interval: int,
+        slurm_output: str = "/dev/null",
+        slurm_error: str = "/dev/null",
+        slurm_nodes: int = 1,
+        slurm_gpus_per_task: int = 1,
+        slurm_tasks: int = 1,
+        slurm_cpus_per_task: int = 4,
+        slurm_time: str = "04:00:00",
+        check_interval: int = 60,
         job_name_prefix: str = "fold",
-        num_seeds: int = 1,
+        **kwargs
     ):
         """
         Initialize the SlurmJobSubmitter with configuration parameters.
@@ -42,12 +38,20 @@ class SlurmJobSubmitter:
             slurm_tasks (int): Number of tasks.
             slurm_cpus_per_task (int): Number of CPUs per task.
             slurm_time (str): SLURM job time limit.
-            random_seed (int): Random seed for the job.
-            num_models (int): Number of models for the job.
             check_interval (int): Time in seconds between status checks.
-            job_name_prefix (str): Prefix for job names. Defaults to "fold".
-            num_seeds (int): Number of seeds for the job. Defaults to 1.
+            job_name_prefix (str): Prefix for job names.
+            **kwargs: Additional arguments for different modes:
+                For simple mode:
+                    - num_models (int): Number of models to generate
+                    - num_seeds (int): Number of seeds to use
+                    - random_seed (int): Random seed for reproducibility
+                For typed mode:
+                    - prediction_num_model (int): Number of models for prediction
+                    - prediction_num_seed (int): Number of seeds for prediction
+                    - shuffling_num_model (int): Number of models for shuffling
+                    - shuffling_num_seed (int): Number of seeds for shuffling
         """
+        # Basic SLURM configuration
         self.conda_env_path = conda_env_path
         self.slurm_account = slurm_account
         self.slurm_output = slurm_output
@@ -57,131 +61,164 @@ class SlurmJobSubmitter:
         self.slurm_tasks = slurm_tasks
         self.slurm_cpus_per_task = slurm_cpus_per_task
         self.slurm_time = slurm_time
-        self.random_seed = random_seed if num_seeds == 1 else None
-        self.num_models = num_models
         self.check_interval = check_interval
         self.job_name_prefix = job_name_prefix
-        self.num_seeds = num_seeds
 
-    def submit_job(self, task_dir: str, job_id: str) -> str:
-        """
-        Submit a SLURM job for the given task directory.
+        # Determine mode based on kwargs
+        if any(k.startswith(('prediction_', 'shuffling_')) for k in kwargs):
+            self.mode = 'typed'
+            self.job_configs = {
+                'prediction': {
+                    'num_models': kwargs.get('prediction_num_model', 1),
+                    'num_seeds': kwargs.get('prediction_num_seed', 1)
+                },
+                'shuffling': {
+                    'num_models': kwargs.get('shuffling_num_model', 1),
+                    'num_seeds': kwargs.get('shuffling_num_seed', 1)
+                }
+            }
+        else:
+            self.mode = 'simple'
+            self.num_models = kwargs.get('num_models', 1)
+            self.num_seeds = kwargs.get('num_seeds', 1)
+            self.random_seed = kwargs.get('random_seed')
 
-        Args:
-            task_dir (str): The directory of the task.
-            job_id (str): The identifier for the job.
+    def _get_job_config(self, job_type: Optional[str] = None) -> Dict[str, int]:
+        """Get job configuration based on mode and job type."""
+        if self.mode == 'typed':
+            if not job_type or job_type not in self.job_configs:
+                raise ValueError(f"Invalid job type: {job_type}")
+            return self.job_configs[job_type]
+        else:
+            config = {'num_models': self.num_models, 'num_seeds': self.num_seeds}
+            if self.random_seed is not None:
+                config['random_seed'] = self.random_seed
+            return config
 
-        Returns:
-            str: The submitted job ID.
-        """
+    def submit_job(self, task_dir: str, job_id: str, job_type: Optional[str] = None) -> Optional[str]:
+        """Submit a SLURM job for the given task directory."""
+        if not os.path.exists(task_dir):
+            logging.error(f"Task directory not found: {task_dir}")
+            return None
+
+        config = self._get_job_config(job_type)
+        
+        # Build colabfold command
+        colabfold_cmd = [
+            "colabfold_batch",
+            "--num-recycle", "3",
+            "--num-models", str(config['num_models']),
+            "--num-seeds", str(config['num_seeds'])
+        ]
+        
+        if 'random_seed' in config:
+            colabfold_cmd.extend(["--random-seed", str(config['random_seed'])])
+            
+        colabfold_cmd.extend([task_dir, task_dir])
+        colabfold_cmd = " ".join(colabfold_cmd)
+
+        # Build environment setup
         env_setup = (
             "module reset && module load openmpi cuda miniconda3 && "
-            f"conda init && conda activate {self.conda_env_path} && which python"
-        )
-        slurm_command = (
-            f"sbatch --parsable -A {self.slurm_account} "
-            f"--output={self.slurm_output} --error={self.slurm_error} "
-            f"--nodes={self.slurm_nodes} --gpus-per-task={self.slurm_gpus_per_task} "
-            f"--ntasks={self.slurm_tasks} --cpus-per-task={self.slurm_cpus_per_task} "
-            f"--time={self.slurm_time}"
+            f"conda init && conda activate {self.conda_env_path}"
         )
 
+        # Build sbatch command
         job_name = f"{self.job_name_prefix}_{job_id}"
-        colabfold_cmd = f"colabfold_batch {task_dir} {task_dir} --num-models {self.num_models} --num-seeds {self.num_seeds}"
-        if self.random_seed is not None:
-            colabfold_cmd += f" --random-seed {self.random_seed}"
+        sbatch_cmd = [
+            "sbatch",
+            f"--account={self.slurm_account}",
+            f"--job-name={job_name}",
+            f"--output={self.slurm_output}",
+            f"--error={self.slurm_error}",
+            f"--nodes={self.slurm_nodes}",
+            f"--gpus-per-task={self.slurm_gpus_per_task}",
+            f"--ntasks={self.slurm_tasks}",
+            f"--cpus-per-task={self.slurm_cpus_per_task}",
+            f"--time={self.slurm_time}",
+            "--wrap", f"{env_setup} && {colabfold_cmd}"
+        ]
 
-        command = (
-            f"{slurm_command} --job-name={job_name} "
-            f"--wrap='{env_setup} && {colabfold_cmd}'"
-        )
-
-        logging.info(f"Submitting job for {task_dir} (Job ID: {job_id})")
+        job_type_str = f" ({job_type})" if job_type else ""
+        logging.info(f"Submitting job for {task_dir}{job_type_str} (Job ID: {job_id})")
+        
         try:
-            submitted_job_id = subprocess.check_output(command, shell=True).strip().decode()
+            result = subprocess.run(sbatch_cmd, capture_output=True, text=True, check=True)
+            submitted_job_id = result.stdout.strip().split()[-1]
             logging.info(f"Submitted job {submitted_job_id} for task directory {task_dir}")
             return submitted_job_id
         except subprocess.CalledProcessError as e:
             logging.error(f"Failed to submit job for {task_dir}: {e}")
-            raise
+            return None
 
-    def wait_for_completion(self, job_id: str):
-        """
-        Wait for the given SLURM job to complete.
+    def check_job_status(self, job_id: str) -> bool:
+        """Check if a job is still running."""
+        try:
+            result = subprocess.run(["squeue", "-j", job_id], capture_output=True, text=True)
+            return job_id in result.stdout
+        except subprocess.CalledProcessError:
+            return False
 
-        Args:
-            job_id (str): The SLURM job ID.
-        """
-        logging.info(f"Waiting for job {job_id} to complete.")
-        while True:
-            try:
-                job_statuses = subprocess.check_output(['squeue', '-j', job_id], text=True).strip().split()
-                # If job_id is not in the queue, it's completed
-                if job_id not in job_statuses:
-                    logging.info(f"Job {job_id} has finished.")
-                    return
-                logging.debug(f"Job {job_id} is still running. Checking again in {self.check_interval} seconds.")
-            except subprocess.CalledProcessError as e:
-                logging.error(f"Error checking status for job {job_id}: {e}")
-                raise
+    def wait_for_completion(self, job_id: str) -> None:
+        """Wait for a job to complete."""
+        logging.info(f"Waiting for job {job_id} to complete")
+        while self.check_job_status(job_id):
             time.sleep(self.check_interval)
+        logging.info(f"Job {job_id} completed")
 
-    def process_folder(self, folder_path: str, job_id: str):
-        """
-        Process a single folder by submitting and monitoring SLURM jobs until completion.
+    def process_folder(self, task_dir: str, job_id: str, job_type: Optional[str] = None) -> None:
+        """Process a single folder."""
+        job_type_str = f" ({job_type})" if job_type else ""
+        logging.info(f"Processing folder: {task_dir}{job_type_str}")
 
-        Args:
-            folder_path (str): Path to the folder to process.
-            job_id (str): Identifier for the job.
-        """
-        logging.info(f"Starting process for folder: {folder_path} (Job ID: {job_id})")
+        while not self._check_pdb_files(task_dir):
+            current_job_id = self.submit_job(task_dir, job_id, job_type)
+            if not current_job_id:
+                return
 
-        while not self._check_pdb_files(folder_path):
-            current_job_id = self.submit_job(folder_path, job_id)
             self.wait_for_completion(current_job_id)
 
-            if self._check_log_file(folder_path):
-                logging.info(f"All PDB files generated for {folder_path}. 'Done' found in log.txt.")
+            if self._check_log_file(task_dir):
+                logging.info(f"All PDB files generated for {task_dir}")
                 break
             else:
-                logging.warning(f"PDB files missing in {folder_path}. Resubmitting job.")
-                self._backup_log_file(folder_path, current_job_id)
+                logging.warning(f"PDB files missing in {task_dir}. Resubmitting job.")
+                self._backup_log_file(task_dir, current_job_id)
 
-        logging.info(f"Completed processing for folder: {folder_path} (Job ID: {job_id})")
+    def process_folders_concurrently(self, 
+                                   folders: List[str], 
+                                   job_ids: List[str], 
+                                   max_workers: int,
+                                   job_types: Optional[List[str]] = None) -> None:
+        """Process multiple folders concurrently."""
+        if not folders or not job_ids:
+            logging.error("Empty input lists provided")
+            return
 
-    def process_folders_concurrently(self, folders: List[str], job_ids: List[str], max_workers: int):
-        """
-        Process multiple folders concurrently.
+        if len(folders) != len(job_ids):
+            logging.error("Input lists have different lengths")
+            return
 
-        Args:
-            folders (List[str]): List of folder paths to process.
-            job_ids (List[str]): Corresponding list of job IDs.
-            max_workers (int): Maximum number of concurrent threads.
-        """
-        logging.info(f"Processing {len(folders)} folders concurrently.")
+        if job_types and len(job_types) != len(folders):
+            logging.error("Job types list length doesn't match folders list length")
+            return
+
+        logging.info(f"Processing {len(folders)} folders concurrently")
         with ThreadPoolExecutor(max_workers=max_workers) as executor:
-            futures = {
-                executor.submit(self.process_folder, folder, job_id): job_id
-                for folder, job_id in zip(folders, job_ids)
-            }
+            futures = []
+            for i, (folder, job_id) in enumerate(zip(folders, job_ids)):
+                job_type = job_types[i] if job_types else None
+                future = executor.submit(self.process_folder, folder, job_id, job_type)
+                futures.append(future)
+
             for future in as_completed(futures):
-                job_id = futures[future]
                 try:
                     future.result()
-                    logging.info(f"Successfully processed job ID: {job_id}")
-                except Exception as exc:
-                    logging.error(f"Job ID {job_id} generated an exception: {exc}")
+                except Exception as e:
+                    logging.error(f"Error processing folder: {str(e)}")
 
     def _check_pdb_files(self, task_dir: str) -> bool:
-        """
-        Check if all required PDB files exist in the task directory.
-
-        Args:
-            task_dir (str): The task directory path.
-
-        Returns:
-            bool: True if all PDB files exist, False otherwise.
-        """
+        """Check if all required PDB files exist."""
         pdb_files = [
             os.path.splitext(f)[0] + '.pdb'
             for f in os.listdir(task_dir) if f.endswith('.a3m')
@@ -193,45 +230,31 @@ class SlurmJobSubmitter:
         return True
 
     def _check_log_file(self, task_dir: str) -> bool:
-        """
-        Check if the log file contains the word "Done".
-
-        Args:
-            task_dir (str): The task directory path.
-
-        Returns:
-            bool: True if "Done" is found in log.txt, False otherwise.
-        """
-        log_file_path = os.path.join(task_dir, 'log.txt')
-        if not os.path.exists(log_file_path):
-            logging.debug(f"log.txt does not exist in {task_dir}")
+        """Check if the log file indicates completion."""
+        log_file = os.path.join(task_dir, 'log.txt')
+        if not os.path.exists(log_file):
             return False
         try:
-            with open(log_file_path, 'r') as log_file:
-                for line in log_file:
-                    if "Done" in line:
-                        return True
+            with open(log_file, 'r') as f:
+                return 'Done' in f.read()
         except Exception as e:
-            logging.error(f"Error reading log file {log_file_path}: {e}")
-        return False
+            logging.error(f"Error reading log file {log_file}: {e}")
+            return False
 
-    def _backup_log_file(self, task_dir: str, job_id: str):
-        """
-        Backup the existing log file by renaming it.
-
-        Args:
-            task_dir (str): The task directory path.
-            job_id (str): The job ID associated with the log.
-        """
-        base_backup_path = os.path.join(task_dir, 'log.backup')
-        backup_counter = 1
-        backup_file = f"{base_backup_path}.{backup_counter}"
-        while os.path.exists(backup_file):
-            backup_counter += 1
-            backup_file = f"{base_backup_path}.{backup_counter}"
+    def _backup_log_file(self, task_dir: str, job_id: str) -> None:
+        """Backup the log file before resubmitting."""
+        log_file = os.path.join(task_dir, 'log.txt')
+        if not os.path.exists(log_file):
+            return
+            
+        backup_dir = os.path.join(task_dir, 'log_backups')
+        os.makedirs(backup_dir, exist_ok=True)
+        backup_file = os.path.join(backup_dir, f'log_{job_id}.txt')
+        
         try:
-            os.rename(os.path.join(task_dir, 'log.txt'), backup_file)
-            logging.info(f"Created backup log file: {backup_file} (Job ID: {job_id})")
-        except OSError as e:
-            logging.error(f"Failed to backup log file in {task_dir}: {e}")
+            shutil.copy2(log_file, backup_file)
+            os.remove(log_file)
+            logging.info(f"Backed up log file to {backup_file}")
+        except Exception as e:
+            logging.error(f"Error backing up log file: {e}")
 

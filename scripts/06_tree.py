@@ -98,7 +98,7 @@ def create_tree_visualization(tree_file: Path, state_seqs: Set[str], state_color
     ts.show_branch_support = False
 
     # Style nodes and branches
-    for node in tree.traverse():
+    for node in tree.traverse():  # type: ignore
         # Set default style for all nodes
         style = NodeStyle()
         style["hz_line_width"] = 2  # Set horizontal branch thickness
