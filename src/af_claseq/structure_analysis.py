@@ -1,7 +1,8 @@
 import os
 import logging
 import subprocess
-from typing import List, Optional, Dict, Any
+from pathlib import Path
+from typing import List, Optional, Dict, Any, Sequence
 import numpy as np
 import pandas as pd
 from joblib import Parallel, delayed
@@ -15,7 +16,6 @@ from af_claseq.sequence_processing import count_sequences_in_a3m
 DEFAULT_TMALIGN_PATH = "/fs/ess/PAA0203/xing244/TMalign"
 
 
-
 class StructureAnalyzer:
     """
     A class to perform structural analysis on PDB files, including angle calculation,
@@ -23,49 +23,50 @@ class StructureAnalyzer:
     """
 
     def __init__(self):
-        """
-        Initialize the StructureAnalyzer with a PDB parser.
-        """
+        """Initialize the StructureAnalyzer with a PDB parser."""
         self.pdb_parser = PDBParser(QUIET=True)
 
-    def calculate_com(self, atoms: List[Any]) -> np.ndarray:
+    def calculate_com(self, atoms: Sequence[Any]) -> np.ndarray:
         """
         Calculate the center of mass for a list of atoms.
 
         Args:
-            atoms (List[Any]): List of atom objects.
+            atoms: Sequence of atom objects.
 
         Returns:
-            np.ndarray: Center of mass coordinates.
+            Center of mass coordinates.
+
+        Raises:
+            ValueError: If no atoms provided.
         """
+        if not atoms:
+            raise ValueError("No atoms provided for center of mass calculation.")
+            
         coordinates = np.array([atom.get_coord() for atom in atoms])
         masses = np.array([atom.mass for atom in atoms])
-        if len(masses) == 0:
-            raise ValueError("No atoms provided for center of mass calculation.")
-        com = np.average(coordinates, axis=0, weights=masses)
-        return com
+        return np.average(coordinates, axis=0, weights=masses)
 
     def calculate_angle(
         self,
-        pdb_file: str,
-        domain1_indices: List[int],
-        domain2_indices: List[int],
-        hinge_indices: List[int],
+        pdb_file: str | Path,
+        domain1_indices: Sequence[int],
+        domain2_indices: Sequence[int], 
+        hinge_indices: Sequence[int]
     ) -> float:
         """
         Calculate the angle between two domains using their centers of mass and a hinge point.
 
         Args:
-            pdb_file (str): Path to the PDB file.
-            domain1_indices (List[int]): Residue indices for domain 1.
-            domain2_indices (List[int]): Residue indices for domain 2.
-            hinge_indices (List[int]): Residue indices for the hinge.
+            pdb_file: Path to the PDB file.
+            domain1_indices: Residue indices for domain 1.
+            domain2_indices: Residue indices for domain 2. 
+            hinge_indices: Residue indices for the hinge.
 
         Returns:
-            float: Angle in degrees.
+            Angle in degrees.
 
         Raises:
-            Exception: If an error occurs during calculation.
+            Exception: If calculation fails.
         """
         try:
             structure = self.pdb_parser.get_structure("Protein", pdb_file)
@@ -80,33 +81,37 @@ class StructureAnalyzer:
 
             v1 = com_domain1 - com_hinge
             v2 = com_domain2 - com_hinge
-            cos_angle = np.dot(v1, v2) / (np.linalg.norm(v1) * np.linalg.norm(v2))
+            
+            # Normalize vectors for more stable calculation
+            v1_norm = v1 / np.linalg.norm(v1)
+            v2_norm = v2 / np.linalg.norm(v2)
+            
+            cos_angle = np.dot(v1_norm, v2_norm)
             angle_rad = np.arccos(np.clip(cos_angle, -1.0, 1.0))
-            angle_deg = np.degrees(angle_rad)
+            return np.degrees(angle_rad)
 
-            return angle_deg
         except Exception as e:
             logging.error(f"Error calculating angle: {e}")
             raise
 
     def calculate_residue_distance(
         self,
-        pdb_file: str,
+        pdb_file: str | Path,
         chain_id: str,
-        residue_indices1: List[int],
-        residue_indices2: List[int],
+        residue_indices1: Sequence[int],
+        residue_indices2: Sequence[int]
     ) -> Optional[float]:
         """
         Calculate the distance between two sets of residues in a specific chain.
 
         Args:
-            pdb_file (str): Path to the PDB file.
-            chain_id (str): Chain identifier.
-            residue_indices1 (List[int]): Residue indices for the first set.
-            residue_indices2 (List[int]): Residue indices for the second set.
+            pdb_file: Path to the PDB file.
+            chain_id: Chain identifier.
+            residue_indices1: Residue indices for the first set.
+            residue_indices2: Residue indices for the second set.
 
         Returns:
-            Optional[float]: Distance between residue centers or None if calculation fails.
+            Distance between residue centers or None if calculation fails.
         """
         try:
             structure = self.pdb_parser.get_structure("Protein", pdb_file)
@@ -114,54 +119,54 @@ class StructureAnalyzer:
             center2 = self.get_residue_center(structure, chain_id, residue_indices2)
 
             if center1 is not None and center2 is not None:
-                distance = float(np.linalg.norm(center1 - center2))
-                return distance
-            else:
-                return None
+                return float(np.linalg.norm(center1 - center2))
+            return None
+            
         except Exception as e:
             logging.error(f"Error calculating residue distance: {e}")
             return None
 
     def calculate_ca_rmsd(
         self,
-        reference_pdb: str,
-        target_pdb: str,
-        superposition_indices: List[int],
-        rmsd_indices: List[int],
-        chain_id: str = "A",
+        reference_pdb: str | Path,
+        target_pdb: str | Path,
+        superposition_indices: Sequence[int],
+        rmsd_indices: Sequence[int],
+        chain_id: str = "A"
     ) -> float:
         """
-        Calculate the RMSD of CA atoms between a reference PDB and a target PDB for specified residues,
-        using a separate set of residues for superposition.
+        Calculate the RMSD of CA atoms between reference and target PDB for specified residues.
+        The residue sets for superimposition may or may not be the same as the RMSD calcauting residue indices
 
         Args:
-            reference_pdb (str): Path to the reference PDB file.
-            target_pdb (str): Path to the target PDB file.
-            superposition_indices (List[int]): Residue indices used for superposition.
-            rmsd_indices (List[int]): Residue indices used for RMSD calculation.
-            chain_id (str, optional): Chain identifier. Defaults to "A".
+            reference_pdb: Path to the reference PDB file.
+            target_pdb: Path to the target PDB file.
+            superposition_indices: Residue indices used for superposition.
+            rmsd_indices: Residue indices used for RMSD calculation.
+            chain_id: Chain identifier. Defaults to "A".
 
         Returns:
-            float: RMSD value.
+            RMSD value.
 
         Raises:
-            Exception: If an error occurs during RMSD calculation.
+            Exception: If RMSD calculation fails.
         """
         try:
             ref_structure = self.pdb_parser.get_structure("reference", reference_pdb)
             target_structure = self.pdb_parser.get_structure("target", target_pdb)
 
-            # Get atoms for superposition
-            ref_sup_atoms = []
-            target_sup_atoms = []
-            for res_id in superposition_indices:
-                try:
-                    ref_res = ref_structure[0][chain_id][res_id]
-                    target_res = target_structure[0][chain_id][res_id]
-                    ref_sup_atoms.append(ref_res["CA"])
-                    target_sup_atoms.append(target_res["CA"])
-                except KeyError:
-                    logging.warning(f"Residue {res_id} not found for superposition. Skipping.")
+            def get_ca_atoms(structure, indices):
+                atoms = []
+                for res_id in indices:
+                    try:
+                        res = structure[0][chain_id][res_id]
+                        atoms.append(res["CA"])
+                    except KeyError:
+                        logging.warning(f"Residue {res_id} not found. Skipping.")
+                return atoms
+
+            ref_sup_atoms = get_ca_atoms(ref_structure, superposition_indices)
+            target_sup_atoms = get_ca_atoms(target_structure, superposition_indices)
 
             if not ref_sup_atoms or not target_sup_atoms:
                 logging.warning("No CA atoms found for superposition.")
@@ -172,195 +177,178 @@ class StructureAnalyzer:
             super_imposer.set_atoms(ref_sup_atoms, target_sup_atoms)
             super_imposer.apply(target_structure.get_atoms())
 
-            # Get atoms for RMSD calculation
-            ref_rmsd_atoms = []
-            target_rmsd_atoms = []
-            for res_id in rmsd_indices:
-                try:
-                    ref_res = ref_structure[0][chain_id][res_id]
-                    target_res = target_structure[0][chain_id][res_id]
-                    ref_rmsd_atoms.append(ref_res["CA"])
-                    target_rmsd_atoms.append(target_res["CA"])
-                except KeyError:
-                    logging.warning(f"Residue {res_id} not found for RMSD calculation. Skipping.")
+            ref_rmsd_atoms = get_ca_atoms(ref_structure, rmsd_indices)
+            target_rmsd_atoms = get_ca_atoms(target_structure, rmsd_indices)
 
             if not ref_rmsd_atoms or not target_rmsd_atoms:
                 logging.warning("No CA atoms found for RMSD calculation.")
                 return float('nan')
 
-            # Calculate RMSD for specified residues
-            rmsd = self._calculate_rmsd(ref_rmsd_atoms, target_rmsd_atoms)
-            return rmsd
+            return self._calculate_rmsd(ref_rmsd_atoms, target_rmsd_atoms)
 
         except Exception as e:
             logging.error(f"Error calculating CA RMSD: {e}")
             raise
 
-    def _calculate_rmsd(self, atoms1: List, atoms2: List) -> float:
+    def _calculate_rmsd(self, atoms1: Sequence[Any], atoms2: Sequence[Any]) -> float:
         """Helper method to calculate RMSD between two lists of atoms."""
         if len(atoms1) != len(atoms2):
             raise ValueError("Atom lists must have same length")
         
-        squared_sum = 0.0
-        for a1, a2 in zip(atoms1, atoms2):
-            diff = a1.get_coord() - a2.get_coord()
-            squared_sum += np.dot(diff, diff)
-        
-        return np.sqrt(squared_sum / len(atoms1))
+        coords1 = np.array([a.get_coord() for a in atoms1])
+        coords2 = np.array([a.get_coord() for a in atoms2])
+        diff = coords1 - coords2
+        return np.sqrt(np.mean(np.sum(diff * diff, axis=1)))
 
     def calculate_tm_score(
         self,
-        target_pdb: str,
-        reference_pdb: str,
-        tm_align_path: str = DEFAULT_TMALIGN_PATH
+        target_pdb: str | Path,
+        reference_pdb: str | Path,
+        tm_align_path: str | Path = DEFAULT_TMALIGN_PATH
     ) -> float:
         """
         Calculate TM-score between target and reference PDB structures.
 
         Args:
-            target_pdb (str): Path to the target PDB file.
-            reference_pdb (str): Path to the reference PDB file.
-            tm_align_path (str, optional): Path to the TMalign executable. 
-                Defaults to DEFAULT_TMALIGN_PATH.
+            target_pdb: Path to the target PDB file.
+            reference_pdb: Path to the reference PDB file.
+            tm_align_path: Path to the TMalign executable.
 
         Returns:
-            float: TM-score value.
+            TM-score value.
 
         Raises:
-            Exception: If an error occurs during TM-score calculation.
+            Exception: If TM-score calculation fails.
         """
         try:
             result = subprocess.run(
-                [tm_align_path, target_pdb, reference_pdb],
-                stdout=subprocess.PIPE,
+                [str(tm_align_path), str(target_pdb), str(reference_pdb)],
+                capture_output=True,
                 text=True,
                 check=True
             )
-            output = result.stdout
             
-            tm_score = None
-            for line in output.split('\n'):
+            for line in result.stdout.split('\n'):
                 if "if normalized by length of Chain_2" in line:
-                    tm_score = float(line.split()[1])
-                    break
+                    return float(line.split()[1])
                     
-            if tm_score is None:
-                raise ValueError("Could not find TM-score in TMalign output")
-                
-            return tm_score
+            raise ValueError("Could not find TM-score in TMalign output")
             
         except Exception as e:
             logging.error(f"Error calculating TM-score: {e}")
             raise
 
     def plddt_process(self,
-                      pdb_file_path: str,
-                      residue_indices: List[int]) -> Optional[float]:
+                     pdb_file_path: str | Path,
+                     residue_indices: Sequence[int]) -> Optional[float]:
         """
         Calculate the average pLDDT score for specified residues in a PDB file.
 
         Args:
-            pdb_file_path (str): Path to the PDB file.
-            residue_indices (List[int]): Residue indices to consider.
+            pdb_file_path: Path to the PDB file.
+            residue_indices: Residue indices to consider.
 
         Returns:
-            Optional[float]: Average pLDDT score or None if not available.
+            Average pLDDT score or None if not available.
         """
         try:
             b_factors = []
-            with open(pdb_file_path, 'r') as pdb_file:
+            residue_set = set(residue_indices)  # For faster lookup
+            
+            with open(pdb_file_path) as pdb_file:
                 for line in pdb_file:
                     if line.startswith("ATOM") and line[12:16].strip() == "CA":
-                        residue_index = int(line[22:26].strip())
-                        if residue_index in residue_indices:
-                            b_factor = float(line[60:66].strip())
-                            b_factors.append(b_factor)
+                        residue_index = int(line[22:26])
+                        if residue_index in residue_set:
+                            b_factors.append(float(line[60:66]))
 
-            if b_factors:
-                average_b = sum(b_factors) / len(b_factors)
-                return average_b
-            else:
-                return None
+            return float(np.mean(b_factors)) if b_factors else None
+            
         except Exception as e:
             logging.error(f"Error processing pLDDT for {pdb_file_path}: {e}")
             return None
 
     def get_residue_center(
-        self, structure: Any, chain_id: str, residue_indices: List[int]
+        self, 
+        structure: Any, 
+        chain_id: str, 
+        residue_indices: Sequence[int]
     ) -> Optional[np.ndarray]:
         """
         Calculate the center of mass for a set of residues in a specific chain.
 
         Args:
-            structure (Any): Parsed PDB structure.
-            chain_id (str): Chain identifier.
-            residue_indices (List[int]): Residue indices.
+            structure: Parsed PDB structure.
+            chain_id: Chain identifier.
+            residue_indices: Residue indices.
 
         Returns:
-            Optional[np.ndarray]: Center of mass coordinates or None if residues not found.
+            Center of mass coordinates or None if residues not found.
         """
         try:
             atoms = []
             for res_index in residue_indices:
                 try:
                     residue = structure[0][chain_id][res_index]
-                    atoms.extend([atom for atom in residue.get_atoms()])
+                    atoms.extend(list(residue.get_atoms()))
                 except KeyError:
                     logging.error(f"Residue {res_index} not found in chain {chain_id}")
                     return None
-            if not atoms:
-                return None
-            return self.calculate_com(atoms)
+                    
+            return self.calculate_com(atoms) if atoms else None
+            
         except Exception as e:
             logging.error(f"Error calculating residue center: {e}")
             return None
 
     def get_atoms_from_residue_indices(
-        self, structure: Any, residue_indices: List[int]
+        self, 
+        structure: Any, 
+        residue_indices: Sequence[int]
     ) -> List[Any]:
         """
         Retrieve all atoms from specified residue indices in a structure.
 
         Args:
-            structure (Any): Parsed PDB structure.
-            residue_indices (List[int]): Residue indices.
+            structure: Parsed PDB structure.
+            residue_indices: Residue indices.
 
         Returns:
-            List[Any]: List of atom objects.
+            List of atom objects.
         """
+        residue_set = set(residue_indices)
         atoms = []
         for residue in structure.get_residues():
-            if residue.get_id()[1] in residue_indices:
-                atoms.extend(residue.get_atoms())
+            if residue.get_id()[1] in residue_set:
+                atoms.extend(list(residue.get_atoms()))
         return atoms
 
-def get_result_df(parent_dir: str, 
-                  filter_criteria: List[Dict[str, Any]], 
-                  basics: Dict[str, Any]) -> pd.DataFrame:
+def get_result_df(parent_dir: str | Path,
+                 filter_criteria: Sequence[Dict[str, Any]],
+                 basics: Dict[str, Any]) -> pd.DataFrame:
     """
-    Generate a DataFrame containing calculated properties for each PDB file in the directory.
+    Generate a DataFrame containing calculated properties for each PDB file.
 
     Args:
-        parent_dir (str): Path to the parent directory containing PDB files.
-        filter_criteria (List[Dict[str, Any]]): List of criteria for filtering and calculation.
-        basics (Dict[str, Any]): Basic information required for calculations, usuallu full protein index list and rmsd refernce pdb.
+        parent_dir: Path to the parent directory containing PDB files.
+        filter_criteria: List of criteria for filtering and calculation.
+        basics: Basic information required for calculations.
 
     Returns:
-        pd.DataFrame: DataFrame with results.
+        DataFrame with results.
     """
     logging.info(f'Processing {parent_dir}')
+    
+    # Use pathlib for better path handling
+    parent_path = Path(parent_dir)
     pdb_files = [
-        os.path.join(dirpath, f)
-        for dirpath, _, filenames in os.walk(parent_dir)
-        for f in filenames
-        if f.endswith('.pdb') and 'non_a3m' not in f
+        str(f) for f in parent_path.rglob('*.pdb')
+        if 'non_a3m' not in str(f.parent)
     ]
     logging.info(f'Found {len(pdb_files)} PDB files')
 
-    properties_to_calculate = ['seq_count', 'plddt']
-    for criterion in filter_criteria:
-        if criterion['type'] not in properties_to_calculate:
-            properties_to_calculate.append(criterion['type'])
+    properties_to_calculate = {'seq_count', 'plddt'}
+    properties_to_calculate.update(c['type'] for c in filter_criteria)
 
     analyzer = StructureAnalyzer()
 
@@ -369,173 +357,124 @@ def get_result_df(parent_dir: str,
 
         if 'seq_count' in properties_to_calculate:
             a3m_file = pdb.split("_unrelaxed")[0] + '.a3m'
-            result['seq_count'] = str(count_sequences_in_a3m(a3m_file))
+            result['seq_count'] = count_sequences_in_a3m(a3m_file)
+
         if 'plddt' in properties_to_calculate:
-            # Calculate full protein pLDDT if full_index is provided
-            if 'full_index' in basics:
-                full_index = []
-                if isinstance(basics['full_index'], list):
-                    # Multiple ranges
-                    for range_dict in basics['full_index']:
-                        full_index.extend(range(range_dict['start'], range_dict['end'] + 1))
-                else:
-                    # Single range (backward compatibility)
-                    if isinstance(basics['full_index'], dict) and 'start' in basics['full_index'] and 'end' in basics['full_index']:
-                        full_index = range(int(basics['full_index']['start']), int(basics['full_index']['end']) + 1)
-                    elif isinstance(basics['full_index'], list):
-                        full_index = [int(i) for i in basics['full_index']]
-                result['plddt'] = str(analyzer.plddt_process(pdb, list(full_index)) if analyzer.plddt_process(pdb, list(full_index)) is not None else '')
-            
-            # Calculate local pLDDT if local_index is provided
-            if 'local_index' in basics:
-                local_index = []
-                if isinstance(basics['local_index'], list):
-                    # Multiple ranges
-                    for range_dict in basics['local_index']:
-                        local_index.extend(range(range_dict['start'], range_dict['end'] + 1))
-                else:
-                    # Single range (backward compatibility)
-                    if isinstance(basics['local_index'], dict) and 'start' in basics['local_index'] and 'end' in basics['local_index']:
-                        local_index = range(int(basics['local_index']['start']), int(basics['local_index']['end']) + 1)
-                    elif isinstance(basics['local_index'], list):
-                        local_index = [int(i) for i in basics['local_index']]
-                result['local_plddt'] = str(analyzer.plddt_process(pdb, list(local_index)) if analyzer.plddt_process(pdb, list(local_index)) is not None else '')
+            for index_type in ['full_index', 'local_index']:
+                if index_type in basics:
+                    indices = []
+                    index_data = basics[index_type]
+                    
+                    if isinstance(index_data, list):
+                        for range_dict in index_data:
+                            indices.extend(range(range_dict['start'], range_dict['end'] + 1))
+                    elif isinstance(index_data, dict):
+                        indices = range(int(index_data['start']), int(index_data['end']) + 1)
+                    
+                    plddt_key = 'local_plddt' if index_type == 'local_index' else 'plddt'
+                    result[plddt_key] = analyzer.plddt_process(pdb, list(indices))
 
         for criterion in filter_criteria:
-            if criterion['type'] == 'distance':
-                indices1 = criterion['indices']['set1']
-                indices2 = criterion['indices']['set2']
-                distance = analyzer.calculate_residue_distance(pdb, 'A', indices1, indices2)
-                result[criterion['name']] = str(distance if distance is not None else '')
-            elif criterion['type'] == 'angle':
-                angle = analyzer.calculate_angle(pdb, 
-                                                 criterion['indices']['domain1'], 
-                                                 criterion['indices']['domain2'], 
-                                                 criterion['indices']['hinge'])
-                result[criterion['name']] = str(angle)
-            elif criterion['type'] == 'rmsd':
-                assert 'superposition_indices' in criterion and 'rmsd_indices' in criterion, "Both 'superposition_indices' and 'rmsd_indices' must be defined in the criterion"
-                assert 'ref_pdb' in criterion, "'ref_pdb' must be defined in the criterion"
+            criterion_type = criterion['type']
+            
+            if criterion_type == 'distance':
+                result[criterion['name']] = analyzer.calculate_residue_distance(
+                    pdb, 'A', 
+                    criterion['indices']['set1'],
+                    criterion['indices']['set2']
+                )
                 
-                # Handle superposition indices
-                superposition_indices = []
-                if isinstance(criterion['superposition_indices'], list):
-                    # Multiple ranges
-                    for range_dict in criterion['superposition_indices']:
-                        superposition_indices.extend(range(range_dict['start'], range_dict['end'] + 1))
-                else:
-                    # Single range (backward compatibility)
-                    superposition_indices = range(criterion['superposition_indices']['start'],
-                                               criterion['superposition_indices']['end'] + 1)
+            elif criterion_type == 'angle':
+                result[criterion['name']] = analyzer.calculate_angle(
+                    pdb,
+                    criterion['indices']['domain1'],
+                    criterion['indices']['domain2'],
+                    criterion['indices']['hinge']
+                )
                 
-                # Handle multiple ranges of RMSD indices
-                rmsd_indices = []
-                if isinstance(criterion['rmsd_indices'], list):
-                    # Multiple ranges
-                    for range_dict in criterion['rmsd_indices']:
-                        rmsd_indices.extend(range(range_dict['start'], range_dict['end'] + 1))
-                else:
-                    # Single range (backward compatibility)
-                    rmsd_indices = range(criterion['rmsd_indices']['start'],
-                                      criterion['rmsd_indices']['end'] + 1)
+            elif criterion_type == 'rmsd':
+                if not all(k in criterion for k in ['superposition_indices', 'rmsd_indices', 'ref_pdb']):
+                    raise ValueError("Missing required fields for RMSD calculation")
                 
-                rmsd = analyzer.calculate_ca_rmsd(criterion['ref_pdb'], 
-                                                pdb,
-                                                list(superposition_indices),
-                                                list(rmsd_indices),
-                                                chain_id='A')
-                result[criterion['name']] = str(rmsd)
-            elif criterion['type'] == 'tmscore':
-                assert 'ref_pdb' in criterion, "'ref_pdb' must be defined in the criterion"
-                tm_score = analyzer.calculate_tm_score(pdb, criterion['ref_pdb'])
-                result[criterion['name']] = str(tm_score)
+                def get_indices(index_data):
+                    indices = []
+                    if isinstance(index_data, list):
+                        for range_dict in index_data:
+                            indices.extend(range(range_dict['start'], range_dict['end'] + 1))
+                    else:
+                        indices = range(index_data['start'], index_data['end'] + 1)
+                    return list(indices)
+                
+                result[criterion['name']] = analyzer.calculate_ca_rmsd(
+                    criterion['ref_pdb'],
+                    pdb,
+                    get_indices(criterion['superposition_indices']),
+                    get_indices(criterion['rmsd_indices'])
+                )
+                
+            elif criterion_type == 'tmscore':
+                if 'ref_pdb' not in criterion:
+                    raise ValueError("Missing ref_pdb for TM-score calculation")
+                result[criterion['name']] = analyzer.calculate_tm_score(pdb, criterion['ref_pdb'])
 
         return result
 
-    results = list(Parallel(n_jobs=-1)(delayed(process_pdb)(pdb) for pdb in tqdm(pdb_files, desc="Processing PDB files")))
-    results_df = pd.DataFrame(results)
+    results = Parallel(n_jobs=-1)(
+        delayed(process_pdb)(pdb) for pdb in tqdm(pdb_files, desc="Processing PDB files")
+    )
+    return pd.DataFrame(results)
 
-    return results_df
-
-
-
-def get_protein_sequence(pdb_filename: str) -> str:
+def get_protein_sequence(pdb_filename: str | Path) -> str:
     """
     Extract the protein sequence from a PDB file.
 
     Args:
-        pdb_filename (str): Path to the PDB file.
+        pdb_filename: Path to the PDB file.
 
     Returns:
-        str: The full protein sequence.
+        The full protein sequence.
 
     Raises:
         Exception: If there's an error in processing the PDB file.
     """
     try:
-        pdb_parser = PDBParser(QUIET=True)
-        structure = pdb_parser.get_structure("Protein", pdb_filename)
-        ppb = PPBuilder()
-        sequences = []
-        for pp in ppb.build_peptides(structure):
-            sequence = pp.get_sequence()
-            sequences.append(str(sequence))
-
-        full_sequence = ''.join(sequences)
-        return full_sequence
-
+        parser = PDBParser(QUIET=True)
+        structure = parser.get_structure("Protein", pdb_filename)
+        return ''.join(str(pp.get_sequence()) for pp in PPBuilder().build_peptides(structure))
     except Exception as e:
         logging.error(f"Error getting protein sequence: {e}")
         raise
 
-def count_sequences_in_a3m(a3m_file: str) -> int:
-    """
-    Count the number of sequences in an A3M file.
-
-    Args:
-        a3m_file (str): Path to the A3M file.
-
-    Returns:
-        int: The number of sequences in the A3M file.
-    """
-    count = 0
-    try:
-        with open(a3m_file, 'r') as file:
-            for line in file:
-                if line.startswith('>'):
-                    count += 1
-    except FileNotFoundError:
-        logging.error(f"A3M file not found: {a3m_file}")
-    return count
-
-def load_filter_modes(file_path: str) -> Dict:
+def load_filter_modes(file_path: str | Path) -> Dict:
     """
     Load filter modes from a JSON file.
 
     Args:
-        file_path (str): Path to the JSON file containing filter modes.
+        file_path: Path to the JSON file containing filter modes.
 
     Returns:
-        Dict: The loaded filter modes.
+        The loaded filter modes.
     """
-    with open(file_path, 'r') as f:
+    with open(file_path) as f:
         return json.load(f)
 
-def apply_filters(df_threshold: pd.DataFrame, 
-                  df_operate: pd.DataFrame, 
-                  filter_criteria: List[Dict[str, Any]], 
-                  quantile: float) -> pd.DataFrame:
+def apply_filters(
+    df_threshold: pd.DataFrame,
+    df_operate: pd.DataFrame,
+    filter_criteria: Sequence[Dict[str, Any]],
+    quantile: float
+) -> pd.DataFrame:
     """
     Apply filters to the dataframe based on specified criteria and quantile thresholds.
 
     Args:
-        df_threshold (pd.DataFrame): DataFrame used for calculating thresholds.
-        df_operate (pd.DataFrame): DataFrame to apply filters on.
-        filter_criteria (List[Dict[str, Any]]): List of filter criteria dictionaries.
-        quantile (float): Quantile value for threshold calculation.
+        df_threshold: DataFrame used for calculating thresholds.
+        df_operate: DataFrame to apply filters on.
+        filter_criteria: List of filter criteria dictionaries.
+        quantile: Quantile value for threshold calculation.
 
     Returns:
-        pd.DataFrame: Filtered DataFrame.
+        Filtered DataFrame.
     """
     filtered_df = df_operate.copy()
     
@@ -543,21 +482,21 @@ def apply_filters(df_threshold: pd.DataFrame,
         column_name = criterion['name']
         method = criterion['method']
         
-        if method not in ['above', 'below']:
+        if method not in {'above', 'below'}:
             logging.warning(f"Invalid filter method: {method}. Skipping this criterion.")
             continue
-        
+            
         if column_name not in df_threshold.columns:
-            logging.warning(f"Column {column_name} not found in threshold DataFrame. Skipping this criterion.")
+            logging.warning(f"Column {column_name} not found in threshold DataFrame. Skipping.")
             continue
+            
+        threshold_value = df_threshold[column_name].quantile(1 - quantile if method == 'above' else quantile)
+        mask = filtered_df[column_name] > threshold_value if method == 'above' else filtered_df[column_name] < threshold_value
+        filtered_df = filtered_df[mask]
         
-        if method == 'above':
-            threshold_value = df_threshold[column_name].quantile(1 - quantile)
-            filtered_df = filtered_df[filtered_df[column_name] > threshold_value]
-            logging.info(f"Filtering {column_name} above {(1-quantile)*100}% quantile value: {threshold_value}")
-        elif method == 'below':
-            threshold_value = df_threshold[column_name].quantile(quantile)
-            filtered_df = filtered_df[filtered_df[column_name] < threshold_value]
-            logging.info(f"Filtering {column_name} below {quantile*100}% quantile value: {threshold_value}")
+        logging.info(
+            f"Filtering {column_name} {method} {(1-quantile if method == 'above' else quantile)*100}% "
+            f"quantile value: {threshold_value}"
+        )
     
     return filtered_df

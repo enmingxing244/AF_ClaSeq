@@ -244,48 +244,6 @@ def read_sequences(file_path: str) -> List[str]:
         raise
 
 
-# def process_sequences(
-#     dir_path: str,
-#     sequences: List[str],
-#     shuffle_num: int,
-#     seq_num_per_shuffle: int,
-#     protein_sequence: str
-# ) -> None:
-#     """
-#     Processes and writes shuffled sequences into separate files and groups.
-
-#     Args:
-#         dir_path (str): Directory to store shuffled files.
-#         sequences (List[str]): List of sequences to process.
-#         shuffle_num (int): Shuffle iteration number.
-#         seq_num_per_shuffle (int): Number of sequences per shuffle.
-#         protein_sequence (str): Reference protein sequence.
-#     """
-#     try:
-#         random.shuffle(sequences)
-#         groups = [
-#             sequences[x:x + seq_num_per_shuffle]
-#             for x in range(0, len(sequences), seq_num_per_shuffle)
-#         ]
-#         shuffle_dir = os.path.join(dir_path, f'shuffle_{shuffle_num}')
-#         os.makedirs(shuffle_dir, exist_ok=True)
-
-#         shuffle_file_path = os.path.join(shuffle_dir, f'shuffle_{shuffle_num}.shuf')
-#         with open(shuffle_file_path, 'w') as f:
-#             for seq in sequences:
-#                 f.write(seq)
-
-#         for i, group in enumerate(groups, start=1):
-#             group_file_path = os.path.join(shuffle_dir, f'group_{i}.a3m')
-#             with open(group_file_path, 'w') as g:
-#                 g.write('>101\n')
-#                 g.write(protein_sequence + '\n')
-#                 for seq in group:
-#                     g.write(seq)
-#     except Exception as e:
-#         logging.error(f"Error processing sequences: {e}")
-#         raise
-
 def process_sequences(
     dir_path: str,
     sequences: List[str],
