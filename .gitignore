@@ -4,5 +4,6 @@ results/
 test/
 af_cluster_compar/
 pyrightconfig.json
-af_cluster_compar\
+af_cluster_compar/
+./.vscode/
 v0-0-2_backup_code/
