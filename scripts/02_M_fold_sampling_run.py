@@ -141,10 +141,10 @@ def main():
         slurm_tasks=args.slurm_tasks,
         slurm_cpus_per_task=args.slurm_cpus_per_task,
         slurm_time=args.slurm_time,
-        random_seed=args.random_seed,
-        num_models=args.num_models,
         check_interval=args.check_interval,
-        job_name_prefix=job_name_prefix
+        job_name_prefix=job_name_prefix,
+        num_models=args.num_models,
+        random_seed=args.random_seed
     )
 
     # Get sampling directories and process with SLURM
@@ -153,8 +153,8 @@ def main():
     job_ids = [f"sample_{i+1}" for i in range(len(sampling_dirs))]
     
     slurm_submitter.process_folders_concurrently(
-        sampling_paths,
-        job_ids, 
+        folders=sampling_paths,
+        job_ids=job_ids,
         max_workers=args.max_workers
     )
     logging.info("Submitted all SLURM jobs")

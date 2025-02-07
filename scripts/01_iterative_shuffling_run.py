@@ -123,17 +123,21 @@ def process_iteration(args,
         slurm_tasks=args.slurm_tasks,
         slurm_cpus_per_task=args.slurm_cpus_per_task,
         slurm_time=args.slurm_time,
-        random_seed=args.random_seed,
-        num_models=args.num_models,
         check_interval=args.check_interval,
-        job_name_prefix=job_name_prefix
+        job_name_prefix=job_name_prefix,
+        num_models=args.num_models,
+        random_seed=args.random_seed
     )
 
     # Get shuffle directories and submit jobs
     shuffle_dirs = [d for d in os.listdir(iter_dir) if d.startswith('shuffle_')]
     job_folders = [f"shuffle_{i+1}" for i, _ in enumerate(shuffle_dirs)]
     all_paths = [os.path.join(iter_dir, d) for d in shuffle_dirs]
-    slurm_submitter.process_folders_concurrently(all_paths, job_folders, max_workers=args.max_workers)
+    slurm_submitter.process_folders_concurrently(
+        folders=all_paths,
+        job_ids=job_folders,
+        max_workers=args.max_workers
+    )
     
     # Get results and apply filters
     result_df = structure_analysis.get_result_df(
