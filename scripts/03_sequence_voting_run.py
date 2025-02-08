@@ -271,9 +271,9 @@ def main():
         results_df = pd.DataFrame([
             {
                 "Sequence_Header": header,
-                "Bin_Assignment_1": bin_nums[0],
-                "Bin_Assignment_2": bin_nums[1],
-                "Bin_Assignment_3": bin_nums[2],
+                "Bin_Assignment_1": bin_nums if isinstance(bin_nums, int) else bin_nums[0],
+                "Bin_Assignment_2": bin_nums[1] if not isinstance(bin_nums, int) else bin_nums,
+                "Bin_Assignment_3": bin_nums[2] if not isinstance(bin_nums, int) else bin_nums,
                 "Vote_Count": vote_count,
                 "Total_Votes": total_votes
             }
@@ -283,8 +283,8 @@ def main():
         results_df = pd.DataFrame([
             {
                 "Sequence_Header": header,
-                "Bin_Assignment_1": bin_nums[0],
-                "Bin_Assignment_2": bin_nums[1],
+                "Bin_Assignment_1": bin_nums if isinstance(bin_nums, int) else bin_nums[0],
+                "Bin_Assignment_2": bin_nums[1] if not isinstance(bin_nums, int) else bin_nums,
                 "Vote_Count": vote_count,
                 "Total_Votes": total_votes
             }
