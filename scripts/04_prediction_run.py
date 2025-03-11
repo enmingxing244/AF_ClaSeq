@@ -35,14 +35,10 @@ def parse_args():
                       help='CPUs per task')
     parser.add_argument('--slurm_time', default='04:00:00',
                       help='Time limit for slurm jobs')
-    parser.add_argument('--prediction_num_model', type=int, default=1,
+    parser.add_argument('--prediction_num_model', type=int, default=5,
                       help='Number of models to predict for prediction jobs')
-    parser.add_argument('--prediction_num_seed', type=int, default=1,
+    parser.add_argument('--prediction_num_seed', type=int, default=8,
                       help='Random seed for prediction jobs')
-    parser.add_argument('--shuffling_num_model', type=int, default=1,
-                      help='Number of models to predict for shuffling jobs')
-    parser.add_argument('--shuffling_num_seed', type=int, default=1,
-                      help='Random seed for shuffling jobs')
     parser.add_argument('--check_interval', type=int, default=60,
                       help='Seconds between job status checks')
     parser.add_argument('--max_workers', type=int, default=64,
@@ -54,7 +50,7 @@ def submit_prediction_jobs(base_dir: str,
                          combine_bins: bool,
                          submitter: SlurmJobSubmitter,
                          max_workers: int) -> None:
-    """Submit prediction jobs for sequences in prediction and random selection directories"""
+    """Submit prediction jobs for sequences in prediction and control_prediction directories"""
     
     if not os.path.exists(base_dir):
         logging.error(f"Base directory not found: {base_dir}")
@@ -68,12 +64,10 @@ def submit_prediction_jobs(base_dir: str,
     all_job_ids = []
     job_types = []
     
-    # Define all directory types to process
+    # Define directory types to process (only prediction and control_prediction)
     dir_types = {
         "prediction": ("pred", "prediction"),
-        "random_selection": ("sel", "shuffling"),
-        "control_prediction": ("ctrl_pred", "prediction"),
-        "control_random_selection": ("ctrl_sel", "shuffling")
+        "control_prediction": ("ctrl_pred", "prediction")
     }
     
     # Process each directory type
@@ -152,9 +146,7 @@ def main():
         check_interval=args.check_interval,
         job_name_prefix=job_name_prefix,
         prediction_num_model=args.prediction_num_model,
-        prediction_num_seed=args.prediction_num_seed,
-        shuffling_num_model=args.shuffling_num_model,
-        shuffling_num_seed=args.shuffling_num_seed
+        prediction_num_seed=args.prediction_num_seed
     )
 
     # Submit prediction jobs

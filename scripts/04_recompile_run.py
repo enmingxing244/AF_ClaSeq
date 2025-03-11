@@ -33,16 +33,10 @@ def parse_args():
                       help='List of bin numbers to compile sequences from (e.g. 4 5 6 7 8 9)')
     parser.add_argument('--source_msa', required=True,
                       help='Path to source MSA file')
-    parser.add_argument('--num_selections', type=int, default=20,
-                      help='Number of random selections to create')
     parser.add_argument('--default_pdb', required=True,
                       help='Path to reference PDB file for getting query sequence')
-    parser.add_argument('--seq_num_per_selection', type=int, default=12,
-                      help='Number of sequences per random selection')
-    parser.add_argument('--voting_results_path', required=True,
+    parser.add_argument('--voting_results', required=True,
                       help='Path to voting results CSV file')
-    parser.add_argument('--raw_votes_json', required=True,
-                      help='Path to raw sequence votes JSON file')
     parser.add_argument('--initial_color', type=str, default='#2486b9',
                       help='Initial color for vote distribution plots in hex format')
     parser.add_argument('--num_total_bins', type=int, default=20,
@@ -162,22 +156,6 @@ def setup_directories(output_dir: str) -> Dict[str, str]:
             bin_5/
                 bin5_random_seq.a3m
             ...
-        random_selection/
-            bin_4/
-                selection_1.a3m
-                selection_2.a3m
-                ...
-            bin_5/
-                selection_1.a3m
-                ...
-        control_random_selection/
-            bin_4/
-                selection_1.a3m
-                selection_2.a3m
-                ...
-            bin_5/
-                selection_1.a3m
-                ...
         plots/
             bin4_sequence_vote_ratios.png
             bin5_sequence_vote_ratios.png
@@ -185,19 +163,14 @@ def setup_directories(output_dir: str) -> Dict[str, str]:
     """
     prediction_dir = os.path.join(output_dir, "prediction")
     control_prediction_dir = os.path.join(output_dir, "control_prediction")
-    random_selection_dir = os.path.join(output_dir, "random_selection")
-    control_random_selection_dir = os.path.join(output_dir, "control_random_selection")
     plots_dir = os.path.join(output_dir, "plots")
     
-    for dir_path in [output_dir, prediction_dir, control_prediction_dir, 
-                    random_selection_dir, control_random_selection_dir, plots_dir]:
+    for dir_path in [output_dir, prediction_dir, control_prediction_dir, plots_dir]:
         os.makedirs(dir_path, exist_ok=True)
     
     return {
         "prediction": prediction_dir,
         "control_prediction": control_prediction_dir,
-        "random_selection": random_selection_dir,
-        "control_random_selection": control_random_selection_dir,
         "plots": plots_dir
     }
 
@@ -240,39 +213,6 @@ def compile_sequences(source_msa: str,
         for seq in bin_seqs:
             f.write(seq)
 
-def create_random_selected_groups(input_msa: str, 
-                                  output_dir: str, 
-                                  num_selections: int,
-                                  seq_num_per_selection: int,
-                                  default_pdb: str) -> None:
-    """
-    Create random sequence selections by randomly picking sequences multiple times.
-    
-    Args:
-        input_msa: Path to input MSA file
-        output_dir: Directory to write output files
-        num_selections: Number of random selections to perform
-        seq_num_per_selection: Number of sequences per random selection
-        default_pdb: Path to PDB file for query sequence
-    """
-    # Get query sequence from PDB
-    query_seq = get_protein_sequence(default_pdb)
-    
-    # Read sequences
-    sequences = read_sequences(input_msa)
-    non_query_seqs = sequences[1:]  # Skip first sequence since we'll use PDB query
-    
-    # Perform random selections
-    for i in range(1, num_selections + 1):
-        selected_seqs = random.sample(non_query_seqs, seq_num_per_selection)
-        output_file = os.path.join(output_dir, f"selection_{i}.a3m")
-        
-        # Write sequences to file with query first
-        with open(output_file, 'w') as f:
-            f.write(f">query\n{query_seq}\n")
-            for seq in selected_seqs:
-                f.write(seq)
-
 def main():
     args = parse_args()
     
@@ -283,9 +223,14 @@ def main():
     # Create directories 
     dirs = setup_directories(output_dir=args.output_dir)
     
-    # Load raw votes data
-    with open(args.raw_votes_json, 'r') as f:
-        raw_votes_data = json.load(f)
+    # Load raw votes data if available
+    raw_votes_data = {}
+    if hasattr(args, 'raw_votes_json') and args.raw_votes_json:
+        try:
+            with open(args.raw_votes_json, 'r') as f:
+                raw_votes_data = json.load(f)
+        except Exception as e:
+            logging.warning(f"Could not load raw votes data: {e}")
     
     if args.combine_bins:
         logging.info(f"Combining bins {args.bin_numbers}")
@@ -296,7 +241,7 @@ def main():
         
         # Get headers for all specified bins
         logging.info(f"Extracting headers for combined bins")
-        bin_headers = get_bin_headers(voting_results=args.voting_results_path, 
+        bin_headers = get_bin_headers(voting_results=args.voting_results, 
                                     bin_numbers=args.bin_numbers)
         
         # Create prediction directory for combined bins
@@ -333,28 +278,6 @@ def main():
             for seq in selected_seqs:
                 f.write(seq)
         
-        # Create random selection groups under bin directory
-        random_selection_bin_dir = os.path.join(dirs["random_selection"], bin_name)
-        os.makedirs(random_selection_bin_dir, exist_ok=True)
-        
-        logging.info(f"Creating {args.num_selections} random selections")
-        create_random_selected_groups(input_msa=prediction_file,
-                                   output_dir=random_selection_bin_dir,
-                                   num_selections=args.num_selections,
-                                   seq_num_per_selection=args.seq_num_per_selection,
-                                   default_pdb=args.default_pdb)
-        
-        # Create control random selections from source MSA
-        control_random_selection_bin_dir = os.path.join(dirs["control_random_selection"], bin_name)
-        os.makedirs(control_random_selection_bin_dir, exist_ok=True)
-        
-        logging.info(f"Creating {args.num_selections} control random selections")
-        create_random_selected_groups(input_msa=args.source_msa,
-                                   output_dir=control_random_selection_bin_dir,
-                                   num_selections=args.num_selections,
-                                   seq_num_per_selection=args.seq_num_per_selection,
-                                   default_pdb=args.default_pdb)
-        
         logging.info(f"Completed processing combined bins")
         
     else:
@@ -364,21 +287,22 @@ def main():
             
             # Get headers for current bin
             logging.info(f"Extracting headers for bin {bin_number}")
-            bin_headers = get_bin_headers(voting_results=args.voting_results_path, 
+            bin_headers = get_bin_headers(voting_results=args.voting_results, 
                                         bin_numbers=[bin_number])
             
-            # Create vote distribution plot
-            logging.info(f"Creating vote distribution plot for bin {bin_number}")
-            try:
-                plot_sequence_vote_ratios(data=raw_votes_data,
-                                    bin_headers=bin_headers, 
-                                    target_bin=bin_number,
-                                    output_dir=args.output_dir,
-                                    initial_color=args.initial_color,
-                                        num_bins=args.num_total_bins,
-                                        ratio_min_max=args.ratio_colorbar_min_max)
-            except Exception as e:
-                logging.error(f"Error creating vote distribution plot for bin {bin_number}: {e}")
+            # Create vote distribution plot if raw votes data is available
+            if raw_votes_data:
+                logging.info(f"Creating vote distribution plot for bin {bin_number}")
+                try:
+                    plot_sequence_vote_ratios(data=raw_votes_data,
+                                        bin_headers=bin_headers, 
+                                        target_bin=bin_number,
+                                        output_dir=args.output_dir,
+                                        initial_color=args.initial_color,
+                                            num_bins=args.num_total_bins,
+                                            ratio_min_max=args.ratio_colorbar_min_max)
+                except Exception as e:
+                    logging.error(f"Error creating vote distribution plot for bin {bin_number}: {e}")
             
             # Create prediction directory for this bin
             prediction_bin_dir = os.path.join(dirs["prediction"], f"bin_{bin_number}")
@@ -414,31 +338,9 @@ def main():
                 for seq in selected_seqs:
                     f.write(seq)
             
-            # Create random selection groups under bin directory
-            random_selection_bin_dir = os.path.join(dirs["random_selection"], f"bin_{bin_number}")
-            os.makedirs(random_selection_bin_dir, exist_ok=True)
-            
-            logging.info(f"Creating {args.num_selections} random selections")
-            create_random_selected_groups(input_msa=prediction_file,
-                                       output_dir=random_selection_bin_dir,
-                                       num_selections=args.num_selections,
-                                       seq_num_per_selection=args.seq_num_per_selection,
-                                       default_pdb=args.default_pdb)
-            
-            # Create control random selections from source MSA
-            control_random_selection_bin_dir = os.path.join(dirs["control_random_selection"], f"bin_{bin_number}")
-            os.makedirs(control_random_selection_bin_dir, exist_ok=True)
-            
-            logging.info(f"Creating {args.num_selections} control random selections")
-            create_random_selected_groups(input_msa=args.source_msa,
-                                       output_dir=control_random_selection_bin_dir,
-                                       num_selections=args.num_selections,
-                                       seq_num_per_selection=args.seq_num_per_selection,
-                                       default_pdb=args.default_pdb)
-            
             logging.info(f"Completed processing bin {bin_number}")
     
-    logging.info("Completed recompilation and random selections for all bins")
+    logging.info("Completed recompilation for all bins")
 
 if __name__ == "__main__":
     main()

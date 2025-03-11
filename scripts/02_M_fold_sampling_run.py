@@ -10,7 +10,7 @@ from af_claseq.slurm_utils import SlurmJobSubmitter
 
 def parse_args():
     parser = argparse.ArgumentParser(description='Perform Bayesian sampling of sequences')
-    parser.add_argument('--input_a3m', required=True,
+    parser.add_argument('--m_fold_samp_input_a3m', required=True,
                       help='Path to input A3M file as the source for M-fold sampling')
     parser.add_argument('--default_pdb', required=True,
                       help='Path to reference PDB file')
@@ -42,6 +42,8 @@ def parse_args():
                       help='Number of CPUs per task')
     parser.add_argument('--slurm_time', default='03:00:00',
                       help='Wall time limit for SLURM jobs')
+    parser.add_argument('--slurm_partition', default='nextgen',
+                      help='SLURM partition to use')
     parser.add_argument('--random_seed', type=int, default=42,
                       help='Random seed for reproducibility')
     parser.add_argument('--num_models', type=int, default=1,
@@ -141,6 +143,7 @@ def main():
         slurm_tasks=args.slurm_tasks,
         slurm_cpus_per_task=args.slurm_cpus_per_task,
         slurm_time=args.slurm_time,
+        slurm_partition=args.slurm_partition,
         check_interval=args.check_interval,
         job_name_prefix=job_name_prefix,
         num_models=args.num_models,

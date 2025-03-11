@@ -141,19 +141,22 @@ def main():
     # Get inputs from command line arguments
     import argparse
     parser = argparse.ArgumentParser()
-    parser.add_argument('--parent_dir', required=True, help='Parent directory for iterative shuffling')
+    parser.add_argument('--base_dir', required=True, help='Base directory for all output files')
     parser.add_argument('--config_path', required=True, help='Path to config file')
-    parser.add_argument('--num_cols', type=int, default=5, help='Number of columns in plot grid')
-    parser.add_argument('--x_min', type=float, default=0, help='Minimum x-axis value')
-    parser.add_argument('--x_max', type=float, default=20, help='Maximum x-axis value')
-    parser.add_argument('--y_min', type=float, default=0.8, help='Minimum y-axis value')
-    parser.add_argument('--y_max', type=float, default=10000, help='Maximum y-axis value')
-    parser.add_argument('--xticks', type=float, nargs='+', help='List of x-axis tick positions')
-    parser.add_argument('--bin_step', type=float, default=0.2, help='Step size for binning')
+    parser.add_argument('--iter_shuf_plot_num_cols', type=int, default=5, help='Number of columns in plot grid')
+    parser.add_argument('--iter_shuf_plot_x_min', type=float, default=0, help='Minimum x-axis value')
+    parser.add_argument('--iter_shuf_plot_x_max', type=float, default=20, help='Maximum x-axis value')
+    parser.add_argument('--iter_shuf_plot_y_min', type=float, default=0.8, help='Minimum y-axis value')
+    parser.add_argument('--iter_shuf_plot_y_max', type=float, default=10000, help='Maximum y-axis value')
+    parser.add_argument('--iter_shuf_plot_xticks', type=float, nargs='+', help='List of x-axis tick positions')
+    parser.add_argument('--iter_shuf_plot_bin_step', type=float, default=0.2, help='Step size for binning')
     args = parser.parse_args()
     
+    # Set parent_dir to be base_dir/01_iterative_shuffling
+    parent_dir = os.path.join(args.base_dir, '01_iterative_shuffling')
+    
     # Get list of iteration directories
-    iteration_dirs = [d for d in os.listdir(args.parent_dir) if d.startswith('Iteration_')]
+    iteration_dirs = [d for d in os.listdir(parent_dir) if d.startswith('Iteration_')]
     iteration_dirs.sort(key=lambda x: int(x.split('_')[1]))
     
     if not iteration_dirs:

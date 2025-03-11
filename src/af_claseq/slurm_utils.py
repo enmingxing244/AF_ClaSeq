@@ -21,6 +21,7 @@ class SlurmJobSubmitter:
         slurm_tasks: int = 1,
         slurm_cpus_per_task: int = 4,
         slurm_time: str = "04:00:00",
+        slurm_partition: str = "nextgen",
         check_interval: int = 60,
         job_name_prefix: str = "fold",
         **kwargs
@@ -38,6 +39,7 @@ class SlurmJobSubmitter:
             slurm_tasks (int): Number of tasks.
             slurm_cpus_per_task (int): Number of CPUs per task.
             slurm_time (str): SLURM job time limit.
+            slurm_partition (str): SLURM partition to use.
             check_interval (int): Time in seconds between status checks.
             job_name_prefix (str): Prefix for job names.
             **kwargs: Additional arguments for different modes:
@@ -48,8 +50,6 @@ class SlurmJobSubmitter:
                 For typed mode:
                     - prediction_num_model (int): Number of models for prediction
                     - prediction_num_seed (int): Number of seeds for prediction
-                    - shuffling_num_model (int): Number of models for shuffling
-                    - shuffling_num_seed (int): Number of seeds for shuffling
         """
         # Basic SLURM configuration
         self.conda_env_path = conda_env_path
@@ -61,20 +61,17 @@ class SlurmJobSubmitter:
         self.slurm_tasks = slurm_tasks
         self.slurm_cpus_per_task = slurm_cpus_per_task
         self.slurm_time = slurm_time
+        self.slurm_partition = slurm_partition
         self.check_interval = check_interval
         self.job_name_prefix = job_name_prefix
 
         # Determine mode based on kwargs
-        if any(k.startswith(('prediction_', 'shuffling_')) for k in kwargs):
+        if any(k.startswith('prediction_') for k in kwargs):
             self.mode = 'typed'
             self.job_configs = {
                 'prediction': {
                     'num_models': kwargs.get('prediction_num_model', 1),
                     'num_seeds': kwargs.get('prediction_num_seed', 1)
-                },
-                'shuffling': {
-                    'num_models': kwargs.get('shuffling_num_model', 1),
-                    'num_seeds': kwargs.get('shuffling_num_seed', 1)
                 }
             }
         else:
@@ -136,7 +133,7 @@ class SlurmJobSubmitter:
             f"--ntasks={self.slurm_tasks}",
             f"--cpus-per-task={self.slurm_cpus_per_task}",
             f"--time={self.slurm_time}",
-            "--partition=nextgen",
+            f"--partition={self.slurm_partition}",
             "--wrap", f"{env_setup} && {colabfold_cmd}"
         ]
 
@@ -258,4 +255,3 @@ class SlurmJobSubmitter:
             logging.info(f"Backed up log file to {backup_file}")
         except Exception as e:
             logging.error(f"Error backing up log file: {e}")
-

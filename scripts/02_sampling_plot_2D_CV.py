@@ -1,6 +1,7 @@
 import argparse
 from af_claseq.plotting_manager import plot_m_fold_sampling_2d, plot_m_fold_sampling_2d_joint
 import matplotlib.pyplot as plt
+import os
 
 
 def main():
@@ -11,7 +12,7 @@ def main():
                         help='Path to directory for saving plot outputs')
     parser.add_argument('--csv_dir', type=str, required=True,
                         help='Path to directory for saving CSV results')
-    parser.add_argument('--config', type=str, required=True,
+    parser.add_argument('--config_file', type=str, required=True,
                         help='Path to config JSON file')
     parser.add_argument('--x_min', type=float, default=None,
                         help='Minimum x-axis value')
@@ -30,9 +31,13 @@ def main():
     
     args = parser.parse_args()
     
+    # Create output directory if it doesn't exist
+    os.makedirs(args.output_dir, exist_ok=True)
+    os.makedirs(args.csv_dir, exist_ok=True)
+    
     plot_m_fold_sampling_2d(
         results_dir=args.results_dir,
-        config_path=args.config,
+        config_file=args.config_file,
         output_dir=args.output_dir,
         csv_dir=args.csv_dir,
         x_min=args.x_min,
@@ -46,7 +51,7 @@ def main():
 
     plot_m_fold_sampling_2d_joint(
         results_dir=args.results_dir,
-        config_path=args.config,
+        config_file=args.config_file,
         output_dir=args.output_dir,
         csv_dir=args.csv_dir,
         x_min=args.x_min,

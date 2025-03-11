@@ -50,20 +50,23 @@ def parallel_process_pdbs(pdb_files, metric_dict, metric_type, threshold, max_wo
 
 def parse_args():
     parser = argparse.ArgumentParser(description='Combine A3M files based on TM-score filtering')
-    parser.add_argument('--parent_dir', type=str, required=True,
-                      help='Parent directory containing all iterations')
+    parser.add_argument('--base_dir', type=str, required=True,
+                      help='Base directory for all output files')
     parser.add_argument('--config_path', type=str, required=True,
                       help='Path to config JSON file containing filter criteria')
     parser.add_argument('--default_pdb', type=str, required=True,
                       help='Path to reference PDB file, this is used to get the query sequence')
     parser.add_argument('--max_workers', type=int, default=32,
                       help='Maximum number of parallel workers')
-    parser.add_argument('--threshold', type=float, required=True,
+    parser.add_argument('--iter_shuf_combine_threshold', type=float, required=True,
                       help='Threshold for filtering (TM-score > threshold or RMSD < threshold)')
     return parser.parse_args()
 
 def main():
     args = parse_args()
+    
+    # Set parent_dir to be base_dir/01_iterative_shuffling
+    parent_dir = os.path.join(args.base_dir, '01_iterative_shuffling')
 
     # Load config file to get filter criteria
     with open(args.config_path) as f:
@@ -72,7 +75,7 @@ def main():
     metric_type = config['filter_criteria'][0]['type']
 
     # Read metric values from CSV into a dictionary for faster lookup
-    csv_path = os.path.join(args.parent_dir, f'analysis/plot/{filter_name}_values.csv')
+    csv_path = os.path.join(parent_dir, f'analysis/plot/{filter_name}_values.csv')
     print(f"Reading metric values from {csv_path}")
     print("Threshold for filtering (TM-score > threshold or RMSD < threshold)")
     print(f"Using metric: {filter_name} set threshold to {args.threshold}")
@@ -81,7 +84,7 @@ def main():
     metric_dict = pd.Series(metric_df[f'{filter_name}'].values, index=metric_df['PDB']).to_dict()
     
     # Get all PDB files
-    pdb_files = get_pdb_files(args.parent_dir)
+    pdb_files = get_pdb_files(parent_dir)
     
     # Process PDBs in parallel and get filtered A3M files
     a3m_files = parallel_process_pdbs(pdb_files, metric_dict, 
@@ -92,7 +95,7 @@ def main():
     print(f"Number of filtered PDBs/A3M files: {len(a3m_files)}")
     
     # Combine sequences from all A3M files
-    output_dir = os.path.join(args.parent_dir, 'analysis/a3m_combine')
+    output_dir = os.path.join(parent_dir, 'analysis/a3m_combine')
     os.makedirs(output_dir, exist_ok=True)
     output_file = os.path.join(output_dir, 'gathered_seq_after_iter_shuffling.a3m')
     

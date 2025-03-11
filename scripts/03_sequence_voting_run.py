@@ -115,9 +115,9 @@ def parse_args():
                       help='Threshold for vote filtering (between 0 and 1)')
     parser.add_argument('--output_dir', required=True,
                       help='Output directory where the voting results will be saved')
-    parser.add_argument('--min_value', type=float, default=None,
+    parser.add_argument('--vote_min_value', type=float, default=None,
                       help='Minimum value for 1D metric binning range')
-    parser.add_argument('--max_value', type=float, default=None,
+    parser.add_argument('--vote_min_value', type=float, default=None,
                       help='Maximum value for 1D metric binning range')
     parser.add_argument('--initial_color', type=str, default='#d3b0b0',
                       help='Initial color for bin distribution plot')

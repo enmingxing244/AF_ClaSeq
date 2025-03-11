@@ -12,7 +12,7 @@ def main():
                         help='Path to directory for saving plot outputs')
     parser.add_argument('--csv_dir', type=str, required=True,
                         help='Path to directory for saving CSV results')
-    parser.add_argument('--config', type=str, required=True,
+    parser.add_argument('--config_file', type=str, required=True,
                         help='Path to config JSON file')
     parser.add_argument('--initial_color', type=str, default='#87CEEB',
                         help='Color in hex format (e.g. #d5f6dd, default: #87CEEB skyblue)')
@@ -26,8 +26,6 @@ def main():
                         help='Use log scale for y-axis in distribution plots')
     parser.add_argument('--n_plot_bins', type=int, default=50,
                         help='Number of bins for histogram (default: 50)')
-    parser.add_argument('--iteration_dirs', nargs='*', default=None,
-                        help='List of iteration directories to process (optional)')
     parser.add_argument('--gradient_ascending', action='store_true',
                         help='Use ascending gradient for color')
     parser.add_argument('--linear_gradient', action='store_true',
@@ -47,20 +45,18 @@ def main():
     
     args = parser.parse_args()
 
-    print(args.gradient_ascending)
-    
     plot_m_fold_sampling_1d(
         results_dir=args.results_dir,
-        config_path=args.config,
+        config_file=args.config_file,
         output_dir=args.output_dir,
         csv_dir=args.csv_dir,
+        gradient_ascending=args.gradient_ascending,
         initial_color=hex2color(args.initial_color),
         end_color=hex2color(args.end_color),
         x_min=args.x_min,
         x_max=args.x_max,
         log_scale=args.log_scale,
         n_plot_bins=args.n_plot_bins,
-        gradient_ascending=args.gradient_ascending,
         linear_gradient=args.linear_gradient,
         plddt_threshold=args.plddt_threshold,
         figsize=args.figsize,

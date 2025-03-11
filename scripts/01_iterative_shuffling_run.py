@@ -15,13 +15,13 @@ from typing import Dict, Any, List, Optional
 
 def parse_args():
     parser = argparse.ArgumentParser(description='Perform iterative sequence shuffling')
-    parser.add_argument('--input_a3m', required=True,
+    parser.add_argument('--iter_shuf_input_a3m', required=True,
                       help='Path to input A3M file as the source for shuffling')
     parser.add_argument('--default_pdb', required=True,
                       help='Path to reference PDB file')
     parser.add_argument('--base_dir', required=True,
                       help='Base directory for output')
-    parser.add_argument('--group_size', type=int, default=10,
+    parser.add_argument('--seq_num_per_shuffle', type=int, default=10,
                       help='Size of each sequence group during shuffling')
     parser.add_argument('--num_shuffles', type=int, default=10,
                       help='Number of shuffles')
@@ -37,6 +37,8 @@ def parse_args():
                       help='Resume from a specific iteration number (e.g., 2 to resume from iteration 2 using iteration 1 results)')
     parser.add_argument('--plddt_threshold', type=int, default=75,
                       help='pLDDT threshold for filtering (default: 75)')
+    parser.add_argument('--num_models', type=int, default=1,
+                      help='Number of models to generate')
     
     parser.add_argument('--conda_env_path', 
                       default="/fs/ess/PAA0203/xing244/.conda/envs/colabfold",
@@ -57,10 +59,13 @@ def parse_args():
                       help='Number of CPUs per task')
     parser.add_argument('--slurm_time', default='04:00:00',
                       help='Wall time limit for SLURM jobs')
+    parser.add_argument('--slurm_partition', default='nextgen',
+                      help='SLURM partition to use')
     parser.add_argument('--random_seed', type=int, default=42,
                       help='Random seed for reproducibility')
     parser.add_argument('--num_models', type=int, default=1,
                       help='Number of models to generate')
+    
     parser.add_argument('--check_interval', type=int, default=60,
                       help='Interval to check job status in seconds')
     parser.add_argument('--max_workers', type=int, default=64,
@@ -100,7 +105,7 @@ def process_iteration(args,
         dir_path=iter_dir,
         file_path=input_a3m,
         num_shuffles=args.num_shuffles,
-        seq_num_per_shuffle=args.group_size,
+        seq_num_per_shuffle=args.seq_num_per_shuffle,
         reference_pdb=args.default_pdb
     )
 
@@ -123,6 +128,7 @@ def process_iteration(args,
         slurm_tasks=args.slurm_tasks,
         slurm_cpus_per_task=args.slurm_cpus_per_task,
         slurm_time=args.slurm_time,
+        slurm_partition=args.slurm_partition,
         check_interval=args.check_interval,
         job_name_prefix=job_name_prefix,
         num_models=args.num_models,
