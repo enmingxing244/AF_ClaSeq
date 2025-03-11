@@ -73,6 +73,7 @@ def calculate_metric_values(parent_dir: str,
             filter_criteria=filter_criteria,
             basics=basics
         )
+       
         
         # Get metric names from both filter criteria
         metric_names = []

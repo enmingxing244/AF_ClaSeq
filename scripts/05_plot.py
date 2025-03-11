@@ -124,11 +124,16 @@ def get_metric_from_structure(pdb_file, config, criterion_name=None):
 def _get_rmsd_indices(criterion, config):
     """Helper function to extract RMSD calculation indices"""
     if 'superposition_indices' in criterion and 'rmsd_indices' in criterion:
-        sup_indices = list(range(
-            criterion['superposition_indices']['start'],
-            criterion['superposition_indices']['end'] + 1
-        ))
-        
+        sup_indices = []
+        if isinstance(criterion['superposition_indices'], list):
+            for range_dict in criterion['superposition_indices']:
+                sup_indices.extend(range(range_dict['start'], range_dict['end']+1))
+        else:
+            sup_indices = list(range(
+                criterion['superposition_indices']['start'],
+                criterion['superposition_indices']['end'] + 1
+            ))
+            
         rmsd_indices = []
         if isinstance(criterion['rmsd_indices'], list):
             for range_dict in criterion['rmsd_indices']:

@@ -358,7 +358,7 @@ class VotingAnalyzer:
                          pdb_bins: Union[Dict[str, int], Dict[str, Tuple[int, int]], Dict[str, Tuple[int, int, int]]],
                          is_2d: bool = False,
                          is_3d: bool = False,
-                         vote_threshold: float = 0.2,
+                         vote_threshold: float = 0.0,
                          hierarchical: bool = False) -> Tuple[Dict[str, Union[Tuple[int, int, int], Tuple[Tuple[int, int], int, int], Tuple[Tuple[int, int, int], int, int]]], Dict[str, List]]:
         """Get votes for each sequence based on metric bins (1D, 2D or 3D)."""
         if not os.path.exists(source_msa):
@@ -436,6 +436,8 @@ class VotingAnalyzer:
                 elif is_2d:
                     # Handle 2D votes
                     vote_array = np.array(votes)
+                    print(vote_array)
+                    print("--------------------------------")
                     unique_votes, vote_counts = np.unique(vote_array, axis=0, return_counts=True)
                     most_common_idx = np.argmax(vote_counts)
                     most_common_bin = tuple(unique_votes[most_common_idx])
@@ -460,6 +462,29 @@ class VotingAnalyzer:
         return sequence_votes, dict(all_votes)
     
 
+    # def _process_a3m_batch(self, batch_args):
+    #     """Process a batch of A3M files in parallel"""
+    #     a3m_files_batch, pdb_bins, source_headers, is_2d, is_3d = batch_args
+    #     batch_votes = defaultdict(list)
+        
+    #     for a3m_path, pdb_file in a3m_files_batch:
+    #         if pdb_file in pdb_bins:
+    #             try:
+    #                 with open(a3m_path) as f:
+    #                     headers = [line.strip()[1:].split('\t')[0] for line in f if line.startswith('>')]
+                        
+    #                 for header in headers:
+    #                     if header in source_headers:
+    #                         if is_3d:
+    #                             batch_votes[header].append(pdb_bins[pdb_file])  # Convert tuple to list for numpy
+    #                         elif is_2d:
+    #                             batch_votes[header].append(pdb_bins[pdb_file])  # Convert tuple to list for numpy
+    #                         else:
+    #                             batch_votes[header].append(pdb_bins[pdb_file])
+    #             except Exception as e:
+    #                 logging.error(f"Error processing {a3m_path}: {str(e)}")
+                        
+    #     return dict(batch_votes)
     def _process_a3m_batch(self, batch_args):
         """Process a batch of A3M files in parallel"""
         a3m_files_batch, pdb_bins, source_headers, is_2d, is_3d = batch_args
@@ -473,12 +498,18 @@ class VotingAnalyzer:
                         
                     for header in headers:
                         if header in source_headers:
-                            if is_3d:
-                                batch_votes[header].append(list(pdb_bins[pdb_file]))  # Convert tuple to list for numpy
-                            elif is_2d:
-                                batch_votes[header].append(list(pdb_bins[pdb_file]))  # Convert tuple to list for numpy
-                            else:
-                                batch_votes[header].append(pdb_bins[pdb_file])
+                            bin_assignment = pdb_bins[pdb_file]
+                            
+                            # Validate bin_assignment format based on dimensionality
+                            if is_3d and (not isinstance(bin_assignment, tuple) or len(bin_assignment) != 3):
+                                logging.warning(f"Expected 3D bin assignment for {pdb_file}, got {bin_assignment}")
+                                continue
+                            elif is_2d and (not isinstance(bin_assignment, tuple) or len(bin_assignment) != 2):
+                                logging.warning(f"Expected 2D bin assignment for {pdb_file}, got {bin_assignment}")
+                                continue
+                            
+                            # Add the bin assignment to the votes for this header
+                            batch_votes[header].append(bin_assignment)
                 except Exception as e:
                     logging.error(f"Error processing {a3m_path}: {str(e)}")
                         

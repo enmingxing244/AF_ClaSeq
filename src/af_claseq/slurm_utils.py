@@ -119,7 +119,7 @@ class SlurmJobSubmitter:
 
         # Build environment setup
         env_setup = (
-            "module reset && module load openmpi cuda miniconda3 && "
+            "module reset && module load openmpi/5.0.2 cuda/12.4.1 miniconda3/24.1.2-py310 && "
             f"conda init && conda activate {self.conda_env_path}"
         )
 
@@ -136,6 +136,7 @@ class SlurmJobSubmitter:
             f"--ntasks={self.slurm_tasks}",
             f"--cpus-per-task={self.slurm_cpus_per_task}",
             f"--time={self.slurm_time}",
+            "--partition=nextgen",
             "--wrap", f"{env_setup} && {colabfold_cmd}"
         ]
 
