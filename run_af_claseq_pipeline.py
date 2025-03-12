@@ -652,7 +652,7 @@ def print_welcome():
    ╚═╝  ╚═╝╚═╝            ╚═════╝╚══════╝╚═╝  ╚═╝╚══════╝╚══════╝ ╚══▀▀═╝ 
     """)
     print("=" * 80)
-    print("Welcome to the AF-ClaSEQ pipeline!")
+    print("Welcome to the AF-ClaSeq pipeline!")
     print("=" * 80)
     print("If you found this tool useful in your publication, please cite the paper:")
     print()
