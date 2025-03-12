@@ -199,6 +199,107 @@ class StructureAnalyzer:
         coords2 = np.array([a.get_coord() for a in atoms2])
         diff = coords1 - coords2
         return np.sqrt(np.mean(np.sum(diff * diff, axis=1)))
+    
+    def calculate_all_atom_rmsd(
+        self,
+        reference_pdb: str | Path,
+        target_pdb: str | Path,
+        superposition_indices: Sequence[int],
+        rmsd_indices: Sequence[int],
+        chain_id: str = "A"
+    ) -> float:
+        """
+        Calculate RMSD between two structures using all atoms in specified residues.
+        
+        Args:
+            reference_pdb: Path to the reference PDB file.
+            target_pdb: Path to the target PDB file.
+            superposition_indices: Residue indices used for superposition.
+            rmsd_indices: Residue indices used for RMSD calculation.
+            chain_id: Chain identifier. Defaults to "A".
+
+        Returns:
+            RMSD value.
+
+        Raises:
+            Exception: If RMSD calculation fails.
+        """
+        try:
+            ref_structure = self.pdb_parser.get_structure("reference", reference_pdb)
+            target_structure = self.pdb_parser.get_structure("target", target_pdb)
+
+            def get_ca_atoms(structure, indices):
+                atoms = []
+                for res_id in indices:
+                    try:
+                        res = structure[0][chain_id][res_id]
+                        atoms.append(res["CA"])
+                    except KeyError:
+                        logging.warning(f"Residue {res_id} not found. Skipping.")
+                return atoms
+            
+            def get_all_atoms(structure, indices):
+                atoms = []
+                for res_id in indices:
+                    try:
+                        res = structure[0][chain_id][res_id]
+                        for atom in res:
+                            atoms.append(atom)
+                    except KeyError:
+                        logging.warning(f"Residue {res_id} not found. Skipping.")
+                return atoms
+
+            # Use CA atoms for superposition
+            ref_sup_atoms = get_ca_atoms(ref_structure, superposition_indices)
+            target_sup_atoms = get_ca_atoms(target_structure, superposition_indices)
+
+            if not ref_sup_atoms or not target_sup_atoms:
+                logging.warning("No CA atoms found for superposition.")
+                return float('nan')
+
+            # Perform superposition
+            super_imposer = Superimposer()
+            super_imposer.set_atoms(ref_sup_atoms, target_sup_atoms)
+            super_imposer.apply(target_structure.get_atoms())
+
+            # Get all atoms for RMSD calculation
+            ref_all_atoms = get_all_atoms(ref_structure, rmsd_indices)
+            target_all_atoms = get_all_atoms(target_structure, rmsd_indices)
+            
+            if not ref_all_atoms or not target_all_atoms:
+                logging.warning("No atoms found for RMSD calculation.")
+                return float('nan')
+            
+            # Match atoms between reference and target
+            matched_ref_atoms = []
+            matched_target_atoms = []
+            
+            # Create a dictionary of target atoms by name and residue
+            target_atom_dict = {}
+            for atom in target_all_atoms:
+                res_id = atom.get_parent().id[1]
+                atom_name = atom.get_name()
+                target_atom_dict[(res_id, atom_name)] = atom
+            
+            # Match reference atoms with target atoms
+            for atom in ref_all_atoms:
+                res_id = atom.get_parent().id[1]
+                atom_name = atom.get_name()
+                key = (res_id, atom_name)
+                
+                if key in target_atom_dict:
+                    matched_ref_atoms.append(atom)
+                    matched_target_atoms.append(target_atom_dict[key])
+            
+            if not matched_ref_atoms or not matched_target_atoms:
+                logging.warning("No matching atoms found for RMSD calculation.")
+                return float('nan')
+                
+            return self._calculate_rmsd(matched_ref_atoms, matched_target_atoms)
+
+        except Exception as e:
+            logging.error(f"Error calculating all-atom RMSD: {e}")
+            raise
 
     def calculate_tm_score(
         self,
@@ -405,12 +506,21 @@ def get_result_df(parent_dir: str | Path,
                         indices = range(index_data['start'], index_data['end'] + 1)
                     return list(indices)
                 
-                result[criterion['name']] = analyzer.calculate_ca_rmsd(
-                    criterion['ref_pdb'],
-                    pdb,
-                    get_indices(criterion['superposition_indices']),
-                    get_indices(criterion['rmsd_indices'])
-                )
+                # Check if we should use all-atom RMSD or CA-only RMSD
+                if 'method' in criterion and criterion['method'] == 'all_atom_rmsd':
+                    result[criterion['name']] = analyzer.calculate_all_atom_rmsd(
+                        criterion['ref_pdb'],
+                        pdb,
+                        get_indices(criterion['superposition_indices']),
+                        get_indices(criterion['rmsd_indices'])
+                    )
+                else:
+                    result[criterion['name']] = analyzer.calculate_ca_rmsd(
+                        criterion['ref_pdb'],
+                        pdb,
+                        get_indices(criterion['superposition_indices']),
+                        get_indices(criterion['rmsd_indices'])
+                    )
                 
             elif criterion_type == 'tmscore':
                 if 'ref_pdb' not in criterion:
