@@ -32,11 +32,8 @@ def read_a3m_to_dict(a3m_file_path: str) -> Dict[str, str]:
                     continue
                     
                 if line.startswith('>'):
-                    # Process header line
-                    if '\t' in line or ' ' in line:
-                        current_header = line.split('\t')[0] if '\t' in line else line.split()[0]
-                    else:
-                        current_header = line
+                    # Process header line - take first part before space or tab
+                    current_header = line.split()[0] if ' ' in line else line.split('\t')[0] if '\t' in line else line
                     sequences[current_header] = ''
                 elif current_header is not None:
                     # Process sequence line - filter out lowercase letters (insertions)
@@ -66,7 +63,7 @@ def write_a3m(sequences: Dict[str, str], file_path: str, reference_pdb: str) -> 
         protein_sequence = get_protein_sequence(reference_pdb)
         
         # Ensure directory exists
-        os.makedirs(os.path.dirname(os.path.abspath(file_path)), exist_ok=True)
+        Path(file_path).parent.mkdir(parents=True, exist_ok=True)
         
         with open(file_path, 'w') as a3m_file:
             # Write reference sequence first
@@ -96,30 +93,20 @@ def filter_a3m_by_coverage(sequences: Dict[str, str],
         ValueError: If sequences dictionary is empty
         Exception: For any other errors during processing
     """
-    try:
-        if not sequences:
-            raise ValueError("Empty sequences dictionary provided")
-            
-        # Get the query sequence (first sequence)
-        query_seq = next(iter(sequences.values()))
-        query_length = len(query_seq)
+    if not sequences:
+        raise ValueError("Empty sequences dictionary provided")
         
-        # Filter sequences based on coverage
-        filtered_sequences = {}
-        for header, seq in sequences.items():
-            gap_count = seq.count('-')
-            coverage = 1 - (gap_count / query_length)
+    # Get the query sequence (first sequence)
+    query_seq = next(iter(sequences.values()))
+    query_length = len(query_seq)
+    
+    # Filter sequences based on coverage
+    filtered_sequences = {
+        header: seq for header, seq in sequences.items() 
+        if (1 - (seq.count('-') / query_length)) >= coverage_threshold
+    }
             
-            if coverage >= coverage_threshold:
-                filtered_sequences[header] = seq
-                
-        return filtered_sequences
-    except ValueError as ve:
-        logging.error(f"Value error in filter_a3m_by_coverage: {ve}")
-        raise
-    except Exception as e:
-        logging.error(f"Error filtering sequences by coverage: {e}")
-        raise
+    return filtered_sequences
 
 def get_protein_sequence(pdb_filename: str) -> str:
     """
@@ -135,123 +122,23 @@ def get_protein_sequence(pdb_filename: str) -> str:
         FileNotFoundError: If the PDB file does not exist.
         Exception: If there's an error in processing the PDB file.
     """
-    try:
-        if not os.path.exists(pdb_filename):
-            raise FileNotFoundError(f"PDB file not found: {pdb_filename}")
-            
-        pdb_parser = PDBParser(QUIET=True)
-        structure = pdb_parser.get_structure("Protein", pdb_filename)
-        ppb = PPBuilder()
+    if not os.path.exists(pdb_filename):
+        raise FileNotFoundError(f"PDB file not found: {pdb_filename}")
         
-        # Extract sequences from all peptides
-        sequences = [str(pp.get_sequence()) for pp in ppb.build_peptides(structure)]
+    pdb_parser = PDBParser(QUIET=True)
+    structure = pdb_parser.get_structure("Protein", pdb_filename)
+    ppb = PPBuilder()
+    
+    # Extract sequences from all peptides
+    sequences = [str(pp.get_sequence()) for pp in ppb.build_peptides(structure)]
+    
+    # Join all sequences
+    full_sequence = ''.join(sequences)
+    
+    if not full_sequence:
+        logging.warning(f"No protein sequence found in {pdb_filename}")
         
-        # Join all sequences
-        full_sequence = ''.join(sequences)
-        
-        if not full_sequence:
-            logging.warning(f"No protein sequence found in {pdb_filename}")
-            
-        return full_sequence
-
-    except FileNotFoundError as fnf:
-        logging.error(f"PDB file not found: {fnf}")
-        raise
-    except Exception as e:
-        logging.error(f"Error getting protein sequence: {e}")
-        raise
-
-def convert_fasta_to_a3m(fasta_file: str, a3m_file: str, output_file: str) -> None:
-    """
-    Converts FASTA files to A3M format by mapping and extracting relevant sequences.
-
-    Args:
-        fasta_file (str): Path to the FASTA file.
-        a3m_file (str): Path to the A3M file.
-        output_file (str): Path to the output A3M file.
-        
-    Raises:
-        FileNotFoundError: If input files don't exist
-        Exception: For any other errors during processing
-    """
-    try:
-        # Check if input files exist
-        for file_path in [fasta_file, a3m_file]:
-            if not os.path.exists(file_path):
-                raise FileNotFoundError(f"Input file not found: {file_path}")
-        
-        # Process files
-        fasta_headers = read_fasta_headers(fasta_file)
-        a3m_sequences = read_a3m_sequences(a3m_file)
-        extracted_sequences = map_and_extract(fasta_headers, a3m_sequences)
-        
-        # Ensure output directory exists
-        os.makedirs(os.path.dirname(os.path.abspath(output_file)), exist_ok=True)
-        
-        # Write output
-        combine_sequences(extracted_sequences, output_file)
-        
-        logging.info(f"Successfully converted {fasta_file} to A3M format at {output_file}")
-    except FileNotFoundError as fnf:
-        logging.error(f"File not found: {fnf}")
-        raise
-    except Exception as e:
-        logging.error(f"Error converting FASTA to A3M: {e}")
-        raise
-
-def read_fasta_headers(fasta_file: str) -> List[str]:
-    """
-    Reads headers from a FASTA file.
-
-    Args:
-        fasta_file (str): Path to the FASTA file.
-
-    Returns:
-        List[str]: A list of header identifiers.
-        
-    Raises:
-        FileNotFoundError: If the FASTA file doesn't exist
-        Exception: For any other errors during processing
-    """
-    try:
-        if not os.path.exists(fasta_file):
-            raise FileNotFoundError(f"FASTA file not found: {fasta_file}")
-            
-        headers = [record.id for record in SeqIO.parse(fasta_file, "fasta")]
-        return headers
-    except FileNotFoundError as fnf:
-        logging.error(f"FASTA file not found: {fnf}")
-        raise
-    except Exception as e:
-        logging.error(f"Error reading FASTA headers: {e}")
-        raise
-
-def read_a3m_sequences(a3m_file: str) -> Dict[str, str]:
-    """
-    Reads sequences from an A3M file.
-
-    Args:
-        a3m_file (str): Path to the A3M file.
-
-    Returns:
-        Dict[str, str]: A dictionary with headers as keys and sequences as values.
-        
-    Raises:
-        FileNotFoundError: If the A3M file doesn't exist
-        Exception: For any other errors during processing
-    """
-    try:
-        if not os.path.exists(a3m_file):
-            raise FileNotFoundError(f"A3M file not found: {a3m_file}")
-            
-        sequences = {record.id: str(record.seq) for record in SeqIO.parse(a3m_file, "fasta")}
-        return sequences
-    except FileNotFoundError as fnf:
-        logging.error(f"A3M file not found: {fnf}")
-        raise
-    except Exception as e:
-        logging.error(f"Error reading A3M sequences: {e}")
-        raise
+    return full_sequence
 
 def map_and_extract(headers: List[str], sequences: Dict[str, str]) -> Dict[str, str]:
     """
@@ -267,19 +154,15 @@ def map_and_extract(headers: List[str], sequences: Dict[str, str]) -> Dict[str, 
     Raises:
         Exception: For any errors during processing
     """
-    try:
-        # Use dictionary comprehension to efficiently extract matching sequences
-        extracted = {header: sequences[header] for header in headers if header in sequences}
+    # Use dictionary comprehension to efficiently extract matching sequences
+    extracted = {header: sequences[header] for header in headers if header in sequences}
+    
+    # Log if some headers weren't found
+    missing_count = len(set(headers) - set(extracted.keys()))
+    if missing_count:
+        logging.warning(f"Could not find sequences for {missing_count} headers")
         
-        # Log if some headers weren't found
-        missing_headers = set(headers) - set(extracted.keys())
-        if missing_headers:
-            logging.warning(f"Could not find sequences for {len(missing_headers)} headers")
-            
-        return extracted
-    except Exception as e:
-        logging.error(f"Error mapping and extracting sequences: {e}")
-        raise
+    return extracted
 
 def combine_sequences(extracted_sequences: Dict[str, str], output_file: str) -> None:
     """
@@ -292,18 +175,14 @@ def combine_sequences(extracted_sequences: Dict[str, str], output_file: str) -> 
     Raises:
         Exception: For any errors during file writing
     """
-    try:
-        # Ensure output directory exists
-        os.makedirs(os.path.dirname(os.path.abspath(output_file)), exist_ok=True)
-        
-        with open(output_file, "w") as f:
-            for header, seq in extracted_sequences.items():
-                f.write(f">{header}\n{seq}\n")
-                
-        logging.info(f"Successfully wrote {len(extracted_sequences)} sequences to {output_file}")
-    except Exception as e:
-        logging.error(f"Error combining sequences: {e}")
-        raise
+    # Ensure output directory exists
+    Path(output_file).parent.mkdir(parents=True, exist_ok=True)
+    
+    with open(output_file, "w") as f:
+        for header, seq in extracted_sequences.items():
+            f.write(f">{header}\n{seq}\n")
+            
+    logging.info(f"Successfully wrote {len(extracted_sequences)} sequences to {output_file}")
 
 def process_sequences(
     dir_path: str,
@@ -326,49 +205,42 @@ def process_sequences(
         ValueError: If sequences list is empty
         Exception: For any other errors during processing
     """
-    try:
-        if not sequences:
-            raise ValueError("Empty sequences list provided")
-            
-        # Create a copy to avoid modifying the original list
-        sequences_copy = sequences.copy()
-        random.shuffle(sequences_copy)
+    if not sequences:
+        raise ValueError("Empty sequences list provided")
         
-        # If total sequences is less than seq_num_per_shuffle, use all sequences in one group
-        actual_seq_per_shuffle = min(seq_num_per_shuffle, len(sequences_copy))
-        
-        # Create groups of sequences
-        groups = [
-            sequences_copy[x:x + actual_seq_per_shuffle]
-            for x in range(0, len(sequences_copy), actual_seq_per_shuffle)
-        ]
-        
-        # Create shuffle directory
-        shuffle_dir = os.path.join(dir_path, f'shuffle_{shuffle_num}')
-        os.makedirs(shuffle_dir, exist_ok=True)
+    # Create a copy to avoid modifying the original list
+    sequences_copy = sequences.copy()
+    random.shuffle(sequences_copy)
+    
+    # If total sequences is less than seq_num_per_shuffle, use all sequences in one group
+    actual_seq_per_shuffle = min(seq_num_per_shuffle, len(sequences_copy))
+    
+    # Create groups of sequences
+    groups = [
+        sequences_copy[x:x + actual_seq_per_shuffle]
+        for x in range(0, len(sequences_copy), actual_seq_per_shuffle)
+    ]
+    
+    # Create shuffle directory
+    shuffle_dir = Path(dir_path) / f'shuffle_{shuffle_num}'
+    shuffle_dir.mkdir(parents=True, exist_ok=True)
 
-        # Write all sequences to a single shuffle file
-        shuffle_file_path = os.path.join(shuffle_dir, f'shuffle_{shuffle_num}.shuf')
-        with open(shuffle_file_path, 'w') as f:
-            for seq in sequences_copy:
-                f.write(seq)
+    # Write all sequences to a single shuffle file
+    shuffle_file_path = shuffle_dir / f'shuffle_{shuffle_num}.shuf'
+    with open(shuffle_file_path, 'w') as f:
+        for seq in sequences_copy:
+            f.write(seq)
 
-        # Write each group to a separate A3M file
-        for i, group in enumerate(groups, start=1):
-            group_file_path = os.path.join(shuffle_dir, f'group_{i}.a3m')
-            with open(group_file_path, 'w') as g:
-                g.write('>101\n')
-                g.write(f"{protein_sequence}\n")
-                for seq in group:
-                    g.write(seq)
-                    
-        logging.info(f"Successfully processed {len(sequences_copy)} sequences into {len(groups)} groups")
-    except ValueError as ve:
-        logging.error(f"Value error in process_sequences: {ve}")
-        raise
-    except Exception as e:
-        logging.error(f"Error processing sequences: {e}")
-        raise
+    # Write each group to a separate A3M file
+    for i, group in enumerate(groups, start=1):
+        group_file_path = shuffle_dir / f'group_{i}.a3m'
+        with open(group_file_path, 'w') as g:
+            g.write('>101\n')
+            g.write(f"{protein_sequence}\n")
+            for seq in group:
+                g.write(seq)
+                
+    logging.info(f"Successfully processed {len(sequences_copy)} sequences into {len(groups)} groups")
 
 def process_all_sequences(
     dir_path: str,
@@ -382,7 +254,7 @@ def process_all_sequences(
 
     Args:
         dir_path (str): Directory to store shuffled files.
-        file_path (str): Path to the input sequence file.
+        file_path (str): Path to the input a3m file.
         num_shuffles (int): Number of shuffles to perform.
         seq_num_per_shuffle (int): Number of sequences per shuffle.
         reference_pdb (str): Reference PDB identifier.
@@ -392,42 +264,32 @@ def process_all_sequences(
         ValueError: If no sequences are found
         Exception: For any other errors during processing
     """
-    try:
-        # Check if input files exist
-        if not os.path.exists(file_path):
-            raise FileNotFoundError(f"Input file not found: {file_path}")
-        if not os.path.exists(reference_pdb):
-            raise FileNotFoundError(f"Reference PDB file not found: {reference_pdb}")
-            
-        # Ensure output directory exists
-        os.makedirs(dir_path, exist_ok=True)
+    # Check if input files exist
+    if not os.path.exists(file_path):
+        raise FileNotFoundError(f"Input file not found: {file_path}")
+    if not os.path.exists(reference_pdb):
+        raise FileNotFoundError(f"Reference PDB file not found: {reference_pdb}")
         
-        # Read sequences from A3M file
-        sequences_dict = read_a3m_to_dict(file_path)
+    # Ensure output directory exists
+    Path(dir_path).mkdir(parents=True, exist_ok=True)
+    
+    # Read sequences from A3M file
+    sequences_dict = read_a3m_to_dict(file_path)
+    
+    if not sequences_dict:
+        raise ValueError(f"No sequences found in {file_path}")
         
-        if not sequences_dict:
-            raise ValueError(f"No sequences found in {file_path}")
-            
-        # Convert dictionary to list of formatted sequences
-        sequences = [f"{header}\n{seq}\n" for header, seq in sequences_dict.items()]
+    # Convert dictionary to list of formatted sequences
+    sequences = [f"{header}\n{seq}\n" for header, seq in sequences_dict.items()]
+    
+    # Get protein sequence from reference PDB
+    protein_sequence = get_protein_sequence(reference_pdb)
+    
+    # Process sequences for each shuffle
+    for i in range(1, num_shuffles + 1):
+        process_sequences(dir_path, sequences, i, seq_num_per_shuffle, protein_sequence)
         
-        # Get protein sequence from reference PDB
-        protein_sequence = get_protein_sequence(reference_pdb)
-        
-        # Process sequences for each shuffle
-        for i in range(1, num_shuffles + 1):
-            process_sequences(dir_path, sequences, i, seq_num_per_shuffle, protein_sequence)
-            
-        logging.info(f"Successfully processed {len(sequences)} sequences for {num_shuffles} shuffles")
-    except FileNotFoundError as fnf:
-        logging.error(f"File not found: {fnf}")
-        raise
-    except ValueError as ve:
-        logging.error(f"Value error in process_all_sequences: {ve}")
-        raise
-    except Exception as e:
-        logging.error(f"Error processing all sequences: {e}")
-        raise
+    logging.info(f"Successfully processed {len(sequences)} sequences for {num_shuffles} shuffles")
 
 def collect_a3m_files(df_list: List[Dict[str, str]]) -> List[str]:
     """
@@ -443,36 +305,28 @@ def collect_a3m_files(df_list: List[Dict[str, str]]) -> List[str]:
         ValueError: If df_list is empty or invalid
         Exception: For any other errors during processing
     """
-    try:
-        if not df_list:
-            raise ValueError("Empty dataframe list provided")
-            
-        a3m_list = []
+    if not df_list:
+        raise ValueError("Empty dataframe list provided")
         
-        for i, df in enumerate(df_list):
-            if 'PDB' not in df:
-                logging.warning(f"DataFrame at index {i} does not contain 'PDB' column, skipping")
+    a3m_list = []
+    
+    for i, df in enumerate(df_list):
+        if 'PDB' not in df:
+            logging.warning(f"DataFrame at index {i} does not contain 'PDB' column, skipping")
+            continue
+            
+        logging.info(f'Processing DataFrame {i+1}/{len(df_list)}')
+        
+        for pdb in df['PDB']:
+            if not isinstance(pdb, str):
+                logging.warning(f"Skipping non-string PDB entry: {pdb}")
                 continue
                 
-            logging.info(f'Processing DataFrame {i+1}/{len(df_list)}')
+            a3m = pdb.split('_unrelaxed')[0] + '.a3m'
+            a3m_list.append(a3m)
             
-            for pdb in df['PDB']:
-                if not isinstance(pdb, str):
-                    logging.warning(f"Skipping non-string PDB entry: {pdb}")
-                    continue
-                    
-                a3m = pdb.split('_unrelaxed')[0] + '.a3m'
-                a3m_list.append(a3m)
-                logging.info(f"Added A3M file: {a3m}")
-                
-        logging.info(f"Collected {len(a3m_list)} A3M files")
-        return a3m_list
-    except ValueError as ve:
-        logging.error(f"Value error in collect_a3m_files: {ve}")
-        raise
-    except Exception as e:
-        logging.error(f"Error collecting A3M files: {e}")
-        raise
+    logging.info(f"Collected {len(a3m_list)} A3M files")
+    return a3m_list
 
 def concatenate_a3m_content(
     a3m_list: List[str],
@@ -492,85 +346,68 @@ def concatenate_a3m_content(
         ValueError: If a3m_list is empty
         Exception: For any other errors during processing
     """
-    try:
-        if not a3m_list:
-            raise ValueError("Empty A3M file list provided")
+    if not a3m_list:
+        raise ValueError("Empty A3M file list provided")
+        
+    if not os.path.exists(reference_pdb):
+        raise FileNotFoundError(f"Reference PDB file not found: {reference_pdb}")
+        
+    # Get reference protein sequence
+    query = get_protein_sequence(reference_pdb)
+    
+    # Track unique entries to avoid duplicates
+    seen_entries = set()
+    concatenated_content = []
+    
+    # Process each A3M file
+    for file_name in a3m_list:
+        if not os.path.exists(file_name):
+            logging.warning(f"File not found, skipping: {file_name}")
+            continue
             
-        if not os.path.exists(reference_pdb):
-            raise FileNotFoundError(f"Reference PDB file not found: {reference_pdb}")
-            
-        # Get reference protein sequence
-        query = get_protein_sequence(reference_pdb)
-        
-        # Track unique entries to avoid duplicates
-        seen_entries = set()
-        concatenated_content = []
-        
-        # Process each A3M file
-        for file_name in a3m_list:
-            try:
-                if not os.path.exists(file_name):
-                    logging.warning(f"File not found, skipping: {file_name}")
-                    continue
-                    
-                with open(file_name, "r") as file:
-                    current_header = None
-                    current_sequence = ""
-                    
-                    for line in file:
-                        line = line.strip()
-                        if not line:
-                            continue
-                            
-                        if line.startswith('>') and not line.startswith('>101') and not line.startswith(query) and not line.startswith('#'):
-                            # Process previous entry if exists
-                            if current_header and current_sequence:
-                                entry = (current_header, current_sequence)
-                                if entry not in seen_entries:
-                                    concatenated_content.append(f"{current_header}\n{current_sequence}\n")
-                                    seen_entries.add(entry)
-                            
-                            # Start new entry
-                            current_header = line
-                            current_sequence = ""
-                        elif current_header:
-                            # Add to current sequence, filtering out lowercase letters
-                            current_sequence = "".join([char for char in line if char.isupper() or char == '-'])
-                    
-                    # Process the last entry in the file
-                    if current_header and current_sequence:
-                        entry = (current_header, current_sequence)
-                        if entry not in seen_entries:
-                            concatenated_content.append(f"{current_header}\n{current_sequence}\n")
-                            seen_entries.add(entry)
-                            
-            except FileNotFoundError:
-                logging.warning(f"File not found, skipping: {file_name}")
-            except Exception as e:
-                logging.warning(f"Error processing file {file_name}: {e}")
-        
-        # Ensure output directory exists
-        os.makedirs(os.path.dirname(os.path.abspath(a3m_path)), exist_ok=True)
-        
-        # Write concatenated content to output file
         try:
-            with open(a3m_path, "w") as output_file:
-                output_file.writelines(concatenated_content)
+            with open(file_name, "r") as file:
+                current_header = None
+                current_sequence = ""
                 
-            logging.info(f"Successfully wrote {len(seen_entries)} unique sequences to {a3m_path}")
+                for line in file:
+                    line = line.strip()
+                    if not line:
+                        continue
+                        
+                    if line.startswith('>') and not line.startswith('>101') and not line.startswith(query) and not line.startswith('#'):
+                        # Process previous entry if exists
+                        if current_header and current_sequence:
+                            entry = (current_header, current_sequence)
+                            if entry not in seen_entries:
+                                concatenated_content.append(f"{current_header}\n{current_sequence}\n")
+                                seen_entries.add(entry)
+                        
+                        # Start new entry
+                        current_header = line
+                        current_sequence = ""
+                    elif current_header:
+                        # Add to current sequence, filtering out lowercase letters
+                        current_sequence += "".join(char for char in line if char.isupper() or char == '-')
+                
+                # Process the last entry in the file
+                if current_header and current_sequence:
+                    entry = (current_header, current_sequence)
+                    if entry not in seen_entries:
+                        concatenated_content.append(f"{current_header}\n{current_sequence}\n")
+                        seen_entries.add(entry)
+                        
         except Exception as e:
-            logging.error(f"Error writing concatenated A3M file: {e}")
-            raise
+            logging.warning(f"Error processing file {file_name}: {e}")
+    
+    # Ensure output directory exists
+    Path(a3m_path).parent.mkdir(parents=True, exist_ok=True)
+    
+    # Write concatenated content to output file
+    with open(a3m_path, "w") as output_file:
+        output_file.writelines(concatenated_content)
             
-    except FileNotFoundError as fnf:
-        logging.error(f"File not found: {fnf}")
-        raise
-    except ValueError as ve:
-        logging.error(f"Value error in concatenate_a3m_content: {ve}")
-        raise
-    except Exception as e:
-        logging.error(f"Error concatenating A3M content: {e}")
-        raise
+    logging.info(f"Successfully wrote {len(seen_entries)} unique sequences to {a3m_path}")
 
 def count_sequences_in_a3m(a3m_file: str) -> int:
     """
@@ -585,12 +422,12 @@ def count_sequences_in_a3m(a3m_file: str) -> int:
     Raises:
         FileNotFoundError: If the A3M file doesn't exist (logged but not raised)
     """
-    count = 0
+    if not os.path.exists(a3m_file):
+        logging.error(f"A3M file not found: {a3m_file}")
+        return 0
+        
     try:
-        if not os.path.exists(a3m_file):
-            logging.error(f"A3M file not found: {a3m_file}")
-            return 0
-            
+        count = 0
         with open(a3m_file, 'r') as file:
             for line in file:
                 if line.startswith('>'):
@@ -598,9 +435,6 @@ def count_sequences_in_a3m(a3m_file: str) -> int:
                     
         logging.info(f"Found {count} sequences in {a3m_file}")
         return count
-    except FileNotFoundError:
-        logging.error(f"A3M file not found: {a3m_file}")
-        return 0
     except Exception as e:
         logging.error(f"Error counting sequences in A3M file: {e}")
         return 0

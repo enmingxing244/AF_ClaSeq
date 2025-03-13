@@ -18,7 +18,7 @@ from concurrent.futures import ProcessPoolExecutor
 from tqdm import tqdm
 from concurrent.futures import as_completed
 
-from af_claseq.utils.structure_analysis import StructureAnalyzer
+from af_claseq.utils.structure_analysis import StructureAnalyzer, get_result_df
 
 
 class SequenceVotingRunner:
@@ -44,7 +44,8 @@ class SequenceVotingRunner:
         use_focused_bins: bool = False,
         precomputed_metrics: Optional[str] = None,
         plddt_threshold: float = 0,
-        hierarchical_sampling: bool = False
+        hierarchical_sampling: bool = False,
+        filter_criterion: Optional[str] = None
     ):
         """
         Initialize the voting runner with configuration parameters.
@@ -63,6 +64,7 @@ class SequenceVotingRunner:
             precomputed_metrics: Path to precomputed metrics CSV file
             plddt_threshold: pLDDT threshold for filtering structures
             hierarchical_sampling: Whether sampling directories have hierarchical structure
+            filter_criterion: Specific filter criterion name to process
         """
         self.sampling_dir = sampling_dir
         self.source_msa = source_msa
@@ -77,6 +79,7 @@ class SequenceVotingRunner:
         self.precomputed_metrics = precomputed_metrics
         self.plddt_threshold = plddt_threshold
         self.hierarchical_sampling = hierarchical_sampling
+        self.filter_criterion = filter_criterion
         
         # Initialize output directories
         self.voting_dir = os.path.join(self.output_dir)
@@ -97,9 +100,22 @@ class SequenceVotingRunner:
             with open(self.config_path) as f:
                 self.config = json.load(f)
             
-            # Determine binning dimensionality
-            self.is_2d = len(self.config['filter_criteria']) >= 2
-            self.is_3d = len(self.config['filter_criteria']) >= 3
+            # If a specific filter criterion is specified, filter the config
+            if self.filter_criterion:
+                # Find the specified criterion in the filter_criteria list
+                filtered_criteria = [c for c in self.config['filter_criteria'] 
+                                    if c.get('name') == self.filter_criterion]
+                
+                if not filtered_criteria:
+                    self.logger.error(f"Filter criterion '{self.filter_criterion}' not found in config")
+                    raise ValueError(f"Filter criterion '{self.filter_criterion}' not found in config")
+                
+                # Replace the filter_criteria list with just the selected criterion
+                self.config['filter_criteria'] = filtered_criteria
+            
+            # Always use 1D voting by default
+            self.is_2d = False
+            self.is_3d = False
             
         except Exception as e:
             self.logger.error(f"Error reading config file: {str(e)}")
@@ -131,8 +147,8 @@ class SequenceVotingRunner:
         Returns:
             Path to results CSV file or None if process fails
         """
-        self.logger.info("Starting sequence voting analysis")
-        results_file = os.path.join(self.voting_dir, "sequence_voting_results.csv")
+        self.logger.info(f"Starting sequence voting analysis for criterion: {self.filter_criterion}")
+        results_file = os.path.join(self.voting_dir, "03_voting_results.csv")
         
         try:
             # Check if results file already exists
@@ -164,9 +180,26 @@ class SequenceVotingRunner:
                 self.logger.warning("No valid results found in sampling directories")
                 return None
                 
-            # Create bins based on dimensionality
+            # Create bins for the current criterion
             self.logger.info("Creating metric bins...")
-            pdb_bins = self._create_metric_bins(results)
+            criterion_name = self.config['filter_criteria'][0]['name']
+            
+            if self.use_focused_bins:
+                bins, pdb_bins = self.analyzer.create_focused_1d_bins(
+                    results,
+                    criterion_name,
+                    self.num_bins,
+                    self.min_value,
+                    self.max_value
+                )
+            else:
+                bins, pdb_bins = self.analyzer.create_1d_metric_bins(
+                    results,
+                    criterion_name,
+                    num_bins=self.num_bins,
+                    min_value=self.min_value,
+                    max_value=self.max_value
+                )
             
             # Get sequence votes
             self.logger.info("Processing sequence votes...")
@@ -191,7 +224,7 @@ class SequenceVotingRunner:
             results_df = self._create_results_dataframe(sequence_votes)
             results_df.to_csv(results_file, index=False)
             
-            self.logger.info(f"Processed {len(sequence_votes)} sequences")
+            self.logger.info(f"Processed {len(sequence_votes)} sequences for criterion: {self.filter_criterion}")
             self.logger.info(f"Saved voting results to {results_file}")
             
             return results_file
@@ -200,43 +233,6 @@ class SequenceVotingRunner:
             self.logger.error(f"An error occurred in sequence voting: {str(e)}", exc_info=True)
             return None
     
-    def _create_metric_bins(self, results):
-        """Create metric bins based on dimensionality."""
-        if self.is_3d:
-            metric_names = [criterion['name'] for criterion in self.config['filter_criteria'][:3]]
-            bins, pdb_bins = self.analyzer.create_3d_metric_bins(
-                results,
-                metric_names,
-                num_bins=self.num_bins
-            )
-        elif self.is_2d:
-            metric_names = [criterion['name'] for criterion in self.config['filter_criteria'][:2]]
-            bins, pdb_bins = self.analyzer.create_2d_metric_bins(
-                results,
-                metric_names,
-                num_bins=self.num_bins
-            )
-        else:
-            if self.use_focused_bins:
-                bins, pdb_bins = self.analyzer.create_focused_1d_bins(
-                    results,
-                    self.config['filter_criteria'][0]['name'],
-                    self.num_bins,
-                    self.min_value,
-                    self.max_value
-                )
-            else:
-                bins, pdb_bins = self.analyzer.create_1d_metric_bins(
-                    results,
-                    self.config['filter_criteria'][0]['name'],
-                    num_bins=self.num_bins,
-                    min_value=self.min_value,
-                    max_value=self.max_value
-                )
-        
-        self.bins = bins
-        return pdb_bins
-    
     def _save_raw_votes(self, all_votes):
         """Save raw sequence votes to JSON file."""
         raw_votes_file = os.path.join(self.voting_dir, "raw_sequence_votes.json")
@@ -244,12 +240,7 @@ class SequenceVotingRunner:
         # Convert votes to serializable format
         serializable_votes = {}
         for header, votes in all_votes.items():
-            if self.is_3d:
-                serializable_votes[header] = [[int(v[0]), int(v[1]), int(v[2])] for v in votes]
-            elif self.is_2d:
-                serializable_votes[header] = [[int(v[0]), int(v[1])] for v in votes]
-            else:
-                serializable_votes[header] = [int(v) for v in votes]
+            serializable_votes[header] = [int(v) for v in votes]
             
         with open(raw_votes_file, 'w') as f:
             json.dump(serializable_votes, f)
@@ -258,39 +249,15 @@ class SequenceVotingRunner:
     
     def _create_results_dataframe(self, sequence_votes):
         """Create DataFrame from sequence votes."""
-        if self.is_3d:
-            results_df = pd.DataFrame([
-                {
-                    "Sequence_Header": header,
-                    "Bin_Assignment_1": bin_nums[0] if isinstance(bin_nums, tuple) else bin_nums,
-                    "Bin_Assignment_2": bin_nums[1] if isinstance(bin_nums, tuple) else bin_nums,
-                    "Bin_Assignment_3": bin_nums[2] if isinstance(bin_nums, tuple) else bin_nums,
-                    "Vote_Count": vote_count,
-                    "Total_Votes": total_votes
-                }
-                for header, (bin_nums, vote_count, total_votes) in sequence_votes.items()
-            ])
-        elif self.is_2d:
-            results_df = pd.DataFrame([
-                {
-                    "Sequence_Header": header,
-                    "Bin_Assignment_1": bin_nums[0] if isinstance(bin_nums, tuple) else bin_nums,
-                    "Bin_Assignment_2": bin_nums[1] if isinstance(bin_nums, tuple) else bin_nums,
-                    "Vote_Count": vote_count,
-                    "Total_Votes": total_votes
-                }
-                for header, (bin_nums, vote_count, total_votes) in sequence_votes.items()
-            ])
-        else:
-            results_df = pd.DataFrame([
-                {
-                    "Sequence_Header": header,
-                    "Bin_Assignment": bin_num,
-                    "Vote_Count": vote_count,
-                    "Total_Votes": total_votes
-                }
-                for header, (bin_num, vote_count, total_votes) in sequence_votes.items()
-            ])
+        results_df = pd.DataFrame([
+            {
+                "Sequence_Header": header,
+                "Bin_Assignment": bin_num,
+                "Vote_Count": vote_count,
+                "Total_Votes": total_votes
+            }
+            for header, (bin_num, vote_count, total_votes) in sequence_votes.items()
+        ])
         
         return results_df
 
@@ -365,20 +332,12 @@ class SequenceVotingPlotter:
                 
             results_df = pd.read_csv(self.results_file)
             
-            # Determine if it's 2D or 3D from column names
-            is_2d = 'Bin_Assignment_1' in results_df.columns and 'Bin_Assignment_2' in results_df.columns
-            is_3d = is_2d and 'Bin_Assignment_3' in results_df.columns
-            
             # Create output directory
             os.makedirs(self.output_dir, exist_ok=True)
             
-            # Determine number of bins from the data
-            if is_3d or is_2d:
-                self.logger.info("Multi-dimensional plotting not implemented yet")
-                return None
-            else:
-                num_bins = int(results_df['Bin_Assignment'].max())
-                plot_path = self._plot_1d_distribution(results_df, num_bins)
+            # Always use 1D plotting
+            num_bins = int(results_df['Bin_Assignment'].max())
+            plot_path = self._plot_1d_distribution(results_df, num_bins)
                 
             return plot_path
             
@@ -516,9 +475,8 @@ class VotingAnalyzer:
                 
             return results
 
-        # Collect all PDB files
+        # Collect PDB file paths
         pdb_files = []
-        
         if hierarchical:
             # Get all sampling round directories
             sampling_rounds = [d for d in os.listdir(base_dir) if d.startswith('sampling_round_')]
@@ -535,107 +493,56 @@ class VotingAnalyzer:
                     for group_dir in os.listdir(dir_path):
                         if group_dir.startswith('group_'):
                             group_path = os.path.join(dir_path, group_dir)
-                            if group_path.endswith('.a3m'):
-                                base_name = os.path.splitext(group_path)[0]
-                                pdb_name = f"{base_name}_unrelaxed_rank_001_alphafold2_ptm_model_1_seed_042.pdb"
-                                if os.path.exists(pdb_name):
-                                    pdb_files.append((pdb_name, filter_criteria, basics, plddt_threshold))
+                            pdb_files.extend(self._get_pdb_files_from_dir(group_path))
         else:
             # Get regular sampling directories
             sampling_dirs = [d for d in os.listdir(base_dir) if d.startswith('sampling_')]
             
             for sampling_dir in sampling_dirs:
                 dir_path = os.path.join(base_dir, sampling_dir)
-                for f in os.listdir(dir_path):
-                    if f.endswith('.a3m'):
-                        base_name = os.path.splitext(f)[0]
-                        pdb_name = f"{base_name}_unrelaxed_rank_001_alphafold2_ptm_model_1_seed_042.pdb"
-                        pdb_path = os.path.join(dir_path, pdb_name)
-                        if os.path.exists(pdb_path):
-                            pdb_files.append((pdb_path, filter_criteria, basics, plddt_threshold))
+                pdb_files.extend(self._get_pdb_files_from_dir(dir_path))
 
         if not pdb_files:
             logging.warning("No PDB files found in sampling directories")
             return results
 
-        with ProcessPoolExecutor(max_workers=self.max_workers) as executor:
-            futures = [executor.submit(self._process_pdb_file, args) for args in pdb_files]
-            
-            for future in tqdm(as_completed(futures), total=len(futures), desc="Processing PDB files"):
-                result = future.result()
-                if result:
-                    pdb_path, metrics = result
-                    results[pdb_path] = metrics
+        # Use get_result_df from structure_analysis to process PDB files
+        parent_dir = os.path.dirname(pdb_files[0]) if pdb_files else base_dir
+        df = get_result_df(parent_dir, filter_criteria, basics)
+        
+        # Filter by pLDDT if threshold is set
+        if plddt_threshold > 0 and 'plddt' in df.columns:
+            df = df[df['plddt'] > plddt_threshold]
+        
+        # Convert DataFrame to expected results format
+        for _, row in df.iterrows():
+            pdb_path = row['PDB']
+            metrics = {}
+            for criterion in filter_criteria:
+                metric_name = criterion['name']
+                if metric_name in row:
+                    metrics[metric_name] = row[metric_name]
+            results[pdb_path] = metrics
                     
         if not results:
             logging.warning("No valid results obtained from PDB processing")
             
         return results
-
-    def _process_pdb_file(self, args):
-        """Process a single PDB file and return metrics if valid."""
-        pdb_path, filter_criteria, basics, plddt_threshold = args
-        
-        try:
-            # Get pLDDT score using StructureAnalyzer
-            plddt = self.structure_analyzer.plddt_process(pdb_path, list(range(basics['full_index']['start'], basics['full_index']['end'] + 1)))
-            if not plddt:
-                logging.warning(f"Could not calculate pLDDT for {pdb_path}")
-                return None
-                
-            if plddt and plddt > plddt_threshold:
-                metrics = {}
-                for criterion in filter_criteria:
-                    if criterion['type'] == 'distance':
-                        indices1 = criterion['indices']['set1']
-                        indices2 = criterion['indices']['set2']
-                        distance = self.structure_analyzer.calculate_residue_distance(pdb_path, 'A', indices1, indices2)
-                        metrics[criterion['name']] = distance
-                    elif criterion['type'] == 'angle':
-                        angle = self.structure_analyzer.calculate_angle(
-                            pdb_path,
-                            criterion['indices']['domain1'],
-                            criterion['indices']['domain2'],
-                            criterion['indices']['hinge']
-                        )
-                        metrics[criterion['name']] = angle
-                    elif criterion['type'] == 'rmsd':
-                        superposition_indices = range(
-                            criterion['superposition_indices']['start'],
-                            criterion['superposition_indices']['end'] + 1
-                        )
-                        rmsd_indices = []
-                        if isinstance(criterion['rmsd_indices'], list):
-                            for range_dict in criterion['rmsd_indices']:
-                                rmsd_indices.extend(range(range_dict['start'], range_dict['end'] + 1))
-                        else:
-                            rmsd_indices = range(
-                                criterion['rmsd_indices']['start'],
-                                criterion['rmsd_indices']['end'] + 1
-                            )
-                        rmsd = self.structure_analyzer.calculate_ca_rmsd(
-                            basics['reference_pdb'],
-                            pdb_path,
-                            list(superposition_indices),
-                            list(rmsd_indices),
-                            chain_id='A'
-                        )
-                        if rmsd is not None:
-                            metrics[criterion['name']] = rmsd
-                        else:
-                            logging.warning(f"Could not calculate RMSD for {pdb_path}")
-                            return None
-                    elif criterion['type'] == 'tmscore':
-                        tm_score = self.structure_analyzer.calculate_tm_score(pdb_path, basics['reference_pdb'])
-                        metrics[criterion['name']] = tm_score
-
-                return pdb_path, metrics
-        except Exception as e:
-            logging.error(f"Error processing {pdb_path}: {str(e)}")
-            return None
-            
-        return None
     
+    def _get_pdb_files_from_dir(self, dir_path: str) -> List[str]:
+        """Helper to get PDB files from a directory."""
+        pdb_files = []
+        for f in os.listdir(dir_path):
+            if f.endswith('.pdb'):
+                pdb_files.append(os.path.join(dir_path, f))
+            elif f.endswith('.a3m'):
+                base_name = os.path.splitext(f)[0]
+                pdb_path = os.path.join(dir_path, f"{base_name}_unrelaxed_rank_001_alphafold2_ptm_model_1_seed_042.pdb")
+                if os.path.exists(pdb_path):
+                    pdb_files.append(pdb_path)
+        return pdb_files
+
+      
     def create_1d_metric_bins(self, 
                            results: Dict[str, Dict[str, float]], 
                            metric_name: str, 
@@ -865,7 +772,7 @@ class VotingAnalyzer:
         for a3m_file in tqdm(a3m_files, desc="Processing A3M files for votes"):
             # Determine corresponding PDB file
             base_name = os.path.splitext(os.path.basename(a3m_file))[0]
-            pdb_path = os.path.join(os.path.dirname(a3m_file), f"{base_name}_unrelaxed_rank_001_alphafold2_ptm_model_1_seed_042.pdb")
+            pdb_path = os.path.join(os.path.dirname(a3m_file), f"{base_name}_unrelaxed_rank_*.pdb")
             
             if pdb_path not in pdb_bins:
                 continue

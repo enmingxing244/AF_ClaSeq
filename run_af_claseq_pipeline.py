@@ -25,10 +25,11 @@ from af_claseq.utils.sequence_processing import (
 
 # Import pipeline components
 from af_claseq.pipeline.iter_shuf_enrich import IterShufEnrichRunner, IterShufEnrichPlotter, IterShufEnrichCombiner
-from af_claseq.pipeline.m_fold_sampling import MFoldSampler, MFoldAnalyzer
+from af_claseq.pipeline.m_fold_sampling import MFoldSampler, MFoldPlotter
 from af_claseq.pipeline.sequence_voting import SequenceVotingRunner, SequenceVotingPlotter
 from af_claseq.pipeline.sequence_recompile import SequenceRecompiler
 from af_claseq.pipeline.pure_seq_pred import PureSequenceAF2Prediction, create_af2_prediction_config_from_dict
+from af_claseq.pipeline.pure_seq_plot import PureSequencePlotter, create_pure_seq_plot_config_from_dict
 
 # Import configuration classes
 from af_claseq.pipeline.config import (
@@ -39,11 +40,11 @@ from af_claseq.pipeline.config import (
 class AFClaSeqPipeline:
     """Main pipeline class for AF-ClaSeq"""
     
-    def __init__(self, config_path: str):
+    def __init__(self, yaml_input: str):
         """Initialize the pipeline with YAML configuration file"""
-        self.config = load_pipeline_config(config_path)
+        self.config = load_pipeline_config(yaml_input)
         self.logger = self._setup_logging()
-        self.logger.info(f"Pipeline initialized with config from {config_path}")
+        self.logger.info(f"Pipeline initialized with config from {yaml_input}")
         
         # Create output directories
         self._create_directories()
@@ -139,7 +140,7 @@ class AFClaSeqPipeline:
             runner = IterShufEnrichRunner(
                 iter_shuf_input_a3m=self.config.iterative_shuffling.iter_shuf_input_a3m,
                 default_pdb=self.config.general.default_pdb,
-                base_dir=os.path.join(self.config.general.base_dir, "01_iterative_shuffling"),
+                iter_shuf_enrich_base_dir=os.path.join(self.config.general.base_dir, "01_iterative_shuffling"),
                 config_file=self.config.general.config_file,
                 slurm_submitter=self.slurm_submitter,
                 seq_num_per_shuffle=self.config.iterative_shuffling.seq_num_per_shuffle,
@@ -154,9 +155,18 @@ class AFClaSeqPipeline:
                 random_seed=self.config.general.random_seed
             )
             
+            # Set up logging and log parameters
+            runner.setup_logging()
+            runner.log_parameters()
+            
             # Run the iterative shuffling process
-            runner.run()
-            self.logger.info("Completed iterative shuffling successfully")
+            final_a3m = runner.run()
+            
+            if final_a3m is None:
+                self.logger.error("Iterative shuffling failed to produce output")
+                return False
+                
+            self.logger.info(f"Completed iterative shuffling successfully. Final output: {final_a3m}")
             return True
             
         except Exception as e:
@@ -171,15 +181,15 @@ class AFClaSeqPipeline:
         try:
             # Create plotter instance
             plotter = IterShufEnrichPlotter(
-                base_dir=self.config.general.base_dir,
+                iter_shuf_enrich_base_dir=self.config.general.base_dir,
                 config_path=self.config.general.config_file,
-                plot_num_cols=self.config.iterative_shuffling.iter_shuf_plot_num_cols,
-                plot_x_min=self.config.iterative_shuffling.iter_shuf_plot_x_min,
-                plot_x_max=self.config.iterative_shuffling.iter_shuf_plot_x_max,
-                plot_y_min=self.config.iterative_shuffling.iter_shuf_plot_y_min,
-                plot_y_max=self.config.iterative_shuffling.iter_shuf_plot_y_max,
-                plot_xticks=self.config.iterative_shuffling.iter_shuf_plot_xticks,
-                plot_bin_step=self.config.iterative_shuffling.iter_shuf_plot_bin_step
+                num_cols=self.config.iterative_shuffling.iter_shuf_plot_num_cols,
+                x_min=self.config.iterative_shuffling.iter_shuf_plot_x_min,
+                x_max=self.config.iterative_shuffling.iter_shuf_plot_x_max,
+                y_min=self.config.iterative_shuffling.iter_shuf_plot_y_min,
+                y_max=self.config.iterative_shuffling.iter_shuf_plot_y_max,
+                xticks=self.config.iterative_shuffling.iter_shuf_plot_xticks,
+                bin_step=self.config.iterative_shuffling.iter_shuf_plot_bin_step
             )
             
             # Plot metric distributions across iterations
@@ -187,16 +197,20 @@ class AFClaSeqPipeline:
             
             # Combine filtered sequences
             combiner = IterShufEnrichCombiner(
-                base_dir=self.config.general.base_dir,
+                iter_shuf_enrich_base_dir=self.config.general.base_dir,
                 config_path=self.config.general.config_file,
                 default_pdb=self.config.general.default_pdb,
                 combine_threshold=self.config.iterative_shuffling.iter_shuf_combine_threshold,
                 max_workers=self.config.slurm.max_workers
             )
             
-            combiner.combine()
+            combined_a3m = combiner.combine()
             
-            self.logger.info("Completed iterative shuffling analysis successfully")
+            if combined_a3m is None:
+                self.logger.error("Failed to combine sequences from iterative shuffling")
+                return False
+                
+            self.logger.info(f"Completed iterative shuffling analysis successfully. Combined output: {combined_a3m}")
             return True
             
         except Exception as e:
@@ -226,7 +240,7 @@ class AFClaSeqPipeline:
             sampler = MFoldSampler(
                 input_a3m=input_a3m,
                 default_pdb=self.config.general.default_pdb,
-                base_dir=os.path.join(self.config.general.base_dir, "02_m_fold_sampling"),
+                m_fold_sampling_base_dir=os.path.join(self.config.general.base_dir, "02_m_fold_sampling"),
                 group_size=self.config.m_fold_sampling.m_fold_group_size,
                 coverage_threshold=self.config.general.coverage_threshold,
                 random_select_num_seqs=self.config.m_fold_sampling.m_fold_random_select,
@@ -244,43 +258,70 @@ class AFClaSeqPipeline:
         except Exception as e:
             self.logger.error(f"Error in M-fold sampling: {str(e)}", exc_info=True)
             return False
-    def analyze_m_fold_sampling(self) -> bool:
+        
+    def plot_m_fold_sampling(self) -> bool:
         """
         Stage 02_ANALYSIS: Analyze results of M-fold sampling
         """
         self.logger.info("=== STAGE 02_ANALYSIS: M-FOLD SAMPLING ANALYSIS ===")
         
         try:
-            # Create analyzer instance
-            analyzer = MFoldAnalyzer(
+            # Create plotter instance
+            plotter = MFoldPlotter(
                 results_dir=os.path.join(self.config.general.base_dir, "02_m_fold_sampling"),
                 config_file=self.config.general.config_file,
-                output_dir=os.path.join(self.config.general.base_dir, "02_m_fold_sampling/analysis"),
+                output_dir=os.path.join(self.config.general.base_dir, "02_m_fold_sampling/plot"),
+                csv_dir=os.path.join(self.config.general.base_dir, "02_m_fold_sampling/csv"),
                 logger=self.logger
             )
             
-            # Extract metrics and find best structures
-            analyzer.extract_metrics(
-                plddt_threshold=self.config.m_fold_sampling.m_fold_plddt_threshold,
-                max_workers=self.config.slurm.max_workers
-            )
+            # Load filter criteria from config file to determine plot type
+            with open(self.config.general.config_file, 'r') as f:
+                config = json.load(f)
             
-            # Find best structures by primary metric
-            metric_name = self.filter_config['filter_criteria'][0]['name']
-            metric_type = 'minimize' if self.filter_config['filter_criteria'][0].get('method') == 'below' else 'maximize'
-            analyzer.find_best_structures(
-                metric_name=metric_name,
-                metric_type=metric_type,
-                n_best=self.config.m_fold_sampling.m_fold_n_best,
-                plddt_threshold=self.config.m_fold_sampling.m_fold_plddt_threshold
-            )
+            # Get number of filter criteria
+            num_criteria = len(config.get('filter_criteria', []))
             
-            self.logger.info("Completed M-fold sampling analysis successfully")
+            if num_criteria == 1:
+                # Only one criterion - use 1D plots
+                self.logger.info("One filter criterion detected - generating 1D plots")
+                plotter.plot_1d(
+                    initial_color=self.config.general.plot_initial_color,
+                    end_color=self.config.general.plot_end_color,
+                    x_min=self.config.m_fold_sampling.m_fold_x_min,
+                    x_max=self.config.m_fold_sampling.m_fold_x_max,
+                    y_min=self.config.m_fold_sampling.m_fold_y_min,
+                    y_max=self.config.m_fold_sampling.m_fold_y_max,
+                    plddt_threshold=self.config.m_fold_sampling.m_fold_plddt_threshold
+                )
+            elif num_criteria == 2:
+                # Two criteria - use 2D plots
+                self.logger.info("Two filter criteria detected - generating 2D plots")
+                plotter.plot_2d(
+                    x_min=self.config.m_fold_sampling.m_fold_x_min,
+                    x_max=self.config.m_fold_sampling.m_fold_x_max,
+                    y_min=self.config.m_fold_sampling.m_fold_y_min,
+                    y_max=self.config.m_fold_sampling.m_fold_y_max,
+                    plddt_threshold=self.config.m_fold_sampling.m_fold_plddt_threshold
+                )
+            elif num_criteria > 2:
+                # More than two criteria - not supported
+                self.logger.error(f"Found {num_criteria} filter criteria. Cannot plot more than 2 dimensions.")
+                self.logger.error("Please modify your config.json to include only 1 or 2 criteria for visualization.")
+                return False
+            else:
+                # No criteria found
+                self.logger.error("No filter criteria found in config file")
+                return False
+            
+            self.logger.info("Completed M-fold sampling analysis and plotting successfully")
             return True
             
         except Exception as e:
             self.logger.error(f"Error in M-fold sampling analysis: {str(e)}", exc_info=True)
             return False
+        
+        
     def run_sequence_voting(self) -> bool:
         """
         Stage 03: Run sequence voting analysis
@@ -288,44 +329,83 @@ class AFClaSeqPipeline:
         self.logger.info("=== STAGE 03: SEQUENCE VOTING ===")
         
         try:
-            # Create voting runner instance
-            voting_runner = SequenceVotingRunner(
-                sampling_dir=os.path.join(self.config.general.base_dir, "02_m_fold_sampling"),
-                source_msa=self.config.general.source_a3m,
-                config_path=self.config.general.config_file,
-                output_dir=os.path.join(self.config.general.base_dir, "03_voting"),
-                num_bins=self.config.general.num_bins,
-                max_workers=self.config.slurm.max_workers,
-                vote_threshold=self.config.sequence_voting.vote_threshold,
-                min_value=self.config.sequence_voting.vote_min_value,
-                max_value=self.config.sequence_voting.vote_max_value,
-                use_focused_bins=self.config.sequence_voting.use_focused_bins,
-                plddt_threshold=self.config.m_fold_sampling.m_fold_plddt_threshold,
-                hierarchical_sampling=self.config.sequence_voting.vote_hierarchical_sampling
-            )
+            # Load filter criteria from config file
+            with open(self.config.general.config_file, 'r') as f:
+                filter_config = json.load(f)
             
-            # Run voting analysis
-            results_file = voting_runner.run()
+            filter_criteria = filter_config.get('filter_criteria', [])
+            if not filter_criteria:
+                self.logger.error("No filter criteria found in config file")
+                return False
             
-            if results_file:
-                # Create plotter for visualization
-                plotter = SequenceVotingPlotter(
-                    results_file=results_file,
-                    output_dir=os.path.join(self.config.general.base_dir, "03_voting"),
-                    initial_color=self.config.general.plot_initial_color,
-                    figsize=self.config.sequence_voting.vote_figsize,
-                    y_min=self.config.sequence_voting.vote_y_min,
-                    y_max=self.config.sequence_voting.vote_y_max,
-                    x_ticks=self.config.sequence_voting.vote_x_ticks
+            # Create base output directory
+            base_output_dir = os.path.join(self.config.general.base_dir, "03_voting")
+            os.makedirs(base_output_dir, exist_ok=True)
+            
+            results_files = []
+            
+            # Process each filter criterion separately
+            for criterion in filter_criteria:
+                criterion_name = criterion.get('name')
+                if not criterion_name:
+                    self.logger.warning("Filter criterion without name found, skipping")
+                    continue
+                
+                self.logger.info(f"Processing filter criterion: {criterion_name}")
+                
+                # Create criterion-specific output directory
+                criterion_output_dir = os.path.join(base_output_dir, criterion_name)
+                os.makedirs(criterion_output_dir, exist_ok=True)
+                
+                # Create voting runner instance for this criterion
+                voting_runner = SequenceVotingRunner(
+                    sampling_dir=os.path.join(self.config.general.base_dir, "02_m_fold_sampling"),
+                    source_msa=self.config.general.source_a3m,
+                    config_path=self.config.general.config_file,
+                    output_dir=criterion_output_dir,
+                    num_bins=self.config.general.num_bins,
+                    max_workers=self.config.slurm.max_workers,
+                    vote_threshold=self.config.sequence_voting.vote_threshold,
+                    min_value=self.config.sequence_voting.vote_min_value,
+                    max_value=self.config.sequence_voting.vote_max_value,
+                    use_focused_bins=self.config.sequence_voting.use_focused_bins,
+                    precomputed_metrics=self.config.sequence_voting.precomputed_metrics if hasattr(self.config.sequence_voting, 'precomputed_metrics') else None,
+                    plddt_threshold=self.config.m_fold_sampling.m_fold_plddt_threshold,
+                    hierarchical_sampling=self.config.sequence_voting.vote_hierarchical_sampling,
+                    filter_criterion=criterion_name
                 )
                 
-                # Plot voting distributions
-                plotter.plot()
+                # Set up logging for voting runner
+                voting_runner.setup_logging()
                 
-                self.logger.info("Completed sequence voting successfully")
+                # Run voting analysis for this criterion
+                results_file = voting_runner.run()
+                
+                if results_file:
+                    results_files.append((criterion_name, results_file))
+                    
+                    # Create plotter for visualization
+                    plotter = SequenceVotingPlotter(
+                        results_file=results_file,
+                        output_dir=criterion_output_dir,
+                        initial_color=self.config.general.plot_initial_color,
+                        end_color=self.config.general.plot_end_color if hasattr(self.config.general, 'plot_end_color') else None,
+                        figsize=self.config.sequence_voting.vote_figsize,
+                        y_min=self.config.sequence_voting.vote_y_min,
+                        y_max=self.config.sequence_voting.vote_y_max,
+                        x_ticks=self.config.sequence_voting.vote_x_ticks
+                    )
+                    
+                    # Plot voting distributions
+                    plotter.plot()
+                else:
+                    self.logger.error(f"Sequence voting failed to produce results for criterion: {criterion_name}")
+            
+            if results_files:
+                self.logger.info(f"Completed sequence voting successfully for {len(results_files)} criteria")
                 return True
             else:
-                self.logger.error("Sequence voting failed to produce results")
+                self.logger.error("No sequence voting results were produced")
                 return False
             
         except Exception as e:
@@ -338,88 +418,206 @@ class AFClaSeqPipeline:
         self.logger.info("=== STAGE 04: SEQUENCE RECOMPILATION & PREDICTION ===")
         
         try:
-            # Create output directory
-            output_dir = os.path.join(self.config.general.base_dir, "04_recompile")
-            os.makedirs(output_dir, exist_ok=True)
+            # Load filter criteria from config file
+            with open(self.config.general.config_file, 'r') as f:
+                filter_config = json.load(f)
             
-            # Determine input MSA and voting results
+            filter_criteria = filter_config.get('filter_criteria', [])
+            if not filter_criteria:
+                self.logger.error("No filter criteria found in config file")
+                return False
+            
+            # Create base output directory
+            base_output_dir = os.path.join(self.config.general.base_dir, "04_recompile")
+            os.makedirs(base_output_dir, exist_ok=True)
+            
+            # Determine input MSA
             source_msa = self.config.general.source_a3m
             if os.path.exists(os.path.join(self.config.general.base_dir, "01_iterative_shuffling/gathered_seq_after_iter_shuffling.a3m")):
                 source_msa = os.path.join(self.config.general.base_dir, "01_iterative_shuffling/gathered_seq_after_iter_shuffling.a3m")
             
-            voting_results = os.path.join(self.config.general.base_dir, "03_voting/03_voting_results.csv")
-            raw_votes_json = os.path.join(self.config.general.base_dir, "03_voting/raw_sequence_votes.json")
-            
-            # If bin_numbers not specified, use default range
+            # If bin_numbers not specified, report error and stop pipeline
             bin_numbers = self.config.recompile_predict.bin_numbers
             if not bin_numbers:
-                self.logger.warning("No bin numbers specified, using default range (5-10)")
-                bin_numbers = list(range(5, 11))
+                self.logger.error("Pipeline stopped: No bin numbers specified in configuration. Please specify bin_numbers in the recompile_predict section of your configuration file.")
+                return False
             
-            # Create sequence recompiler
-            recompiler = SequenceRecompiler(
-                output_dir=output_dir,
-                source_msa=source_msa,
-                default_pdb=self.config.general.default_pdb,
-                voting_results=voting_results,
-                bin_numbers=bin_numbers,
-                num_total_bins=self.config.general.num_bins,
-                initial_color=self.config.general.plot_initial_color,
-                combine_bins=self.config.recompile_predict.combine_bins,
-                raw_votes_json=raw_votes_json if os.path.exists(raw_votes_json) else None,
-                logger=self.logger
-            )
+            all_successful = True
             
-            # Recompile sequences
-            recompiler.recompile_sequences()
+            # Process each filter criterion separately
+            for criterion in filter_criteria:
+                criterion_name = criterion.get('name')
+                if not criterion_name:
+                    self.logger.warning("Filter criterion without name found, skipping")
+                    continue
+                
+                self.logger.info(f"Processing recompilation and prediction for criterion: {criterion_name}")
+                
+                # Create criterion-specific output directory
+                criterion_output_dir = os.path.join(base_output_dir, criterion_name)
+                os.makedirs(criterion_output_dir, exist_ok=True)
+                
+                # Get voting results for this criterion
+                voting_results = os.path.join(self.config.general.base_dir, f"03_voting/{criterion_name}/03_voting_results.csv")
+                raw_votes_json = os.path.join(self.config.general.base_dir, f"03_voting/{criterion_name}/raw_sequence_votes.json")
+                
+                if not os.path.exists(voting_results):
+                    self.logger.error(f"Voting results not found for criterion: {criterion_name}")
+                    all_successful = False
+                    continue
+                
+                # Create sequence recompiler for this criterion
+                recompiler = SequenceRecompiler(
+                    output_dir=criterion_output_dir,
+                    source_msa=source_msa,
+                    default_pdb=self.config.general.default_pdb,
+                    voting_results=voting_results,
+                    bin_numbers=bin_numbers,
+                    num_total_bins=self.config.general.num_bins,
+                    initial_color=self.config.general.plot_initial_color,
+                    combine_bins=self.config.recompile_predict.combine_bins,
+                    raw_votes_json=raw_votes_json if os.path.exists(raw_votes_json) else None,
+                    logger=self.logger
+                )
+                
+                # Recompile sequences
+                recompiler.recompile_sequences()
+                
+                # Create prediction configuration
+                prediction_config = {
+                    'pure_seq_pred_base_dir': criterion_output_dir,
+                    'bin_numbers': bin_numbers,
+                    'combine_bins': self.config.recompile_predict.combine_bins,
+                    'conda_env_path': self.config.slurm.conda_env_path,
+                    'slurm_account': self.config.slurm.slurm_account,
+                    'slurm_output': self.config.slurm.slurm_output,
+                    'slurm_error': self.config.slurm.slurm_error,
+                    'slurm_nodes': self.config.slurm.slurm_nodes,
+                    'slurm_gpus_per_task': self.config.slurm.slurm_gpus_per_task,
+                    'slurm_tasks': self.config.slurm.slurm_tasks,
+                    'slurm_cpus_per_task': self.config.slurm.slurm_cpus_per_task,
+                    'slurm_time': self.config.slurm.slurm_time,
+                    'slurm_partition': self.config.slurm.slurm_partition,
+                    'prediction_num_model': self.config.recompile_predict.prediction_num_model,
+                    'prediction_num_seed': self.config.recompile_predict.prediction_num_seed,
+                    'check_interval': self.config.pipeline_control.check_interval,
+                    'max_workers': self.config.slurm.max_workers,
+                    'job_name_prefix': f"{self.config.general.protein_name}_{criterion_name}"
+                }
+                
+                # Create and run predictor
+                af2_config = create_af2_prediction_config_from_dict(prediction_config)
+                predictor = PureSequenceAF2Prediction(
+                    config=af2_config,
+                    logger=self.logger
+                )
+                
+                result = predictor.run()
+                
+                if not result:
+                    self.logger.error(f"Error in prediction process for criterion: {criterion_name}")
+                    all_successful = False
             
-            # Create prediction configuration
-            prediction_config = {
-                'base_dir': output_dir,
-                'bin_numbers': bin_numbers,
-                'combine_bins': self.config.recompile_predict.combine_bins,
-                'conda_env_path': self.config.slurm.conda_env_path,
-                'slurm_account': self.config.slurm.slurm_account,
-                'slurm_output': self.config.slurm.slurm_output,
-                'slurm_error': self.config.slurm.slurm_error,
-                'slurm_nodes': self.config.slurm.slurm_nodes,
-                'slurm_gpus_per_task': self.config.slurm.slurm_gpus_per_task,
-                'slurm_tasks': self.config.slurm.slurm_tasks,
-                'slurm_cpus_per_task': self.config.slurm.slurm_cpus_per_task,
-                'slurm_time': self.config.slurm.slurm_time,
-                'slurm_partition': self.config.slurm.slurm_partition,
-                'prediction_num_model': self.config.recompile_predict.prediction_num_model,
-                'prediction_num_seed': self.config.recompile_predict.prediction_num_seed,
-                'check_interval': self.config.pipeline_control.check_interval,
-                'max_workers': self.config.slurm.max_workers,
-                'job_name_prefix': self.config.general.protein_name
-            }
-            
-            # Create and run predictor
-            af2_config = create_af2_prediction_config_from_dict(prediction_config)
-            predictor = PureSequenceAF2Prediction(
-                config=af2_config,
-                logger=self.logger
-            )
-            
-            result = predictor.run()
-            
-            if result:
-                self.logger.info("Completed recompilation and prediction successfully")
+            if all_successful:
+                self.logger.info("Completed recompilation and prediction successfully for all criteria")
                 return True
             else:
-                self.logger.error("Error in prediction process")
+                self.logger.warning("Recompilation and prediction completed with some errors")
                 return False
             
         except Exception as e:
             self.logger.error(f"Error in recompilation and prediction: {str(e)}", exc_info=True)
             return False
-    
+    def run_pure_sequence_plotting(self) -> bool:
+        """
+        Stage 05: Plot and analyze prediction results
+        """
+        self.logger.info("=== STAGE 05: PURE SEQUENCE PREDICTION PLOTTING ===")
+        
+        try:
+            # Load filter criteria from config file
+            with open(self.config.general.config_file, 'r') as f:
+                filter_config = json.load(f)
+            
+            filter_criteria = filter_config.get('filter_criteria', [])
+            if not filter_criteria:
+                self.logger.error("No filter criteria found in config file")
+                return False
+            
+            # Create base output directory
+            base_output_dir = os.path.join(self.config.general.base_dir, "05_plots")
+            os.makedirs(base_output_dir, exist_ok=True)
+            
+            all_successful = True
+            
+            # Process each filter criterion separately
+            for criterion in filter_criteria:
+                criterion_name = criterion.get('name')
+                if not criterion_name:
+                    self.logger.warning("Filter criterion without name found, skipping")
+                    continue
+                
+                self.logger.info(f"Processing plots for criterion: {criterion_name}")
+                
+                # Create criterion-specific output directory
+                criterion_output_dir = os.path.join(base_output_dir, criterion_name)
+                os.makedirs(criterion_output_dir, exist_ok=True)
+                
+                # Get the recompile directory for this criterion as the base dir for plotting
+                recompile_dir = os.path.join(self.config.general.base_dir, f"04_recompile/{criterion_name}")
+                
+                if not os.path.exists(recompile_dir):
+                    self.logger.error(f"Recompile directory not found for criterion: {recompile_dir}")
+                    all_successful = False
+                    continue
+                
+                # Create plotting configuration
+                plot_config = {
+                    'base_dir': recompile_dir,
+                    'output_dir': criterion_output_dir,
+                    'config_file': self.config.general.config_file,
+                    'color_prediction': self.config.general.plot_initial_color,
+                    'color_control': self.config.general.plot_end_color if hasattr(self.config.general, 'plot_end_color') else None,
+                    'x_min': getattr(self.config.pure_sequence_plotting, 'x_min', None) if hasattr(self.config, 'pure_sequence_plotting') else None,
+                    'x_max': getattr(self.config.pure_sequence_plotting, 'x_max', None) if hasattr(self.config, 'pure_sequence_plotting') else None,
+                    'y_min': getattr(self.config.pure_sequence_plotting, 'y_min', None) if hasattr(self.config, 'pure_sequence_plotting') else None,
+                    'y_max': getattr(self.config.pure_sequence_plotting, 'y_max', None) if hasattr(self.config, 'pure_sequence_plotting') else None,
+                    'x_ticks': getattr(self.config.pure_sequence_plotting, 'x_ticks', None) if hasattr(self.config, 'pure_sequence_plotting') else None,
+                    'y_ticks': getattr(self.config.pure_sequence_plotting, 'y_ticks', None) if hasattr(self.config, 'pure_sequence_plotting') else None,
+                    'plddt_threshold': getattr(self.config.pure_sequence_plotting, 'plddt_threshold', 70.0) if hasattr(self.config, 'pure_sequence_plotting') else 70.0,
+                    'figsize': getattr(self.config.pure_sequence_plotting, 'figsize', (15, 7)) if hasattr(self.config, 'pure_sequence_plotting') else (15, 7),
+                    'dpi': getattr(self.config.pure_sequence_plotting, 'dpi', 300) if hasattr(self.config, 'pure_sequence_plotting') else 300,
+                    'max_workers': self.config.slurm.max_workers
+                }
+                
+                # Create and run plotter
+                plot_config_obj = create_pure_seq_plot_config_from_dict(plot_config)
+                plotter = PureSequencePlotter(
+                    config=plot_config_obj,
+                    logger=self.logger
+                )
+                
+                result = plotter.run()
+                
+                if not result:
+                    self.logger.error(f"Error in plotting process for criterion: {criterion_name}")
+                    all_successful = False
+            
+            if all_successful:
+                self.logger.info("Completed pure sequence plotting successfully for all criteria")
+                return True
+            else:
+                self.logger.warning("Pure sequence plotting completed with some errors")
+                return False
+            
+        except Exception as e:
+            self.logger.error(f"Error in pure sequence plotting: {str(e)}", exc_info=True)
+            return False
     def run(self) -> None:
         """Run the pipeline with selected stages"""
         self.print_welcome()
         
-        self.logger.info("=== AF-ClaSEQ PIPELINE STARTED ===")
+        self.logger.info("=== AF-ClaSeq PIPELINE STARTED ===")
         self.logger.info(f"Configuration loaded from YAML file")
         
         stages_to_run = self.config.pipeline_control.stages
@@ -442,9 +640,9 @@ class AFClaSeqPipeline:
                     self.logger.error("Stopping pipeline due to failure in stage 02_RUN")
                     return
             
-            if "02_ANALYSIS" in stages_to_run:
-                if not self.analyze_m_fold_sampling():
-                    self.logger.error("Stopping pipeline due to failure in stage 02_ANALYSIS")
+            if "02_PLOT" in stages_to_run:
+                if not self.plot_m_fold_sampling():
+                    self.logger.error("Stopping pipeline due to failure in stage 02_PLOT")
                     return
             
             # Stage 03: Sequence Voting
@@ -457,6 +655,12 @@ class AFClaSeqPipeline:
             if "04" in stages_to_run:
                 if not self.run_recompile_and_predict():
                     self.logger.error("Stopping pipeline due to failure in stage 04")
+                    return
+            
+            # Stage 05: Pure Sequence Plotting
+            if "05" in stages_to_run:
+                if not self.run_pure_sequence_plotting():
+                    self.logger.error("Stopping pipeline due to failure in stage 05")
                     return
             
             self.logger.info("=== AF-ClaSEQ PIPELINE COMPLETED SUCCESSFULLY ===")
@@ -472,14 +676,14 @@ def main():
         print("Usage: python run_af_claseq_pipeline.py <config.yaml>")
         sys.exit(1)
     
-    config_path = sys.argv[1]
+    yaml_input = sys.argv[1]
     
-    if not os.path.exists(config_path):
-        print(f"Error: Config file not found: {config_path}")
+    if not os.path.exists(yaml_input):
+        print(f"Error: Config file not found: {yaml_input}")
         sys.exit(1)
     
     # Initialize and run the pipeline
-    pipeline = AFClaSeqPipeline(config_path)
+    pipeline = AFClaSeqPipeline(yaml_input)
     pipeline.run()
 
 

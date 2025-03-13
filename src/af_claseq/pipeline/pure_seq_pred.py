@@ -18,7 +18,7 @@ from af_claseq.utils.slurm_utils import SlurmJobSubmitter
 @dataclass
 class AF2PredictionConfig:
     """Configuration for sequence prediction jobs."""
-    base_dir: str
+    pure_seq_pred_base_dir: str
     bin_numbers: List[int]
     combine_bins: bool = False
     conda_env_path: str = "/fs/ess/PAA0203/xing244/.conda/envs/colabfold"
@@ -81,13 +81,13 @@ class PureSequenceAF2Prediction:
         # Extract job name prefix from base directory if not specified
         job_prefix = self.config.job_name_prefix
         if not job_prefix:
-            base_path_parts = self.config.base_dir.split(os.sep)
+            base_path_parts = self.config.pure_seq_pred_base_dir.split(os.sep)
             try:
                 results_idx = base_path_parts.index('results')
                 job_prefix = base_path_parts[results_idx + 1] if results_idx + 1 < len(base_path_parts) else "fold"
             except ValueError:
                 job_prefix = "fold"
-                self.logger.warning("Could not extract job prefix from base_dir path, using default: 'fold'")
+                self.logger.warning("Could not extract job prefix from pure_seq_pred_base_dir path, using default: 'fold'")
         
         return SlurmJobSubmitter(
             conda_env_path=self.config.conda_env_path,
@@ -117,8 +117,8 @@ class PureSequenceAF2Prediction:
         all_job_ids = []
         job_types = []
         
-        if not os.path.exists(self.config.base_dir):
-            self.logger.error(f"Base directory not found: {self.config.base_dir}")
+        if not os.path.exists(self.config.pure_seq_pred_base_dir):
+            self.logger.error(f"Base directory not found: {self.config.pure_seq_pred_base_dir}")
             return all_jobs, all_job_ids, job_types
             
         if not self.config.bin_numbers:
@@ -128,14 +128,14 @@ class PureSequenceAF2Prediction:
         # Define directory types to process (prediction and control_prediction)
         dir_types = {
             "prediction": ("pred", "prediction"),
-            "control_prediction": ("ctrl_pred", "prediction")
+            "control_prediction": ("ctrl_pred", "control_prediction")
         }
         
         # Process each directory type
         for dir_name, (job_prefix, job_type) in dir_types.items():
-            dir_path = os.path.join(self.config.base_dir, dir_name)
+            dir_path = os.path.join(self.config.pure_seq_pred_base_dir, dir_name)
             if not os.path.exists(dir_path):
-                self.logger.error(f"{dir_name} directory not found: {dir_path}")
+                self.logger.warning(f"{dir_name} directory not found: {dir_path}")
                 continue
                 
             self.logger.info(f"Collecting jobs from {dir_name} directory: {dir_path}")
@@ -244,7 +244,7 @@ def create_af2_prediction_config_from_dict(config_dict: Dict[str, Any]) -> AF2Pr
     """
     # Use a subset of keys that match the PredictionConfig parameters
     valid_keys = {
-        'base_dir', 'bin_numbers', 'combine_bins', 'conda_env_path', 'slurm_account',
+        'pure_seq_pred_base_dir', 'bin_numbers', 'combine_bins', 'conda_env_path', 'slurm_account',
         'slurm_output', 'slurm_error', 'slurm_nodes', 'slurm_gpus_per_task',
         'slurm_tasks', 'slurm_cpus_per_task', 'slurm_time', 'slurm_partition',
         'prediction_num_model', 'prediction_num_seed', 'check_interval',
@@ -253,5 +253,9 @@ def create_af2_prediction_config_from_dict(config_dict: Dict[str, Any]) -> AF2Pr
     
     # Filter to only include valid keys
     filtered_dict = {k: v for k, v in config_dict.items() if k in valid_keys}
+    
+    # Handle the case where the old 'base_dir' key is in the config but not 'pure_seq_pred_base_dir'
+    if 'base_dir' in config_dict and 'pure_seq_pred_base_dir' not in filtered_dict:
+        filtered_dict['pure_seq_pred_base_dir'] = config_dict['base_dir']
     
     return AF2PredictionConfig(**filtered_dict)

@@ -16,12 +16,12 @@ class GeneralConfig:
     source_a3m: str
     default_pdb: str
     base_dir: str
-    config_file: str
+    config_file: str  # This refers to the JSON filter criteria file
     protein_name: str
     coverage_threshold: float = 0.8
     num_models: int = 1
     random_seed: int = 42
-    num_bins: int = 10
+    num_bins: int = 30
     plot_initial_color: str = "#87CEEB"
     plot_end_color: str = "#FFFFFF"
 
@@ -78,7 +78,6 @@ class MFoldSamplingConfig:
     m_fold_group_size: int = 10
     m_fold_random_select: Optional[int] = None
     m_fold_plddt_threshold: float = 75
-    m_fold_plot_mode: str = "heatmap"
     m_fold_colormap: str = "sequential"
     m_fold_use_percentage: bool = True
     m_fold_x_min: Optional[float] = None
@@ -100,7 +99,7 @@ class SequenceVotingConfig:
     vote_x_ticks: Optional[List[int]] = None
     vote_hierarchical_sampling: bool = False
     use_focused_bins: bool = False
-
+    precomputed_metrics: Optional[str] = None
 
 @dataclass
 class RecompilePredictConfig:
@@ -110,6 +109,18 @@ class RecompilePredictConfig:
     prediction_num_model: int = 5
     prediction_num_seed: int = 8
 
+@dataclass
+class PureSequencePlottingConfig:
+    """Stage 05: Pure Sequence Plotting parameters"""
+    x_min: Optional[float] = None
+    x_max: Optional[float] = None
+    y_min: Optional[float] = None
+    y_max: Optional[float] = None
+    x_ticks: Optional[List[float]] = None
+    y_ticks: Optional[List[float]] = None
+    plddt_threshold: float = 70.0
+    figsize: Tuple[int, int] = (15, 7)
+    dpi: int = 300
 
 @dataclass
 class PipelineConfig:
@@ -121,19 +132,20 @@ class PipelineConfig:
     m_fold_sampling: MFoldSamplingConfig
     sequence_voting: SequenceVotingConfig
     recompile_predict: RecompilePredictConfig
+    pure_sequence_plotting: PureSequencePlottingConfig
 
 
-def load_pipeline_config(config_path: str) -> PipelineConfig:
+def load_pipeline_config(yaml_input: str) -> PipelineConfig:
     """
     Load configuration from YAML file and create config objects
     
     Args:
-        config_path: Path to YAML configuration file
+        yaml_input: Path to YAML configuration file with pipeline parameters
         
     Returns:
         PipelineConfig object with all configuration options
     """
-    with open(config_path, 'r') as f:
+    with open(yaml_input, 'r') as f:
         yaml_config = yaml.safe_load(f)
     
     # Create individual config objects
@@ -144,6 +156,7 @@ def load_pipeline_config(config_path: str) -> PipelineConfig:
     m_fold_sampling_config = MFoldSamplingConfig(**yaml_config.get('m_fold_sampling', {}))
     sequence_voting_config = SequenceVotingConfig(**yaml_config.get('sequence_voting', {}))
     recompile_predict_config = RecompilePredictConfig(**yaml_config.get('recompile_predict', {}))
+    pure_sequence_plotting_config = PureSequencePlottingConfig(**yaml_config.get('pure_sequence_plotting', {}))
     
     # Combine into a single config object
     return PipelineConfig(
@@ -153,5 +166,6 @@ def load_pipeline_config(config_path: str) -> PipelineConfig:
         iterative_shuffling=iterative_shuffling_config,
         m_fold_sampling=m_fold_sampling_config,
         sequence_voting=sequence_voting_config,
-        recompile_predict=recompile_predict_config
+        recompile_predict=recompile_predict_config,
+        pure_sequence_plotting=pure_sequence_plotting_config
     )

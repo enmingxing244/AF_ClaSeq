@@ -36,7 +36,7 @@ class MFoldSampler:
         self,
         input_a3m: str,
         default_pdb: str,
-        base_dir: str,
+        m_fold_sampling_base_dir: str,
         group_size: int = 10,
         coverage_threshold: float = 0.0,
         random_select_num_seqs: Optional[int] = None,
@@ -51,7 +51,7 @@ class MFoldSampler:
         Args:
             input_a3m: Path to input A3M file
             default_pdb: Path to reference PDB file
-            base_dir: Base directory for output
+            m_fold_sampling_base_dir: Base directory for output
             group_size: Size of each sequence group
             coverage_threshold: Minimum required sequence coverage
             random_select_num_seqs: Number of sequences to randomly select
@@ -62,7 +62,7 @@ class MFoldSampler:
         """
         self.input_a3m = input_a3m
         self.default_pdb = default_pdb
-        self.base_dir = base_dir
+        self.m_fold_sampling_base_dir = m_fold_sampling_base_dir
         self.group_size = group_size
         self.coverage_threshold = coverage_threshold
         self.random_select_num_seqs = random_select_num_seqs
@@ -70,8 +70,8 @@ class MFoldSampler:
         self.max_workers = max_workers
         
         # Set up directories
-        self.init_dir = os.path.join(self.base_dir, "02_init_random_split")
-        self.sampling_base_dir = os.path.join(self.base_dir, "02_sampling")
+        self.init_dir = os.path.join(self.m_fold_sampling_base_dir, "02_init_random_split")
+        self.sampling_base_dir = os.path.join(self.m_fold_sampling_base_dir, "02_sampling")
         os.makedirs(self.init_dir, exist_ok=True)
         os.makedirs(self.sampling_base_dir, exist_ok=True)
         
@@ -88,7 +88,7 @@ class MFoldSampler:
     
     def _setup_logging(self):
         """Set up logging configuration"""
-        log_file = os.path.join(self.base_dir, "m_fold_sampling.log")
+        log_file = os.path.join(self.m_fold_sampling_base_dir, "m_fold_sampling.log")
         handler = logging.FileHandler(log_file)
         formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
         handler.setFormatter(formatter)
@@ -145,7 +145,7 @@ class MFoldSampler:
         if not filtered_sequences:
             raise ValueError("No sequences remained after filtering")
         
-        filtered_a3m_path = os.path.join(self.base_dir, "filtered_sequences.a3m")
+        filtered_a3m_path = os.path.join(self.m_fold_sampling_base_dir, "filtered_sequences.a3m")
         write_a3m(filtered_sequences, filtered_a3m_path, reference_pdb=self.default_pdb)
         
         return filtered_a3m_path
@@ -497,200 +497,3 @@ class MFoldPlotter:
         except Exception as e:
             self.logger.error(f"Error generating 2D plots: {str(e)}", exc_info=True)
 
-
-class MFoldAnalyzer:
-    """
-    Class for analyzing results from M-fold sampling.
-    
-    This class provides methods for extracting, processing, and analyzing
-    data from the M-fold sampling process.
-    """
-    
-    def __init__(
-        self,
-        results_dir: str,
-        config_file: str,
-        output_dir: str,
-        logger: Optional[logging.Logger] = None
-    ):
-        """
-        Initialize the analyzer.
-        
-        Args:
-            results_dir: Directory containing M-fold sampling results
-            config_file: Path to config file with filter criteria
-            output_dir: Directory for saving analysis outputs
-            logger: Optional logger instance
-        """
-        self.results_dir = results_dir
-        self.config_file = config_file
-        self.output_dir = output_dir
-        
-        # Create output directory
-        os.makedirs(self.output_dir, exist_ok=True)
-        
-        # Set up logger
-        if logger:
-            self.logger = logger
-        else:
-            self.logger = logging.getLogger(__name__)
-            if not self.logger.handlers:
-                handler = logging.StreamHandler()
-                formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
-                handler.setFormatter(formatter)
-                self.logger.addHandler(handler)
-                self.logger.setLevel(logging.INFO)
-        
-        # Load filter config
-        self.filter_modes = load_filter_modes(self.config_file)
-    
-    def extract_metrics(
-        self, 
-        plddt_threshold: float = 0,
-        max_workers: int = 16
-    ) -> pd.DataFrame:
-        """
-        Extract metrics from all sampling results.
-        
-        Args:
-            plddt_threshold: pLDDT threshold for filtering structures
-            max_workers: Maximum number of concurrent workers
-            
-        Returns:
-            DataFrame containing metrics for all structures
-        """
-        try:
-            self.logger.info("Extracting metrics from sampling results")
-            
-            # Get all sampling directories
-            sampling_dirs = [d for d in os.listdir(self.results_dir) 
-                            if d.startswith('sampling_')]
-            sampling_paths = [os.path.join(self.results_dir, d) for d in sampling_dirs]
-            
-            if not sampling_dirs:
-                self.logger.error("No sampling directories found")
-                return pd.DataFrame()
-            
-            # Extract data from each directory in parallel
-            all_metrics = []
-            
-            with ThreadPoolExecutor(max_workers=max_workers) as executor:
-                future_to_dir = {
-                    executor.submit(self._extract_from_directory, path, plddt_threshold): 
-                    os.path.basename(path) 
-                    for path in sampling_paths
-                }
-                
-                for future in tqdm(as_completed(future_to_dir), 
-                                  total=len(future_to_dir),
-                                  desc="Processing directories"):
-                    dir_name = future_to_dir[future]
-                    try:
-                        metrics = future.result()
-                        if metrics is not None and not metrics.empty:
-                            # Add sampling directory information
-                            metrics['sampling_dir'] = dir_name
-                            all_metrics.append(metrics)
-                    except Exception as e:
-                        self.logger.error(f"Error processing {dir_name}: {str(e)}")
-            
-            if not all_metrics:
-                self.logger.warning("No metrics extracted from any sampling directory")
-                return pd.DataFrame()
-            
-            # Combine all metrics
-            combined_df = pd.concat(all_metrics, ignore_index=True)
-            
-            # Save to CSV
-            csv_path = os.path.join(self.output_dir, "all_metrics.csv")
-            combined_df.to_csv(csv_path, index=False)
-            self.logger.info(f"Saved all metrics to {csv_path}")
-            
-            return combined_df
-            
-        except Exception as e:
-            self.logger.error(f"Error extracting metrics: {str(e)}", exc_info=True)
-            return pd.DataFrame()
-    
-    def _extract_from_directory(
-        self, 
-        directory: str,
-        plddt_threshold: float
-    ) -> Optional[pd.DataFrame]:
-        """
-        Extract metrics from a single sampling directory.
-        
-        Args:
-            directory: Path to sampling directory
-            plddt_threshold: pLDDT threshold for filtering structures
-            
-        Returns:
-            DataFrame with metrics or None if processing fails
-        """
-        try:
-            results_df = get_result_df(
-                directory,
-                self.filter_modes['filter_criteria'],
-                self.filter_modes['basics']
-            )
-            
-            if results_df.empty:
-                return None
-            
-            # Apply pLDDT filter if threshold > 0
-            if plddt_threshold > 0:
-                results_df = results_df[results_df['plddt'] >= plddt_threshold]
-                
-            return results_df
-            
-        except Exception as e:
-            self.logger.error(f"Error extracting from {directory}: {str(e)}")
-            return None
-    
-    def find_best_structures(
-        self, 
-        metric_name: str,
-        metric_type: str = 'minimize',
-        n_best: int = 10,
-        plddt_threshold: float = 0
-    ) -> pd.DataFrame:
-        """
-        Find the best structures according to a specific metric.
-        
-        Args:
-            metric_name: Name of the metric to use
-            metric_type: 'minimize' for metrics like RMSD or 'maximize' for metrics like TM-score
-            n_best: Number of best structures to return
-            plddt_threshold: pLDDT threshold for filtering structures
-            
-        Returns:
-            DataFrame containing the best structures
-        """
-        try:
-            self.logger.info(f"Finding best structures by {metric_name}")
-            
-            # Get all metrics
-            all_metrics = self.extract_metrics(plddt_threshold=plddt_threshold)
-            
-            if all_metrics.empty:
-                return pd.DataFrame()
-            
-            # Check if metric exists
-            if metric_name not in all_metrics.columns:
-                self.logger.error(f"Metric {metric_name} not found in results")
-                return pd.DataFrame()
-            
-            # Sort by metric (ascending for 'minimize', descending for 'maximize')
-            ascending = (metric_type == 'minimize')
-            best_df = all_metrics.sort_values(by=metric_name, ascending=ascending).head(n_best)
-            
-            # Save to CSV
-            csv_path = os.path.join(self.output_dir, f"best_{metric_name}_{n_best}.csv")
-            best_df.to_csv(csv_path, index=False)
-            self.logger.info(f"Saved best structures to {csv_path}")
-            
-            return best_df
-            
-        except Exception as e:
-            self.logger.error(f"Error finding best structures: {str(e)}", exc_info=True)
-            return pd.DataFrame()

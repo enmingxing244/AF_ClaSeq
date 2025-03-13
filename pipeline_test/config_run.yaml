@@ -1,0 +1,100 @@
+# AF-ClaSeq Pipeline Configuration
+
+general:
+  # Required paths and identifiers
+  source_a3m: "/path/to/source.a3m"
+  default_pdb: "/path/to/reference.pdb"
+  base_dir: "/path/to/results/protein_name"
+  config_file: "/path/to/filter_config.json"
+  protein_name: "protein_name"
+  
+  # General parameters
+  coverage_threshold: 0.8
+  num_models: 1
+  random_seed: 42
+  num_bins: 30  # Updated to match default in config.py
+  plot_initial_color: "#87CEEB"
+  plot_end_color: "#87CEEB"
+
+slurm:
+  conda_env_path: "/fs/ess/PAA0203/xing244/.conda/envs/colabfold"
+  slurm_account: "PAA0203"
+  slurm_output: "/dev/null"
+  slurm_error: "/dev/null"
+  slurm_nodes: 1
+  slurm_gpus_per_task: 1
+  slurm_tasks: 1
+  slurm_cpus_per_task: 4
+  slurm_time: "04:00:00"
+  slurm_partition: "nextgen"
+  max_workers: 64
+
+pipeline_control:
+  stages:
+    - "01_RUN"
+    - "01_ANALYSIS"
+    - "02_RUN"
+    - "02_PLOT"  # Note: This should be "02_ANALYSIS" to match default in config.py
+    - "03"
+    - "04"
+    - "05"  # Added stage 05 for pure sequence plotting
+  check_interval: 60
+
+iterative_shuffling:
+  iter_shuf_input_a3m: "/path/to/input.a3m"
+  num_iterations: 8
+  num_shuffles: 10
+  seq_num_per_shuffle: 16
+  plddt_threshold: 75
+  quantile: 0.2
+  resume_from_iter: null
+  iter_shuf_plot_num_cols: 5
+  iter_shuf_plot_x_min: 0
+  iter_shuf_plot_x_max: 20
+  iter_shuf_plot_y_min: 0.8
+  iter_shuf_plot_y_max: 10000
+  iter_shuf_plot_xticks: null
+  iter_shuf_plot_bin_step: 0.2
+  iter_shuf_combine_threshold: 0.5
+
+m_fold_sampling:
+  m_fold_samp_input_a3m: "/path/to/input.a3m"
+  m_fold_group_size: 10
+  m_fold_random_select: null
+  m_fold_plddt_threshold: 75
+  m_fold_colormap: "sequential"
+  m_fold_use_percentage: true
+  m_fold_x_min: null
+  m_fold_x_max: null
+  m_fold_y_min: null
+  m_fold_y_max: null
+  m_fold_n_best: 10
+
+sequence_voting:
+  vote_threshold: 0.0
+  vote_min_value: null
+  vote_max_value: null
+  vote_figsize: [10, 5]
+  vote_y_min: null
+  vote_y_max: null
+  vote_x_ticks: null
+  vote_hierarchical_sampling: false
+  use_focused_bins: false
+  precomputed_metrics: null  # Added missing parameter
+
+recompile_predict:
+  bin_numbers: [5, 6, 7, 8, 9, 10]
+  combine_bins: false
+  prediction_num_model: 5
+  prediction_num_seed: 8
+  
+pure_sequence_plotting:
+  x_min: null
+  x_max: null
+  y_min: null
+  y_max: null
+  x_ticks: null
+  y_ticks: null
+  plddt_threshold: 70.0
+  figsize: [15, 7]
+  dpi: 300
