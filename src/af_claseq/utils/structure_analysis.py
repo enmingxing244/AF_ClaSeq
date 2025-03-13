@@ -10,7 +10,7 @@ from Bio.PDB import PDBParser, Superimposer, PPBuilder
 import json
 from tqdm import tqdm
 
-from af_claseq.sequence_processing import count_sequences_in_a3m
+from af_claseq.utils.sequence_processing import count_sequences_in_a3m
 
 # Default path for TMalign executable
 DEFAULT_TMALIGN_PATH = "/fs/ess/PAA0203/xing244/TMalign"
@@ -424,6 +424,12 @@ class StructureAnalyzer:
                 atoms.extend(list(residue.get_atoms()))
         return atoms
 
+
+
+
+
+
+
 def get_result_df(parent_dir: str | Path,
                  filter_criteria: Sequence[Dict[str, Any]],
                  basics: Dict[str, Any]) -> pd.DataFrame:
@@ -452,7 +458,6 @@ def get_result_df(parent_dir: str | Path,
     properties_to_calculate.update(c['type'] for c in filter_criteria)
 
     analyzer = StructureAnalyzer()
-
     def process_pdb(pdb: str) -> Dict[str, Any]:
         result = {'PDB': pdb}
 
@@ -493,7 +498,7 @@ def get_result_df(parent_dir: str | Path,
                     criterion['indices']['hinge']
                 )
                 
-            elif criterion_type == 'rmsd':
+            elif criterion_type == 'rmsd' or criterion_type == 'all_atom_rmsd':
                 if not all(k in criterion for k in ['superposition_indices', 'rmsd_indices', 'ref_pdb']):
                     raise ValueError("Missing required fields for RMSD calculation")
                 
@@ -506,8 +511,8 @@ def get_result_df(parent_dir: str | Path,
                         indices = range(index_data['start'], index_data['end'] + 1)
                     return list(indices)
                 
-                # Check if we should use all-atom RMSD or CA-only RMSD
-                if 'method' in criterion and criterion['method'] == 'all_atom_rmsd':
+                # Use all-atom RMSD if criterion type is 'all_atom_rmsd' or if method is specified as 'all_atom_rmsd'
+                if criterion_type == 'all_atom_rmsd' or ('method' in criterion and criterion['method'] == 'all_atom_rmsd'):
                     result[criterion['name']] = analyzer.calculate_all_atom_rmsd(
                         criterion['ref_pdb'],
                         pdb,

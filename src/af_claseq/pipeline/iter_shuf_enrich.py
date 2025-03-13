@@ -49,7 +49,7 @@ class IterShufEnrichRunner:
         self,
         iter_shuf_input_a3m: str,
         default_pdb: str,
-        base_dir: str,
+        iter_shuf_enrich_base_dir: str,
         config_file: str,
         slurm_submitter: Optional[SlurmJobSubmitter] = None,
         seq_num_per_shuffle: int = 10,
@@ -69,7 +69,7 @@ class IterShufEnrichRunner:
         Args:
             iter_shuf_input_a3m: Path to input A3M file
             default_pdb: Path to reference PDB file
-            base_dir: Base directory for output
+            iter_shuf_enrich_base_dir: Base directory for output
             config_file: Path to config file with filter criteria
             slurm_submitter: SlurmJobSubmitter instance (will create one if None)
             seq_num_per_shuffle: Size of each sequence group during shuffling
@@ -85,7 +85,7 @@ class IterShufEnrichRunner:
         """
         self.iter_shuf_input_a3m = iter_shuf_input_a3m
         self.default_pdb = default_pdb
-        self.base_dir = base_dir
+        self.iter_shuf_enrich_base_dir = iter_shuf_enrich_base_dir
         self.config_file = config_file
         self.seq_num_per_shuffle = seq_num_per_shuffle
         self.num_shuffles = num_shuffles
@@ -101,9 +101,8 @@ class IterShufEnrichRunner:
         random.seed(random_seed)
         
         # Initialize output directories
-        self.iter_shuffle_base = os.path.join(self.base_dir, "01_iterative_shuffling")
-        os.makedirs(self.base_dir, exist_ok=True)
-        os.makedirs(self.iter_shuffle_base, exist_ok=True)
+        self.iter_shuffle_base = self.iter_shuf_enrich_base_dir
+        os.makedirs(self.iter_shuf_enrich_base_dir, exist_ok=True)
         
         # Set up logger
         self.logger = logging.getLogger(__name__)
@@ -226,7 +225,7 @@ class IterShufEnrichRunner:
             )
             
             # Get job name prefix from base directory path
-            base_path_parts = self.base_dir.split(os.sep)
+            base_path_parts = self.iter_shuf_enrich_base_dir.split(os.sep)
             try:
                 results_idx = base_path_parts.index('results')
                 job_name_prefix = base_path_parts[results_idx + 1] if results_idx + 1 < len(base_path_parts) else "fold"
@@ -288,45 +287,42 @@ class IterShufEnrichPlotter:
     
     def __init__(
         self,
-        base_dir: str,
+        iter_shuf_enrich_base_dir: str,
         config_path: str,
-        plot_num_cols: int = 5,
-        plot_x_min: float = 0,
-        plot_x_max: float = 20,
-        plot_y_min: float = 0.8,
-        plot_y_max: float = 10000,
-        plot_xticks: Optional[List[float]] = None,
-        plot_bin_step: float = 0.2
+        num_cols: int = 5,
+        x_min: float = 0,
+        x_max: float = 20,
+        y_min: float = 0.8,
+        y_max: float = 10000,
+        xticks: Optional[List[float]] = None,
+        bin_step: float = 0.2
     ):
         """
         Initialize the plotter with configuration parameters.
         
         Args:
-            base_dir: Base directory for output
+            iter_shuf_enrich_base_dir: Base directory for output
             config_path: Path to config file with filter criteria
-            plot_num_cols: Number of columns in plot grid
-            plot_x_min: Minimum x-axis value
-            plot_x_max: Maximum x-axis value
-            plot_y_min: Minimum y-axis value
-            plot_y_max: Maximum y-axis value
-            plot_xticks: List of x-axis tick positions
-            plot_bin_step: Step size for binning
+            num_cols: Number of columns in plot grid
+            x_min: Minimum x-axis value
+            x_max: Maximum x-axis value
+            y_min: Minimum y-axis value
+            y_max: Maximum y-axis value
+            xticks: List of x-axis tick positions
+            bin_step: Step size for binning
         """
-        self.base_dir = base_dir
+        self.iter_shuf_enrich_base_dir = iter_shuf_enrich_base_dir
         self.config_path = config_path
-        self.plot_num_cols = plot_num_cols
-        self.plot_x_min = plot_x_min
-        self.plot_x_max = plot_x_max
-        self.plot_y_min = plot_y_min
-        self.plot_y_max = plot_y_max
-        self.plot_xticks = plot_xticks
-        self.plot_bin_step = plot_bin_step
-        
-        # Set parent directory for iterative shuffling
-        self.parent_dir = os.path.join(self.base_dir, '01_iterative_shuffling')
+        self.num_cols = num_cols
+        self.x_min = x_min
+        self.x_max = x_max
+        self.y_min = y_min
+        self.y_max = y_max
+        self.xticks = xticks
+        self.bin_step = bin_step
         
         # Create analysis directories
-        self.analysis_dir = os.path.join(self.parent_dir, 'analysis')
+        self.analysis_dir = os.path.join(self.iter_shuf_enrich_base_dir, 'analysis')
         self.plot_dir = os.path.join(self.analysis_dir, 'plot')
         os.makedirs(self.analysis_dir, exist_ok=True)
         os.makedirs(self.plot_dir, exist_ok=True)
@@ -352,7 +348,7 @@ class IterShufEnrichPlotter:
         """
         try:
             # Get list of iteration directories
-            iteration_dirs = [d for d in os.listdir(self.parent_dir) if d.startswith('Iteration_')]
+            iteration_dirs = [d for d in os.listdir(self.iter_shuf_enrich_base_dir) if d.startswith('Iteration_')]
             iteration_dirs.sort(key=lambda x: int(x.split('_')[1]))
             
             if not iteration_dirs:
@@ -380,11 +376,11 @@ class IterShufEnrichPlotter:
             
             # Adjust plot parameters based on metric type
             if metric_type == 'tmscore':
-                self.plot_x_min = 0
-                self.plot_x_max = 1
-                if self.plot_xticks is None:
-                    self.plot_xticks = [0, 0.2, 0.4, 0.6, 0.8, 1.0]
-                self.plot_bin_step = 0.02
+                self.x_min = 0
+                self.x_max = 1
+                if self.xticks is None:
+                    self.xticks = [0, 0.2, 0.4, 0.6, 0.8, 1.0]
+                self.bin_step = 0.02
             
             # Create distribution plots
             self._create_distribution_plot(combined_df, metric_name, metric_type)
@@ -416,7 +412,7 @@ class IterShufEnrichPlotter:
         metric_name = filter_modes['filter_criteria'][0]['name']
         
         for iteration_dir in tqdm(iteration_dirs, desc="Processing iterations"):
-            iteration_path = os.path.join(self.parent_dir, iteration_dir)
+            iteration_path = os.path.join(self.iter_shuf_enrich_base_dir, iteration_dir)
             
             # Get results dataframe for this iteration
             results_df = get_result_df(
@@ -463,7 +459,7 @@ class IterShufEnrichPlotter:
         iterations = sorted(df['iteration'].unique())
         
         n_iterations = len(iterations)
-        n_cols = min(self.plot_num_cols, n_iterations)
+        n_cols = min(self.num_cols, n_iterations)
         n_rows = (n_iterations + n_cols - 1) // n_cols
         
         # Create figure with subplots
@@ -481,9 +477,9 @@ class IterShufEnrichPlotter:
             axes = axes.reshape(-1, 1) if n_cols == 1 else axes.reshape(1, -1)
         
         bins = np.arange(
-            self.plot_x_min, 
-            self.plot_x_max + self.plot_bin_step, 
-            self.plot_bin_step
+            self.x_min, 
+            self.x_max + self.bin_step, 
+            self.bin_step
         )
         
         # Plot each iteration
@@ -510,16 +506,16 @@ class IterShufEnrichPlotter:
             axes[row, col].legend(fontsize=16, loc='upper right')
             
             # Apply axis settings
-            axes[row, col].set_xlim(self.plot_x_min, self.plot_x_max)
-            if self.plot_xticks:
-                axes[row, col].set_xticks(self.plot_xticks)
+            axes[row, col].set_xlim(self.x_min, self.x_max)
+            if self.xticks:
+                axes[row, col].set_xticks(self.xticks)
                 # Format x-axis tick labels to show exact values given
                 axes[row, col].xaxis.set_major_formatter(
                     ticker.FuncFormatter(lambda x, p: str(int(x)) if x.is_integer() else f'{x:.1f}')
                 )
             
             axes[row, col].set_yscale('log')
-            axes[row, col].set_ylim(self.plot_y_min, self.plot_y_max)
+            axes[row, col].set_ylim(self.y_min, self.y_max)
             axes[row, col].yaxis.set_major_locator(ticker.LogLocator(base=10, numticks=10))
             axes[row, col].yaxis.set_minor_locator(
                 ticker.LogLocator(base=10.0, subs=list(np.arange(2, 10) * 0.1), numticks=10)
@@ -560,7 +556,7 @@ class IterShufEnrichCombiner:
     
     def __init__(
         self,
-        base_dir: str,
+        iter_shuf_enrich_base_dir: str,
         config_path: str,
         default_pdb: str,
         combine_threshold: float,
@@ -570,23 +566,20 @@ class IterShufEnrichCombiner:
         Initialize the combiner with configuration parameters.
         
         Args:
-            base_dir: Base directory for output
+            iter_shuf_enrich_base_dir: Base directory for output
             config_path: Path to config file with filter criteria
             default_pdb: Path to reference PDB file
             combine_threshold: Threshold for filtering (TM-score > threshold or RMSD < threshold)
             max_workers: Maximum number of concurrent workers
         """
-        self.base_dir = base_dir
+        self.iter_shuf_enrich_base_dir = iter_shuf_enrich_base_dir
         self.config_path = config_path
         self.default_pdb = default_pdb
         self.combine_threshold = combine_threshold
         self.max_workers = max_workers
         
-        # Set parent directory for iterative shuffling
-        self.parent_dir = os.path.join(self.base_dir, '01_iterative_shuffling')
-        
         # Create output directories
-        self.a3m_combine_dir = os.path.join(self.parent_dir, 'analysis/a3m_combine')
+        self.a3m_combine_dir = os.path.join(self.iter_shuf_enrich_base_dir, 'analysis/a3m_combine')
         os.makedirs(self.a3m_combine_dir, exist_ok=True)
         
         # Set up logger
@@ -608,7 +601,7 @@ class IterShufEnrichCombiner:
             metric_type = config['filter_criteria'][0]['type']
             
             # Read metric values from CSV into a dictionary for faster lookup
-            csv_path = os.path.join(self.parent_dir, f'analysis/plot/{filter_name}_values.csv')
+            csv_path = os.path.join(self.iter_shuf_enrich_base_dir, f'analysis/plot/{filter_name}_values.csv')
             if not os.path.exists(csv_path):
                 self.logger.error(f"Metric values CSV not found: {csv_path}. Run metrics analysis first.")
                 return None
@@ -638,7 +631,7 @@ class IterShufEnrichCombiner:
             concatenate_a3m_content(a3m_files, self.default_pdb, output_file)
             
             # Create a symlink in the parent directory for easy access
-            combined_a3m_path = os.path.join(self.parent_dir, "gathered_seq_after_iter_shuffling.a3m")
+            combined_a3m_path = os.path.join(self.iter_shuf_enrich_base_dir, "gathered_seq_after_iter_shuffling.a3m")
             if not os.path.exists(combined_a3m_path):
                 os.symlink(output_file, combined_a3m_path)
             
@@ -658,7 +651,7 @@ class IterShufEnrichCombiner:
         """
         pdb_files = [
             os.path.join(root, file)
-            for root, dirs, files in os.walk(self.parent_dir)
+            for root, dirs, files in os.walk(self.iter_shuf_enrich_base_dir)
             for file in files
             if file.endswith('.pdb')
         ]

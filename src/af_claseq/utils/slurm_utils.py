@@ -43,11 +43,11 @@ class SlurmJobSubmitter:
             check_interval (int): Time in seconds between status checks.
             job_name_prefix (str): Prefix for job names.
             **kwargs: Additional arguments for different modes:
-                For simple mode:
+                For batch_pred mode:
                     - num_models (int): Number of models to generate
                     - num_seeds (int): Number of seeds to use
                     - random_seed (int): Random seed for reproducibility
-                For typed mode:
+                For pure_pred mode:
                     - prediction_num_model (int): Number of models for prediction
                     - prediction_num_seed (int): Number of seeds for prediction
         """
@@ -67,7 +67,7 @@ class SlurmJobSubmitter:
 
         # Determine mode based on kwargs
         if any(k.startswith('prediction_') for k in kwargs):
-            self.mode = 'typed'
+            self.mode = 'pure_pred'
             self.job_configs = {
                 'prediction': {
                     'num_models': kwargs.get('prediction_num_model', 1),
@@ -75,14 +75,14 @@ class SlurmJobSubmitter:
                 }
             }
         else:
-            self.mode = 'simple'
+            self.mode = 'batch_pred'
             self.num_models = kwargs.get('num_models', 1)
             self.num_seeds = kwargs.get('num_seeds', 1)
             self.random_seed = kwargs.get('random_seed')
 
     def _get_job_config(self, job_type: Optional[str] = None) -> Dict[str, int]:
         """Get job configuration based on mode and job type."""
-        if self.mode == 'typed':
+        if self.mode == 'pure_pred':
             if not job_type or job_type not in self.job_configs:
                 raise ValueError(f"Invalid job type: {job_type}")
             return self.job_configs[job_type]
@@ -116,7 +116,7 @@ class SlurmJobSubmitter:
 
         # Build environment setup
         env_setup = (
-            "module reset && module load openmpi/5.0.2 cuda/12.4.1 miniconda3/24.1.2-py310 && "
+            "module reset && module load  cuda/12.4.1 miniconda3/24.1.2-py310 && "
             f"conda init && conda activate {self.conda_env_path}"
         )
 

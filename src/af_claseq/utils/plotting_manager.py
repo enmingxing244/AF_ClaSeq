@@ -4,7 +4,7 @@ import matplotlib.pyplot as plt
 import pandas as pd
 import numpy as np
 from tqdm import tqdm
-from af_claseq.structure_analysis import get_result_df, load_filter_modes
+from af_claseq.utils.structure_analysis import get_result_df, load_filter_modes
 from matplotlib.colors import LinearSegmentedColormap
 import seaborn as sns
 from typing import List, Dict, Any, Optional, Union, Tuple
