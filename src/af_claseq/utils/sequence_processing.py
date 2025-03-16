@@ -1,4 +1,3 @@
-import logging
 import os
 import random
 from Bio import SeqIO
@@ -6,6 +5,11 @@ from Bio.PDB import PDBParser, PPBuilder
 from typing import List, Dict, Any, Tuple, Set, Optional
 from pathlib import Path
 from collections import defaultdict
+
+from af_claseq.utils.logging_utils import get_logger
+
+# Initialize module logger
+logger = get_logger("sequence_processing")
 
 def read_a3m_to_dict(a3m_file_path: str) -> Dict[str, str]:
     """
@@ -41,10 +45,10 @@ def read_a3m_to_dict(a3m_file_path: str) -> Dict[str, str]:
                     
         return sequences
     except FileNotFoundError:
-        logging.error(f"File not found: {a3m_file_path}")
+        logger.error(f"File not found: {a3m_file_path}")
         raise
     except Exception as e:
-        logging.error(f"Error reading A3M file: {e}")
+        logger.error(f"Error reading A3M file: {e}")
         raise
 
 def write_a3m(sequences: Dict[str, str], file_path: str, reference_pdb: str) -> None:
@@ -74,7 +78,7 @@ def write_a3m(sequences: Dict[str, str], file_path: str, reference_pdb: str) -> 
             for header, sequence in sequences.items():
                 a3m_file.write(f'{header}\n{sequence}\n')
     except Exception as e:
-        logging.error(f"Error writing A3M file: {e}")
+        logger.error(f"Error writing A3M file: {e}")
         raise
 
 def filter_a3m_by_coverage(sequences: Dict[str, str], 
@@ -136,7 +140,7 @@ def get_protein_sequence(pdb_filename: str) -> str:
     full_sequence = ''.join(sequences)
     
     if not full_sequence:
-        logging.warning(f"No protein sequence found in {pdb_filename}")
+        logger.warning(f"No protein sequence found in {pdb_filename}")
         
     return full_sequence
 
@@ -160,7 +164,7 @@ def map_and_extract(headers: List[str], sequences: Dict[str, str]) -> Dict[str, 
     # Log if some headers weren't found
     missing_count = len(set(headers) - set(extracted.keys()))
     if missing_count:
-        logging.warning(f"Could not find sequences for {missing_count} headers")
+        logger.warning(f"Could not find sequences for {missing_count} headers")
         
     return extracted
 
@@ -182,7 +186,7 @@ def combine_sequences(extracted_sequences: Dict[str, str], output_file: str) -> 
         for header, seq in extracted_sequences.items():
             f.write(f">{header}\n{seq}\n")
             
-    logging.info(f"Successfully wrote {len(extracted_sequences)} sequences to {output_file}")
+    logger.info(f"Successfully wrote {len(extracted_sequences)} sequences to {output_file}")
 
 def process_sequences(
     dir_path: str,
@@ -240,7 +244,7 @@ def process_sequences(
             for seq in group:
                 g.write(seq)
                 
-    logging.info(f"Successfully processed {len(sequences_copy)} sequences into {len(groups)} groups")
+    logger.info(f"Successfully processed {len(sequences_copy)} sequences into {len(groups)} groups")
 
 def process_all_sequences(
     dir_path: str,
@@ -289,7 +293,7 @@ def process_all_sequences(
     for i in range(1, num_shuffles + 1):
         process_sequences(dir_path, sequences, i, seq_num_per_shuffle, protein_sequence)
         
-    logging.info(f"Successfully processed {len(sequences)} sequences for {num_shuffles} shuffles")
+    logger.info(f"Successfully processed {len(sequences)} sequences for {num_shuffles} shuffles")
 
 def collect_a3m_files(df_list: List[Dict[str, str]]) -> List[str]:
     """
@@ -312,20 +316,20 @@ def collect_a3m_files(df_list: List[Dict[str, str]]) -> List[str]:
     
     for i, df in enumerate(df_list):
         if 'PDB' not in df:
-            logging.warning(f"DataFrame at index {i} does not contain 'PDB' column, skipping")
+            logger.warning(f"DataFrame at index {i} does not contain 'PDB' column, skipping")
             continue
             
-        logging.info(f'Processing DataFrame {i+1}/{len(df_list)}')
+        logger.info(f'Processing DataFrame {i+1}/{len(df_list)}')
         
         for pdb in df['PDB']:
             if not isinstance(pdb, str):
-                logging.warning(f"Skipping non-string PDB entry: {pdb}")
+                logger.warning(f"Skipping non-string PDB entry: {pdb}")
                 continue
                 
             a3m = pdb.split('_unrelaxed')[0] + '.a3m'
             a3m_list.append(a3m)
             
-    logging.info(f"Collected {len(a3m_list)} A3M files")
+    logger.info(f"Collected {len(a3m_list)} A3M files")
     return a3m_list
 
 def concatenate_a3m_content(
@@ -362,7 +366,7 @@ def concatenate_a3m_content(
     # Process each A3M file
     for file_name in a3m_list:
         if not os.path.exists(file_name):
-            logging.warning(f"File not found, skipping: {file_name}")
+            logger.warning(f"File not found, skipping: {file_name}")
             continue
             
         try:
@@ -398,7 +402,7 @@ def concatenate_a3m_content(
                         seen_entries.add(entry)
                         
         except Exception as e:
-            logging.warning(f"Error processing file {file_name}: {e}")
+            logger.warning(f"Error processing file {file_name}: {e}")
     
     # Ensure output directory exists
     Path(a3m_path).parent.mkdir(parents=True, exist_ok=True)
@@ -407,7 +411,7 @@ def concatenate_a3m_content(
     with open(a3m_path, "w") as output_file:
         output_file.writelines(concatenated_content)
             
-    logging.info(f"Successfully wrote {len(seen_entries)} unique sequences to {a3m_path}")
+    logger.info(f"Successfully wrote {len(seen_entries)} unique sequences to {a3m_path}")
 
 def count_sequences_in_a3m(a3m_file: str) -> int:
     """
@@ -423,7 +427,7 @@ def count_sequences_in_a3m(a3m_file: str) -> int:
         FileNotFoundError: If the A3M file doesn't exist (logged but not raised)
     """
     if not os.path.exists(a3m_file):
-        logging.error(f"A3M file not found: {a3m_file}")
+        logger.error(f"A3M file not found: {a3m_file}")
         return 0
         
     try:
@@ -433,8 +437,8 @@ def count_sequences_in_a3m(a3m_file: str) -> int:
                 if line.startswith('>'):
                     count += 1
                     
-        logging.info(f"Found {count} sequences in {a3m_file}")
+        logger.info(f"Found {count} sequences in {a3m_file}")
         return count
     except Exception as e:
-        logging.error(f"Error counting sequences in A3M file: {e}")
+        logger.error(f"Error counting sequences in A3M file: {e}")
         return 0

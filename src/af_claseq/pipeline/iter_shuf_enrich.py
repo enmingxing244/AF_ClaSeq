@@ -30,10 +30,11 @@ from af_claseq.utils.sequence_processing import (
     concatenate_a3m_content
 )
 from af_claseq.utils.structure_analysis import (
-    get_result_df,
+    StructureAnalyzer,
     apply_filters,
     load_filter_modes
 )
+from af_claseq.utils.logging_utils import get_logger
 
 
 class IterShufEnrichRunner:
@@ -101,11 +102,10 @@ class IterShufEnrichRunner:
         random.seed(random_seed)
         
         # Initialize output directories
-        self.iter_shuffle_base = self.iter_shuf_enrich_base_dir
         os.makedirs(self.iter_shuf_enrich_base_dir, exist_ok=True)
         
         # Set up logger
-        self.logger = logging.getLogger(__name__)
+        self.logger = get_logger("iter_shuf_enrich")
         
         # Load filter config
         self.config = load_filter_modes(self.config_file)
@@ -113,24 +113,10 @@ class IterShufEnrichRunner:
         # Set up SLURM submitter if not provided
         self.slurm_submitter = slurm_submitter
     
-    def setup_logging(self, log_file: Optional[str] = None) -> None:
-        """
-        Set up logging configuration.
-        
-        Args:
-            log_file: Path to log file (default is in iterative shuffling directory)
-        """
-        if log_file is None:
-            log_file = os.path.join(self.iter_shuffle_base, "01_iterative_shuffling.log")
-            
-        logging.basicConfig(
-            level=logging.INFO,
-            format='%(asctime)s - %(levelname)s - %(message)s',
-            handlers=[
-                logging.FileHandler(log_file),
-                logging.StreamHandler()
-            ]
-        )
+    def setup_logging(self) -> None:
+        """Log setup information"""
+        self.logger.info("=== Iterative Shuffling Enrichment ===")
+        self.log_parameters()
     
     def log_parameters(self) -> None:
         """Log all input parameters"""
@@ -160,7 +146,7 @@ class IterShufEnrichRunner:
                 if not filtered_sequences:
                     raise ValueError("No sequences remained after filtering")
                 
-                filtered_a3m_path = os.path.join(self.iter_shuffle_base, "filtered_sequences.a3m")
+                filtered_a3m_path = os.path.join(self.iter_shuf_enrich_base_dir, "filtered_sequences.a3m")
                 write_a3m(filtered_sequences, filtered_a3m_path, reference_pdb=self.default_pdb)
                 
                 # Start iteration
@@ -170,7 +156,7 @@ class IterShufEnrichRunner:
             elif self.resume_from_iter:
                 start_iter = self.resume_from_iter
                 prev_iter_a3m = os.path.join(
-                    self.iter_shuffle_base, 
+                    self.iter_shuf_enrich_base_dir, 
                     f'Iteration_{self.resume_from_iter - 1}', 
                     f'combined_filtered_iteration_{self.resume_from_iter - 1}.a3m'
                 )
@@ -210,7 +196,7 @@ class IterShufEnrichRunner:
         Returns:
             Path to output A3M file containing filtered sequences or None if process fails
         """
-        iter_dir = os.path.join(self.iter_shuffle_base, f'Iteration_{iteration}')
+        iter_dir = os.path.join(self.iter_shuf_enrich_base_dir, f'Iteration_{iteration}')
         os.makedirs(iter_dir, exist_ok=True)
         self.logger.info(f'Processing iteration {iteration}...')
         
@@ -245,7 +231,8 @@ class IterShufEnrichRunner:
             )
             
             # Get results and apply filters
-            result_df = get_result_df(
+            analyzer = StructureAnalyzer()
+            result_df = analyzer.get_result_df(
                 parent_dir=iter_dir,
                 filter_criteria=self.config['filter_criteria'],
                 basics=self.config['basics']
@@ -348,7 +335,9 @@ class IterShufEnrichPlotter:
         """
         try:
             # Get list of iteration directories
+            print(self.iter_shuf_enrich_base_dir)
             iteration_dirs = [d for d in os.listdir(self.iter_shuf_enrich_base_dir) if d.startswith('Iteration_')]
+            print(iteration_dirs)
             iteration_dirs.sort(key=lambda x: int(x.split('_')[1]))
             
             if not iteration_dirs:
@@ -415,7 +404,8 @@ class IterShufEnrichPlotter:
             iteration_path = os.path.join(self.iter_shuf_enrich_base_dir, iteration_dir)
             
             # Get results dataframe for this iteration
-            results_df = get_result_df(
+            analyzer = StructureAnalyzer()
+            results_df = analyzer.get_result_df(
                 iteration_path,
                 filter_modes['filter_criteria'],
                 filter_modes['basics']
@@ -602,6 +592,8 @@ class IterShufEnrichCombiner:
             
             # Read metric values from CSV into a dictionary for faster lookup
             csv_path = os.path.join(self.iter_shuf_enrich_base_dir, f'analysis/plot/{filter_name}_values.csv')
+            print(csv_path)
+            print(os.path.exists(csv_path))
             if not os.path.exists(csv_path):
                 self.logger.error(f"Metric values CSV not found: {csv_path}. Run metrics analysis first.")
                 return None
@@ -625,17 +617,13 @@ class IterShufEnrichCombiner:
             self.logger.info(f"Number of filtered PDBs/A3M files: {len(a3m_files)}")
             
             # Combine sequences from all A3M files
-            output_file = os.path.join(self.a3m_combine_dir, 'gathered_seq_after_iter_shuffling.a3m')
+            combined_a3m_path = os.path.join(self.a3m_combine_dir, 'gathered_seq_after_iter_shuffling.a3m')
             
             # Concatenate A3M content
-            concatenate_a3m_content(a3m_files, self.default_pdb, output_file)
+            concatenate_a3m_content(a3m_files, self.default_pdb, combined_a3m_path)
             
-            # Create a symlink in the parent directory for easy access
-            combined_a3m_path = os.path.join(self.iter_shuf_enrich_base_dir, "gathered_seq_after_iter_shuffling.a3m")
-            if not os.path.exists(combined_a3m_path):
-                os.symlink(output_file, combined_a3m_path)
             
-            self.logger.info(f"Combined sequences saved to {output_file}")
+            self.logger.info(f"Combined sequences saved to {combined_a3m_path}")
             return combined_a3m_path
             
         except Exception as e:

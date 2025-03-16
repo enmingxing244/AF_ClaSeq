@@ -1,5 +1,4 @@
 import os
-import logging
 import subprocess
 from pathlib import Path
 from typing import List, Optional, Dict, Any, Sequence
@@ -11,9 +10,13 @@ import json
 from tqdm import tqdm
 
 from af_claseq.utils.sequence_processing import count_sequences_in_a3m
+from af_claseq.utils.logging_utils import get_logger
 
 # Default path for TMalign executable
 DEFAULT_TMALIGN_PATH = "/fs/ess/PAA0203/xing244/TMalign"
+
+# Get logger for this module
+logger = get_logger(__name__)
 
 
 class StructureAnalyzer:
@@ -91,7 +94,7 @@ class StructureAnalyzer:
             return np.degrees(angle_rad)
 
         except Exception as e:
-            logging.error(f"Error calculating angle: {e}")
+            logger.error(f"Error calculating angle: {e}")
             raise
 
     def calculate_residue_distance(
@@ -123,7 +126,7 @@ class StructureAnalyzer:
             return None
             
         except Exception as e:
-            logging.error(f"Error calculating residue distance: {e}")
+            logger.error(f"Error calculating residue distance: {e}")
             return None
 
     def calculate_ca_rmsd(
@@ -162,14 +165,14 @@ class StructureAnalyzer:
                         res = structure[0][chain_id][res_id]
                         atoms.append(res["CA"])
                     except KeyError:
-                        logging.warning(f"Residue {res_id} not found. Skipping.")
+                        logger.warning(f"Residue {res_id} not found. Skipping.")
                 return atoms
 
             ref_sup_atoms = get_ca_atoms(ref_structure, superposition_indices)
             target_sup_atoms = get_ca_atoms(target_structure, superposition_indices)
 
             if not ref_sup_atoms or not target_sup_atoms:
-                logging.warning("No CA atoms found for superposition.")
+                logger.warning("No CA atoms found for superposition.")
                 return float('nan')
 
             # Perform superposition
@@ -181,13 +184,13 @@ class StructureAnalyzer:
             target_rmsd_atoms = get_ca_atoms(target_structure, rmsd_indices)
 
             if not ref_rmsd_atoms or not target_rmsd_atoms:
-                logging.warning("No CA atoms found for RMSD calculation.")
+                logger.warning("No CA atoms found for RMSD calculation.")
                 return float('nan')
 
             return self._calculate_rmsd(ref_rmsd_atoms, target_rmsd_atoms)
 
         except Exception as e:
-            logging.error(f"Error calculating CA RMSD: {e}")
+            logger.error(f"Error calculating CA RMSD: {e}")
             raise
 
     def _calculate_rmsd(self, atoms1: Sequence[Any], atoms2: Sequence[Any]) -> float:
@@ -235,7 +238,7 @@ class StructureAnalyzer:
                         res = structure[0][chain_id][res_id]
                         atoms.append(res["CA"])
                     except KeyError:
-                        logging.warning(f"Residue {res_id} not found. Skipping.")
+                        logger.warning(f"Residue {res_id} not found. Skipping.")
                 return atoms
             
             def get_all_atoms(structure, indices):
@@ -246,7 +249,7 @@ class StructureAnalyzer:
                         for atom in res:
                             atoms.append(atom)
                     except KeyError:
-                        logging.warning(f"Residue {res_id} not found. Skipping.")
+                        logger.warning(f"Residue {res_id} not found. Skipping.")
                 return atoms
 
             # Use CA atoms for superposition
@@ -254,7 +257,7 @@ class StructureAnalyzer:
             target_sup_atoms = get_ca_atoms(target_structure, superposition_indices)
 
             if not ref_sup_atoms or not target_sup_atoms:
-                logging.warning("No CA atoms found for superposition.")
+                logger.warning("No CA atoms found for superposition.")
                 return float('nan')
 
             # Perform superposition
@@ -267,7 +270,7 @@ class StructureAnalyzer:
             target_all_atoms = get_all_atoms(target_structure, rmsd_indices)
             
             if not ref_all_atoms or not target_all_atoms:
-                logging.warning("No atoms found for RMSD calculation.")
+                logger.warning("No atoms found for RMSD calculation.")
                 return float('nan')
             
             # Match atoms between reference and target
@@ -292,13 +295,13 @@ class StructureAnalyzer:
                     matched_target_atoms.append(target_atom_dict[key])
             
             if not matched_ref_atoms or not matched_target_atoms:
-                logging.warning("No matching atoms found for RMSD calculation.")
+                logger.warning("No matching atoms found for RMSD calculation.")
                 return float('nan')
                 
             return self._calculate_rmsd(matched_ref_atoms, matched_target_atoms)
 
         except Exception as e:
-            logging.error(f"Error calculating all-atom RMSD: {e}")
+            logger.error(f"Error calculating all-atom RMSD: {e}")
             raise
 
     def calculate_tm_score(
@@ -336,7 +339,7 @@ class StructureAnalyzer:
             raise ValueError("Could not find TM-score in TMalign output")
             
         except Exception as e:
-            logging.error(f"Error calculating TM-score: {e}")
+            logger.error(f"Error calculating TM-score: {e}")
             raise
 
     def plddt_process(self,
@@ -366,7 +369,7 @@ class StructureAnalyzer:
             return float(np.mean(b_factors)) if b_factors else None
             
         except Exception as e:
-            logging.error(f"Error processing pLDDT for {pdb_file_path}: {e}")
+            logger.error(f"Error processing pLDDT for {pdb_file_path}: {e}")
             return None
 
     def get_residue_center(
@@ -393,13 +396,13 @@ class StructureAnalyzer:
                     residue = structure[0][chain_id][res_index]
                     atoms.extend(list(residue.get_atoms()))
                 except KeyError:
-                    logging.error(f"Residue {res_index} not found in chain {chain_id}")
+                    logger.error(f"Residue {res_index} not found in chain {chain_id}")
                     return None
                     
             return self.calculate_com(atoms) if atoms else None
             
         except Exception as e:
-            logging.error(f"Error calculating residue center: {e}")
+            logger.error(f"Error calculating residue center: {e}")
             return None
 
     def get_atoms_from_residue_indices(
@@ -424,120 +427,171 @@ class StructureAnalyzer:
                 atoms.extend(list(residue.get_atoms()))
         return atoms
 
-
-
-
-
-
-
-def get_result_df(parent_dir: str | Path,
-                 filter_criteria: Sequence[Dict[str, Any]],
-                 basics: Dict[str, Any]) -> pd.DataFrame:
-    """
-    Generate a DataFrame containing calculated properties for each PDB file.
-
-    Args:
-        parent_dir: Path to the parent directory containing PDB files.
-        filter_criteria: List of criteria for filtering and calculation.
-        basics: Basic information required for calculations.
-
-    Returns:
-        DataFrame with results.
-    """
-    logging.info(f'Processing {parent_dir}')
-    
-    # Use pathlib for better path handling
-    parent_path = Path(parent_dir)
-    pdb_files = [
-        str(f) for f in parent_path.rglob('*.pdb')
-        if 'non_a3m' not in str(f.parent)
-    ]
-    logging.info(f'Found {len(pdb_files)} PDB files')
-
-    properties_to_calculate = {'seq_count', 'plddt'}
-    properties_to_calculate.update(c['type'] for c in filter_criteria)
-
-    analyzer = StructureAnalyzer()
-    def process_pdb(pdb: str) -> Dict[str, Any]:
-        result = {'PDB': pdb}
-
-        if 'seq_count' in properties_to_calculate:
-            a3m_file = pdb.split("_unrelaxed")[0] + '.a3m'
-            result['seq_count'] = count_sequences_in_a3m(a3m_file)
-
-        if 'plddt' in properties_to_calculate:
-            for index_type in ['full_index', 'local_index']:
-                if index_type in basics:
-                    indices = []
-                    index_data = basics[index_type]
-                    
-                    if isinstance(index_data, list):
-                        for range_dict in index_data:
-                            indices.extend(range(range_dict['start'], range_dict['end'] + 1))
-                    elif isinstance(index_data, dict):
-                        indices = range(int(index_data['start']), int(index_data['end']) + 1)
-                    
-                    plddt_key = 'local_plddt' if index_type == 'local_index' else 'plddt'
-                    result[plddt_key] = analyzer.plddt_process(pdb, list(indices))
-
-        for criterion in filter_criteria:
-            criterion_type = criterion['type']
+    def process_single_pdb(self, 
+                          pdb_path: str, 
+                          filter_criteria: List[Dict[str, Any]], 
+                          basics: Dict[str, Any], 
+                          plddt_threshold: float = 0) -> Optional[Dict[str, Any]]:
+        """
+        Process a single PDB file and extract metrics based on filter criteria.
+        
+        Args:
+            pdb_path: Path to the PDB file
+            filter_criteria: List of criteria for filtering structures
+            basics: Basic configuration parameters
+            plddt_threshold: Minimum pLDDT score threshold
             
-            if criterion_type == 'distance':
-                result[criterion['name']] = analyzer.calculate_residue_distance(
-                    pdb, 'A', 
-                    criterion['indices']['set1'],
-                    criterion['indices']['set2']
-                )
+        Returns:
+            Dictionary of metrics or None if processing fails or pLDDT below threshold
+        """
+        try:
+            # Extract full index range for pLDDT calculation
+            full_indices = self._extract_indices_from_spec(basics.get('full_index'))
+            if not full_indices:
+                logger.warning(f"No valid indices defined for pLDDT calculation in {pdb_path}")
+                return None
                 
-            elif criterion_type == 'angle':
-                result[criterion['name']] = analyzer.calculate_angle(
-                    pdb,
-                    criterion['indices']['domain1'],
-                    criterion['indices']['domain2'],
-                    criterion['indices']['hinge']
-                )
+            plddt = self.plddt_process(pdb_path, full_indices)
+            
+            if not plddt:
+                logger.warning(f"Could not calculate pLDDT for {pdb_path}")
+                return None
                 
-            elif criterion_type == 'rmsd' or criterion_type == 'all_atom_rmsd':
-                if not all(k in criterion for k in ['superposition_indices', 'rmsd_indices', 'ref_pdb']):
-                    raise ValueError("Missing required fields for RMSD calculation")
+            if plddt <= plddt_threshold:
+                return None
                 
-                def get_indices(index_data):
-                    indices = []
-                    if isinstance(index_data, list):
-                        for range_dict in index_data:
-                            indices.extend(range(range_dict['start'], range_dict['end'] + 1))
+            # Initialize results with pLDDT
+            result = {'PDB': pdb_path, 'plddt': plddt}
+            
+            # Get local pLDDT if specified
+            if 'local_index' in basics:
+                local_indices = self._extract_indices_from_spec(basics['local_index'])
+                if local_indices:
+                    result['local_plddt'] = self.plddt_process(pdb_path, local_indices)
+            
+            # Get sequence count if needed
+            a3m_file = pdb_path.split("_unrelaxed")[0] + '.a3m'
+            if os.path.exists(a3m_file):
+                result['seq_count'] = count_sequences_in_a3m(a3m_file)
+            
+            # Process each criterion
+            for criterion in filter_criteria:
+                metric_name = criterion['name']
+                criterion_type = criterion['type']
+                
+                if criterion_type == 'distance':
+                    distance = self.calculate_residue_distance(
+                        pdb_path, 'A', 
+                        criterion['indices']['set1'],
+                        criterion['indices']['set2']
+                    )
+                    result[metric_name] = distance
+                    
+                elif criterion_type == 'angle':
+                    angle = self.calculate_angle(
+                        pdb_path,
+                        criterion['indices']['domain1'],
+                        criterion['indices']['domain2'],
+                        criterion['indices']['hinge']
+                    )
+                    result[metric_name] = angle
+                    
+                elif criterion_type in ('rmsd', 'all_atom_rmsd'):
+                    sup_indices = self._extract_indices_from_spec(
+                        criterion.get('superposition_indices'),
+                        full_indices
+                    )
+                    rmsd_indices = self._extract_indices_from_spec(
+                        criterion.get('rmsd_indices'),
+                        full_indices
+                    )
+                    
+                    # Use all-atom RMSD if specified
+                    if criterion_type == 'all_atom_rmsd' or ('method' in criterion and criterion['method'] == 'all_atom_rmsd'):
+                        rmsd = self.calculate_all_atom_rmsd(
+                            criterion['ref_pdb'],
+                            pdb_path,
+                            sup_indices,
+                            rmsd_indices,
+                            chain_id='A'
+                        )
                     else:
-                        indices = range(index_data['start'], index_data['end'] + 1)
-                    return list(indices)
-                
-                # Use all-atom RMSD if criterion type is 'all_atom_rmsd' or if method is specified as 'all_atom_rmsd'
-                if criterion_type == 'all_atom_rmsd' or ('method' in criterion and criterion['method'] == 'all_atom_rmsd'):
-                    result[criterion['name']] = analyzer.calculate_all_atom_rmsd(
-                        criterion['ref_pdb'],
-                        pdb,
-                        get_indices(criterion['superposition_indices']),
-                        get_indices(criterion['rmsd_indices'])
+                        rmsd = self.calculate_ca_rmsd(
+                            criterion['ref_pdb'],
+                            pdb_path,
+                            sup_indices,
+                            rmsd_indices,
+                            chain_id='A'
+                        )
+                    
+                    result[metric_name] = rmsd
+                    
+                elif criterion_type == 'tmscore':
+                    tm_score = self.calculate_tm_score(
+                        pdb_path, 
+                        criterion['ref_pdb']
                     )
-                else:
-                    result[criterion['name']] = analyzer.calculate_ca_rmsd(
-                        criterion['ref_pdb'],
-                        pdb,
-                        get_indices(criterion['superposition_indices']),
-                        get_indices(criterion['rmsd_indices'])
-                    )
-                
-            elif criterion_type == 'tmscore':
-                if 'ref_pdb' not in criterion:
-                    raise ValueError("Missing ref_pdb for TM-score calculation")
-                result[criterion['name']] = analyzer.calculate_tm_score(pdb, criterion['ref_pdb'])
+                    result[metric_name] = tm_score
 
-        return result
+            return result
+        except Exception as e:
+            logger.error(f"Error processing {pdb_path}: {str(e)}")
+            return None
+    
+    def _extract_indices_from_spec(self, indices_spec, default_indices=None):
+        """Extract indices from specification or use defaults."""
+        if not indices_spec:
+            return default_indices
+            
+        if isinstance(indices_spec, list):
+            result = []
+            for range_dict in indices_spec:
+                result.extend(range(range_dict['start'], range_dict['end']+1))
+            return result
+        else:
+            return list(range(indices_spec['start'], indices_spec['end'] + 1))
+        
+    def get_result_df(self, parent_dir: str | Path,
+                     filter_criteria: Sequence[Dict[str, Any]],
+                     basics: Dict[str, Any],
+                     plddt_threshold: float = 0) -> pd.DataFrame:
+        """
+        Generate a DataFrame containing calculated properties for each PDB file.
 
-    results = Parallel(n_jobs=-1)(
-        delayed(process_pdb)(pdb) for pdb in tqdm(pdb_files, desc="Processing PDB files")
-    )
-    return pd.DataFrame(results)
+        Args:
+            parent_dir: Path to the parent directory containing PDB files.
+            filter_criteria: List of criteria for filtering and calculation.
+            basics: Basic information required for calculations.
+            plddt_threshold: Minimum pLDDT score threshold
+
+        Returns:
+            DataFrame with results.
+        """
+        logger.info(f'Processing {parent_dir}')
+
+        # Use pathlib for better path handling
+        parent_path = Path(parent_dir)
+        pdb_files = [
+            str(f) for f in parent_path.rglob('*.pdb')
+            if 'non_a3m' not in str(f.parent)
+        ]
+        logger.info(f'Found {len(pdb_files)} PDB files')
+
+        analyzer = StructureAnalyzer()
+
+        # Process PDB files in parallel
+        results = Parallel(n_jobs=-1)(
+            delayed(analyzer.process_single_pdb)(
+                pdb, filter_criteria, basics, plddt_threshold
+            ) for pdb in tqdm(pdb_files, desc="Processing PDB files")
+        )
+
+        # Filter out None results
+        results = [r for r in results if r is not None]
+
+        return pd.DataFrame(results)
+
+
 
 def get_protein_sequence(pdb_filename: str | Path) -> str:
     """
@@ -557,7 +611,7 @@ def get_protein_sequence(pdb_filename: str | Path) -> str:
         structure = parser.get_structure("Protein", pdb_filename)
         return ''.join(str(pp.get_sequence()) for pp in PPBuilder().build_peptides(structure))
     except Exception as e:
-        logging.error(f"Error getting protein sequence: {e}")
+        logger.error(f"Error getting protein sequence: {e}")
         raise
 
 def load_filter_modes(file_path: str | Path) -> Dict:
@@ -598,18 +652,18 @@ def apply_filters(
         method = criterion['method']
         
         if method not in {'above', 'below'}:
-            logging.warning(f"Invalid filter method: {method}. Skipping this criterion.")
+            logger.warning(f"Invalid filter method: {method}. Skipping this criterion.")
             continue
             
         if column_name not in df_threshold.columns:
-            logging.warning(f"Column {column_name} not found in threshold DataFrame. Skipping.")
+            logger.warning(f"Column {column_name} not found in threshold DataFrame. Skipping.")
             continue
             
         threshold_value = df_threshold[column_name].quantile(1 - quantile if method == 'above' else quantile)
         mask = filtered_df[column_name] > threshold_value if method == 'above' else filtered_df[column_name] < threshold_value
         filtered_df = filtered_df[mask]
         
-        logging.info(
+        logger.info(
             f"Filtering {column_name} {method} {(1-quantile if method == 'above' else quantile)*100}% "
             f"quantile value: {threshold_value}"
         )

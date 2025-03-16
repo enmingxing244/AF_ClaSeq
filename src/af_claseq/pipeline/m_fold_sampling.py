@@ -20,8 +20,8 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from tqdm import tqdm
 
 from af_claseq.utils.sequence_processing import read_a3m_to_dict, write_a3m, filter_a3m_by_coverage
-from af_claseq.utils.structure_analysis import get_result_df, load_filter_modes, apply_filters
 from af_claseq.utils.slurm_utils import SlurmJobSubmitter
+from af_claseq.utils.logging_utils import get_logger
 
 
 class MFoldSampler:
@@ -76,25 +76,10 @@ class MFoldSampler:
         os.makedirs(self.sampling_base_dir, exist_ok=True)
         
         # Set up logger
-        if logger:
-            self.logger = logger
-        else:
-            self.logger = logging.getLogger(__name__)
-            if not self.logger.handlers:
-                self._setup_logging()
+        self.logger = logger or get_logger("m_fold_sampling")
         
         # Set random seed
         random.seed(random_seed)
-    
-    def _setup_logging(self):
-        """Set up logging configuration"""
-        log_file = os.path.join(self.m_fold_sampling_base_dir, "m_fold_sampling.log")
-        handler = logging.FileHandler(log_file)
-        formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
-        handler.setFormatter(formatter)
-        self.logger.addHandler(handler)
-        self.logger.addHandler(logging.StreamHandler())
-        self.logger.setLevel(logging.INFO)
     
     def run(self) -> bool:
         """
@@ -310,190 +295,3 @@ class MFoldSampler:
             for j, group in enumerate(new_groups, 1):
                 output_file = os.path.join(sample_dir, f'group_{j}.a3m')
                 write_a3m(group, output_file, reference_pdb=reference_pdb)
-
-
-class MFoldPlotter:
-    """
-    Class for generating plots from M-fold sampling results.
-    
-    This class provides methods for creating 1D and 2D visualizations
-    of metrics from the M-fold sampling process.
-    """
-    
-    def __init__(
-        self,
-        results_dir: str,
-        config_file: str,
-        output_dir: str,
-        csv_dir: str,
-        logger: Optional[logging.Logger] = None
-    ):
-        """
-        Initialize the plotter.
-        
-        Args:
-            results_dir: Directory containing M-fold sampling results
-            config_file: Path to config file with filter criteria
-            output_dir: Directory for saving plot outputs
-            csv_dir: Directory for saving CSV results
-            logger: Optional logger instance
-        """
-        self.results_dir = results_dir
-        self.config_file = config_file
-        self.output_dir = output_dir
-        self.csv_dir = csv_dir
-        
-        # Create output directories
-        os.makedirs(self.output_dir, exist_ok=True)
-        os.makedirs(self.csv_dir, exist_ok=True)
-        
-        # Set up logger
-        if logger:
-            self.logger = logger
-        else:
-            self.logger = logging.getLogger(__name__)
-            if not self.logger.handlers:
-                handler = logging.StreamHandler()
-                formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
-                handler.setFormatter(formatter)
-                self.logger.addHandler(handler)
-                self.logger.setLevel(logging.INFO)
-    
-    def plot_1d(
-        self,
-        initial_color: Union[str, Tuple[float, float, float]] = '#87CEEB',
-        end_color: Union[str, Tuple[float, float, float]] = '#FFFFFF',
-        x_min: Optional[float] = None,
-        x_max: Optional[float] = None,
-        y_min: Optional[float] = None,
-        y_max: Optional[float] = None,
-        log_scale: bool = False,
-        n_plot_bins: int = 50,
-        gradient_ascending: bool = False,
-        linear_gradient: bool = False,
-        plddt_threshold: float = 0,
-        figsize: Tuple[float, float] = (10, 5),
-        show_bin_lines: bool = False,
-        x_ticks: Optional[List[float]] = None
-    ) -> None:
-        """
-        Create 1D plots for M-fold sampling metrics.
-        
-        Args:
-            initial_color: Initial color for gradient
-            end_color: End color for gradient
-            x_min: Minimum x-axis value
-            x_max: Maximum x-axis value
-            y_min: Minimum y-axis value
-            y_max: Maximum y-axis value
-            log_scale: Whether to use log scale for y-axis
-            n_plot_bins: Number of bins for histogram
-            gradient_ascending: Whether to use ascending gradient
-            linear_gradient: Whether to use linear gradient
-            plddt_threshold: pLDDT threshold for filtering structures
-            figsize: Figure size in inches
-            show_bin_lines: Whether to show bin lines
-            x_ticks: List of x-axis tick positions
-        """
-        try:
-            self.logger.info("Generating 1D plots")
-            
-            # Process colors if needed
-            if isinstance(initial_color, str):
-                initial_color = hex2color(initial_color)
-            if isinstance(end_color, str):
-                end_color = hex2color(end_color)
-            
-            # Import here to avoid circular imports
-            from af_claseq.utils.plotting_manager import plot_m_fold_sampling_1d
-            
-            plot_m_fold_sampling_1d(
-                results_dir=self.results_dir,
-                config_file=self.config_file,
-                output_dir=self.output_dir,
-                csv_dir=self.csv_dir,
-                gradient_ascending=gradient_ascending,
-                initial_color=initial_color,
-                end_color=end_color,
-                x_min=x_min,
-                x_max=x_max,
-                log_scale=log_scale,
-                n_plot_bins=n_plot_bins,
-                linear_gradient=linear_gradient,
-                plddt_threshold=plddt_threshold,
-                figsize=figsize,
-                show_bin_lines=show_bin_lines,
-                y_min=y_min,
-                y_max=y_max,
-                x_ticks=x_ticks
-            )
-            
-            self.logger.info("1D plots generated successfully")
-            
-        except Exception as e:
-            self.logger.error(f"Error generating 1D plots: {str(e)}", exc_info=True)
-    
-    def plot_2d(
-        self,
-        x_min: Optional[float] = None,
-        x_max: Optional[float] = None,
-        y_min: Optional[float] = None,
-        y_max: Optional[float] = None,
-        plddt_threshold: float = 0,
-        x_ticks: Optional[List[float]] = None,
-        y_ticks: Optional[List[float]] = None
-    ) -> None:
-        """
-        Create 2D plots for M-fold sampling metrics.
-        
-        Args:
-            x_min: Minimum x-axis value
-            x_max: Maximum x-axis value
-            y_min: Minimum y-axis value
-            y_max: Maximum y-axis value
-            plddt_threshold: pLDDT threshold for filtering structures
-            x_ticks: List of x-axis tick positions
-            y_ticks: List of y-axis tick positions
-        """
-        try:
-            self.logger.info("Generating 2D plots")
-            
-            # Import here to avoid circular imports
-            from af_claseq.utils.plotting_manager import (
-                plot_m_fold_sampling_2d, 
-                plot_m_fold_sampling_2d_joint
-            )
-            
-            # Regular 2D plots
-            plot_m_fold_sampling_2d(
-                results_dir=self.results_dir,
-                config_file=self.config_file,
-                output_dir=self.output_dir,
-                csv_dir=self.csv_dir,
-                x_min=x_min,
-                x_max=x_max,
-                y_min=y_min,
-                y_max=y_max,
-                plddt_threshold=plddt_threshold,
-                x_ticks=x_ticks,
-                y_ticks=y_ticks
-            )
-            
-            # Joint 2D plots
-            plot_m_fold_sampling_2d_joint(
-                results_dir=self.results_dir,
-                config_file=self.config_file,
-                output_dir=self.output_dir,
-                csv_dir=self.csv_dir,
-                x_min=x_min,
-                x_max=x_max,
-                y_min=y_min,
-                y_max=y_max,
-                plddt_threshold=plddt_threshold
-            )
-            
-            self.logger.info("2D plots generated successfully")
-            
-        except Exception as e:
-            self.logger.error(f"Error generating 2D plots: {str(e)}", exc_info=True)
-
