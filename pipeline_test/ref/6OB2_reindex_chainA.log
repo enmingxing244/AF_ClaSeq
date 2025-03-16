@@ -1,0 +1,12 @@
+Command executed: python ref_pdb_process.py 6OB2.pdb A 0 --default_pdb /fs/ess/PAA0203/xing244/AF_Vote/results/supple_cases/RASK_HUMAN/default/RASK_HUMAN_1-169_unrelaxed_rank_001_alphafold2_ptm_model_4_seed_000.pdb
+
+
+Residues with inconsistent names between default and reindexed PDB:
+Residue 151: ARG (default) vs GLY (reindexed)
+Residue 153: GLU (default) vs ASP (reindexed)
+Residue 165: GLN (default) vs LYS (reindexed)
+Residue 166: TYR (default) vs HIS (reindexed)
+Residue 167: ARG (default) vs LYS (reindexed)
+Residue 168: LEU (default) vs GLU (reindexed)
+
+Reindexed PDB saved as: 6OB2_reindex_chainA.pdb

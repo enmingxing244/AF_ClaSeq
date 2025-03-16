@@ -9,21 +9,18 @@ import os
 import glob
 import json
 import logging
-import numpy as np
-import matplotlib.pyplot as plt
 import pandas as pd
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple, Union, Any
 from dataclasses import dataclass
-from matplotlib.colors import LinearSegmentedColormap
-from concurrent.futures import ProcessPoolExecutor, as_completed
-import functools
 
-from af_claseq.utils.structure_analysis import StructureAnalyzer, get_result_df
+# Import centralized plotting utilities
 from af_claseq.utils.plotting_manager import (
-    PLOT_PARAMS, COLORS, _load_or_calculate_metrics,
-    _load_data_for_2d_plot, _set_axis_limits_and_ticks
+    PLOT_PARAMS, COLORS, load_results_df, set_axis_limits_and_ticks,
+    create_2d_scatter_plot, create_joint_plot
 )
+from af_claseq.utils.structure_analysis import StructureAnalyzer
+from af_claseq.utils.logging_utils import get_logger
 
 @dataclass
 class PureSeqPlotConfig:
@@ -31,7 +28,7 @@ class PureSeqPlotConfig:
     base_dir: str
     output_dir: str
     config_file: str
-    color_prediction: str = COLORS.get('default_prediction', '#468F8B')
+    color_prediction: str = COLORS.get('default_selection', '#468F8B')
     color_control: str = COLORS.get('default_control', '#AFD2D0')
     x_min: Optional[float] = None
     x_max: Optional[float] = None
@@ -40,8 +37,8 @@ class PureSeqPlotConfig:
     x_ticks: Optional[List[float]] = None
     y_ticks: Optional[List[float]] = None
     plddt_threshold: float = 70.0
-    figsize: Tuple[int, int] = (15, 7)
-    dpi: int = 300
+    figsize: Tuple[int, int] = (12, 8)  # Default figure size
+    dpi: int = PLOT_PARAMS.get('dpi', 300)
     max_workers: int = 8
 
 
@@ -57,34 +54,12 @@ class PureSequencePlotter:
     def __init__(self, 
                  config: PureSeqPlotConfig,
                  logger: Optional[logging.Logger] = None):
-        """
-        Initialize the pure sequence plotter.
-        
-        Args:
-            config: Configuration options for plotting
-            logger: Optional logger, will create one if not provided
-        """
+        """Initialize the pure sequence plotter."""
         self.config = config
-        self.logger = logger or self._setup_logger()
-        self.structure_analyzer = StructureAnalyzer()
-        
-        # Apply plot style configuration
-        plt.rcParams.update({k: v for k, v in PLOT_PARAMS.items() 
-                            if k not in ['scatter_size', 'scatter_alpha', 'scatter_edge']})
+        self.logger = logger or get_logger("pure_seq_plot")
         
         # Load configuration file
         self.filter_config = self._load_filter_config()
-        
-    def _setup_logger(self) -> logging.Logger:
-        """Set up a default logger if none was provided."""
-        logger = logging.getLogger("PureSequencePlotter")
-        if not logger.handlers:
-            handler = logging.StreamHandler()
-            formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
-            handler.setFormatter(formatter)
-            logger.addHandler(handler)
-            logger.setLevel(logging.INFO)
-        return logger
     
     def _load_filter_config(self) -> Dict:
         """Load the filter configuration from JSON file."""
@@ -138,11 +113,13 @@ class PureSequencePlotter:
             try:
                 bin_pattern = os.path.basename(bin_dir)
                 
-                # Use get_result_df from structure_analysis module
-                results_df = get_result_df(
-                    parent_dir=bin_dir,
-                    filter_criteria=criteria,
-                    basics=self.filter_config.get('basics', {})
+                # Load and process data
+                results_df = load_results_df(
+                    results_dir=bin_dir,
+                    metric_names=[criterion['name'] for criterion in criteria],
+                    config_file=self.config.config_file,
+                    plddt_threshold=self.config.plddt_threshold,
+                    logger=self.logger
                 )
                 
                 if results_df.empty:
@@ -194,6 +171,10 @@ class PureSequencePlotter:
             self.logger.warning(f"No data available for plotting prediction results for {bin_pattern}")
             return
             
+        # Import matplotlib here to avoid circular imports
+        import matplotlib.pyplot as plt
+        from matplotlib.colors import LinearSegmentedColormap
+        
         plt.figure(figsize=self.config.figsize)
         prediction_palette = LinearSegmentedColormap.from_list(
             'custom', 
@@ -212,7 +193,8 @@ class PureSequencePlotter:
             pred_data, 
             prediction_palette, 
             metric_name, 
-            f"Prediction Results - {bin_pattern}"
+            f"Prediction Results - {bin_pattern}",
+            plt
         )
         
         # Plot control predictions  
@@ -221,7 +203,8 @@ class PureSequencePlotter:
             control_pred_data, 
             prediction_palette, 
             metric_name, 
-            f"Control Prediction - {bin_pattern}"
+            f"Control Prediction - {bin_pattern}",
+            plt
         )
         
         plt.tight_layout()
@@ -230,12 +213,13 @@ class PureSequencePlotter:
     
     def _plot_predictions(self, 
                          data: pd.DataFrame, 
-                         palette: LinearSegmentedColormap, 
+                         palette: Any, 
                          metric_name: str, 
-                         title: str) -> None:
+                         title: str,
+                         plt_obj) -> None:
         """Helper function for prediction plotting."""
         if data.empty:
-            plt.text(0.5, 0.5, 'No data available', 
+            plt_obj.text(0.5, 0.5, 'No data available', 
                     horizontalalignment='center',
                     verticalalignment='center')
             return
@@ -244,90 +228,31 @@ class PureSequencePlotter:
         
         for i, seed in enumerate(unique_seeds):
             mask = (data['seed'] == seed)
-            plt.scatter(
+            plt_obj.scatter(
                 data[mask]['metric1'], 
                 data[mask]['plddt'],
                 color=palette(i/len(unique_seeds)),
                 label=f'Seed {seed:03d}',
-                s=PLOT_PARAMS['scatter_size'],
-                alpha=PLOT_PARAMS['scatter_alpha'],
-                edgecolor=PLOT_PARAMS['scatter_edge']
+                s=PLOT_PARAMS.get('scatter_size', 50),
+                alpha=PLOT_PARAMS.get('scatter_alpha', 0.7),
+                edgecolor=PLOT_PARAMS.get('scatter_edge', 'none')
             )
         
-        plt.xlabel(metric_name)
-        plt.ylabel('pLDDT Score')
-        plt.title(title, pad=20)
-        plt.legend(bbox_to_anchor=(1.05, 1), loc='upper left', frameon=True)
+        plt_obj.xlabel(metric_name)
+        plt_obj.ylabel('pLDDT Score')
+        plt_obj.title(title, pad=20)
+        plt_obj.legend(bbox_to_anchor=(1.05, 1), loc='upper left', frameon=True)
         
-        # Set axis limits and ticks using utility function
-        self._set_plot_limits_and_ticks(plt)
-    
-    def _set_plot_limits_and_ticks(self, plot_obj):
-        """Set axis limits and ticks for a plot."""
-        # Set axis limits if provided
-        if self.config.x_min is not None and self.config.x_max is not None:
-            plot_obj.xlim(self.config.x_min, self.config.x_max)
-        if self.config.y_min is not None and self.config.y_max is not None:
-            plot_obj.ylim(self.config.y_min, self.config.y_max)
-            
-        # Set axis ticks if provided
-        if self.config.x_ticks is not None:
-            plot_obj.xticks(self.config.x_ticks)
-        if self.config.y_ticks is not None:
-            plot_obj.yticks(self.config.y_ticks)
-    
-    def plot_metric_correlation(self, 
-                               data: pd.DataFrame, 
-                               output_path: str, 
-                               title: str, 
-                               bin_pattern: str) -> None:
-        """
-        Create scatter plot showing correlation between two metrics colored by pLDDT.
-        
-        Args:
-            data: DataFrame with metrics to correlate for this bin pattern
-            output_path: Path to save plot
-            title: Plot title
-            bin_pattern: Bin pattern being plotted
-        """
-        if data.empty or 'metric2' not in data.columns or data['metric2'].isna().all():
-            self.logger.warning(f"No correlation data available for {bin_pattern}")
-            return
-            
-        plt.figure(figsize=(7, 6))
-        
-        # Use correlation colormap from COLORS dictionary
-        custom_cmap = LinearSegmentedColormap.from_list('custom', COLORS['correlation_cmap'])
-        
-        # Sort data by pLDDT in ascending order so higher pLDDT points appear on top
-        data = data.sort_values('plddt', ascending=True)
-        
-        # Get metric names from config
-        metric1_name = self.filter_config['filter_criteria'][0]['name']
-        metric2_name = self.filter_config['filter_criteria'][1]['name']
-        
-        scatter = plt.scatter(
-            data['metric1'],
-            data['metric2'],
-            c=data['plddt'],
-            cmap=custom_cmap,
-            s=PLOT_PARAMS['scatter_size'],
-            alpha=PLOT_PARAMS['scatter_alpha'],
-            vmin=50,
-            vmax=100
+        # Set axis limits and ticks using central utility function
+        set_axis_limits_and_ticks(
+            plt_obj, 
+            x_min=self.config.x_min,
+            x_max=self.config.x_max,
+            y_min=self.config.y_min,
+            y_max=self.config.y_max,
+            x_ticks=self.config.x_ticks,
+            y_ticks=self.config.y_ticks
         )
-        
-        plt.colorbar(scatter, label='pLDDT Score')
-        plt.xlabel(metric1_name)
-        plt.ylabel(metric2_name) 
-        plt.title(f"{title} - {bin_pattern}", pad=20)
-        
-        # Set axis limits and ticks
-        self._set_plot_limits_and_ticks(plt)
-        
-        plt.tight_layout()
-        plt.savefig(output_path, bbox_inches='tight', dpi=self.config.dpi)
-        plt.close()
     
     def run(self) -> bool:
         """
@@ -385,27 +310,43 @@ class PureSequencePlotter:
                         (bin_pred_data, 'prediction'),
                         (bin_control_pred_data, 'control_prediction')
                     ]:
-                        # Generate correlation plot
-                        self.plot_metric_correlation(
-                            data,
-                            os.path.join(bin_output_dir, f'{name}_metric_correlation.png'),
-                            f'{name.replace("_", " ").title()} Metric Correlation',
-                            bin_pattern
+                        if data.empty or 'metric2' not in data.columns or data['metric2'].isna().all():
+                            self.logger.warning(f"No correlation data available for {bin_pattern} - {name}")
+                            continue
+                            
+                        # Get metric names from config
+                        metric1_name = self.filter_config['filter_criteria'][0]['name']
+                        metric2_name = self.filter_config['filter_criteria'][1]['name']
+                        
+                        # Use central utility function for 2D scatter plot
+                        output_plot_path = os.path.join(bin_output_dir, f'{name}_metric_correlation.png')
+                        title = f"{name.replace('_', ' ').title()} Metric Correlation - {bin_pattern}"
+                        
+                        # Create scatter plot
+                        create_2d_scatter_plot(
+                            results_df=data,
+                            metric_name1='metric1',
+                            metric_name2='metric2',
+                            output_dir=bin_output_dir,
+                            color_metric='plddt',
+                            x_min=self.config.x_min,
+                            x_max=self.config.x_max,
+                            y_min=self.config.y_min,
+                            y_max=self.config.y_max,
+                            x_ticks=self.config.x_ticks,
+                            y_ticks=self.config.y_ticks,
+                            logger=self.logger
                         )
                         
                         # Save metrics to CSV
-                        if not data.empty:
-                            metric1_name = self.filter_config['filter_criteria'][0]['name']
-                            metric2_name = self.filter_config['filter_criteria'][1]['name']
-                            
-                            metrics_df = pd.DataFrame({
-                                metric1_name: data['metric1'],
-                                metric2_name: data['metric2'],
-                                'pLDDT': data['plddt'],
-                                'pdb_path': data['PDB']
-                            })
-                            csv_path = os.path.join(bin_output_dir, f'{name}_metrics.csv')
-                            metrics_df.to_csv(csv_path, index=False)
+                        metrics_df = pd.DataFrame({
+                            metric1_name: data['metric1'],
+                            metric2_name: data['metric2'],
+                            'pLDDT': data['plddt'],
+                            'pdb_path': data['PDB']
+                        })
+                        csv_path = os.path.join(bin_output_dir, f'{name}_metrics.csv')
+                        metrics_df.to_csv(csv_path, index=False)
             
             self.logger.info("Pure sequence plotting completed successfully")
             return True
@@ -429,7 +370,7 @@ def create_pure_seq_plot_config_from_dict(config_dict: Dict) -> PureSeqPlotConfi
         base_dir=config_dict['base_dir'],
         output_dir=config_dict['output_dir'],
         config_file=config_dict['config_file'],
-        color_prediction=config_dict.get('color_prediction', COLORS.get('default_prediction', '#468F8B')),
+        color_prediction=config_dict.get('color_prediction', COLORS.get('default_selection', '#468F8B')),
         color_control=config_dict.get('color_control', COLORS.get('default_control', '#AFD2D0')),
         x_min=config_dict.get('x_min'),
         x_max=config_dict.get('x_max'),
@@ -438,7 +379,7 @@ def create_pure_seq_plot_config_from_dict(config_dict: Dict) -> PureSeqPlotConfi
         x_ticks=config_dict.get('x_ticks'),
         y_ticks=config_dict.get('y_ticks'),
         plddt_threshold=config_dict.get('plddt_threshold', 70.0),
-        figsize=config_dict.get('figsize', (15, 7)),
-        dpi=config_dict.get('dpi', 300),
+        figsize=config_dict.get('figsize', (12, 8)),
+        dpi=config_dict.get('dpi', PLOT_PARAMS.get('dpi', 300)),
         max_workers=config_dict.get('max_workers', 8)
     )

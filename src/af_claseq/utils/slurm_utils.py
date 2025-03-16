@@ -1,10 +1,14 @@
 import os
 import subprocess
-import logging
 import time
 import shutil
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Optional, List, Dict, Any, Union
+
+from af_claseq.utils.logging_utils import get_logger
+
+# Initialize module logger
+logger = get_logger("slurm_utils")
 
 
 class SlurmJobSubmitter:
@@ -95,7 +99,7 @@ class SlurmJobSubmitter:
     def submit_job(self, task_dir: str, job_id: str, job_type: Optional[str] = None) -> Optional[str]:
         """Submit a SLURM job for the given task directory."""
         if not os.path.exists(task_dir):
-            logging.error(f"Task directory not found: {task_dir}")
+            logger.error(f"Task directory not found: {task_dir}")
             return None
 
         config = self._get_job_config(job_type)
@@ -138,15 +142,15 @@ class SlurmJobSubmitter:
         ]
 
         job_type_str = f" ({job_type})" if job_type else ""
-        logging.info(f"Submitting job for {task_dir}{job_type_str} (Job ID: {job_id})")
+        logger.info(f"Submitting job for {task_dir}{job_type_str} (Job ID: {job_id})")
         
         try:
             result = subprocess.run(sbatch_cmd, capture_output=True, text=True, check=True)
             submitted_job_id = result.stdout.strip().split()[-1]
-            logging.info(f"Submitted job {submitted_job_id} for task directory {task_dir}")
+            logger.info(f"Submitted job {submitted_job_id} for task directory {task_dir}")
             return submitted_job_id
         except subprocess.CalledProcessError as e:
-            logging.error(f"Failed to submit job for {task_dir}: {e}")
+            logger.error(f"Failed to submit job for {task_dir}: {e}")
             return None
 
     def check_job_status(self, job_id: str) -> bool:
@@ -159,15 +163,15 @@ class SlurmJobSubmitter:
 
     def wait_for_completion(self, job_id: str) -> None:
         """Wait for a job to complete."""
-        logging.info(f"Waiting for job {job_id} to complete")
+        logger.info(f"Waiting for job {job_id} to complete")
         while self.check_job_status(job_id):
             time.sleep(self.check_interval)
-        logging.info(f"Job {job_id} completed")
+        logger.info(f"Job {job_id} completed")
 
     def process_folder(self, task_dir: str, job_id: str, job_type: Optional[str] = None) -> None:
         """Process a single folder."""
         job_type_str = f" ({job_type})" if job_type else ""
-        logging.info(f"Processing folder: {task_dir}{job_type_str}")
+        logger.info(f"Processing folder: {task_dir}{job_type_str}")
 
         while not self._check_pdb_files(task_dir):
             current_job_id = self.submit_job(task_dir, job_id, job_type)
@@ -177,10 +181,10 @@ class SlurmJobSubmitter:
             self.wait_for_completion(current_job_id)
 
             if self._check_log_file(task_dir):
-                logging.info(f"All PDB files generated for {task_dir}")
+                logger.info(f"All PDB files generated for {task_dir}")
                 break
             else:
-                logging.warning(f"PDB files missing in {task_dir}. Resubmitting job.")
+                logger.warning(f"PDB files missing in {task_dir}. Resubmitting job.")
                 self._backup_log_file(task_dir, current_job_id)
 
     def process_folders_concurrently(self, 
@@ -190,18 +194,18 @@ class SlurmJobSubmitter:
                                    job_types: Optional[List[str]] = None) -> None:
         """Process multiple folders concurrently."""
         if not folders or not job_ids:
-            logging.error("Empty input lists provided")
+            logger.error("Empty input lists provided")
             return
 
         if len(folders) != len(job_ids):
-            logging.error("Input lists have different lengths")
+            logger.error("Input lists have different lengths")
             return
 
         if job_types and len(job_types) != len(folders):
-            logging.error("Job types list length doesn't match folders list length")
+            logger.error("Job types list length doesn't match folders list length")
             return
 
-        logging.info(f"Processing {len(folders)} folders concurrently")
+        logger.info(f"Processing {len(folders)} folders concurrently")
         with ThreadPoolExecutor(max_workers=max_workers) as executor:
             futures = []
             for i, (folder, job_id) in enumerate(zip(folders, job_ids)):
@@ -213,7 +217,7 @@ class SlurmJobSubmitter:
                 try:
                     future.result()
                 except Exception as e:
-                    logging.error(f"Error processing folder: {str(e)}")
+                    logger.error(f"Error processing folder: {str(e)}")
 
     def _check_pdb_files(self, task_dir: str) -> bool:
         """Check if all required PDB files exist."""
@@ -223,7 +227,7 @@ class SlurmJobSubmitter:
         ]
         missing_files = [f for f in pdb_files if not os.path.exists(os.path.join(task_dir, f))]
         if missing_files:
-            logging.debug(f"Missing PDB files in {task_dir}: {missing_files}")
+            logger.debug(f"Missing PDB files in {task_dir}: {missing_files}")
             return False
         return True
 
@@ -236,7 +240,7 @@ class SlurmJobSubmitter:
             with open(log_file, 'r') as f:
                 return 'Done' in f.read()
         except Exception as e:
-            logging.error(f"Error reading log file {log_file}: {e}")
+            logger.error(f"Error reading log file {log_file}: {e}")
             return False
 
     def _backup_log_file(self, task_dir: str, job_id: str) -> None:
@@ -252,6 +256,6 @@ class SlurmJobSubmitter:
         try:
             shutil.copy2(log_file, backup_file)
             os.remove(log_file)
-            logging.info(f"Backed up log file to {backup_file}")
+            logger.info(f"Backed up log file to {backup_file}")
         except Exception as e:
-            logging.error(f"Error backing up log file: {e}")
+            logger.error(f"Error backing up log file: {e}")

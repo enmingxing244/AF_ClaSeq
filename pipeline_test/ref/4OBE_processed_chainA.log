@@ -1,0 +1,12 @@
+Command executed: python ref_pdb_process.py 4OBE.pdb A 0 --default_pdb /fs/ess/PAA0203/xing244/AF_Vote/results/supple_cases/RASK_HUMAN/default/RASK_HUMAN_1-169_unrelaxed_rank_001_alphafold2_ptm_model_4_seed_000.pdb
+
+
+Residues with inconsistent names between default and processed PDB:
+Residue 151: ARG (default) vs GLY (processed)
+Residue 153: GLU (default) vs ASP (processed)
+Residue 165: GLN (default) vs LYS (processed)
+Residue 166: TYR (default) vs HIS (processed)
+Residue 167: ARG (default) vs LYS (processed)
+Residue 168: LEU (default) vs GLU (processed)
+
+Processed PDB saved as: 4OBE_processed_chainA.pdb

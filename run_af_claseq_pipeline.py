@@ -9,32 +9,22 @@ using AlphaFold and sequence-based sampling approaches.
 import os
 import sys
 import logging
-import yaml
 import json
-import time
 from pathlib import Path
-from dataclasses import dataclass, field, asdict
-from typing import Dict, List, Optional, Any, Tuple, Union
+from typing import Dict, Any
 
 # Import modules from AF-ClaSeq
 from af_claseq.utils.slurm_utils import SlurmJobSubmitter
 from af_claseq.utils.structure_analysis import StructureAnalyzer
-from af_claseq.utils.sequence_processing import (
-    read_a3m_to_dict, filter_a3m_by_coverage
-)
-
-# Import pipeline components
 from af_claseq.pipeline.iter_shuf_enrich import IterShufEnrichRunner, IterShufEnrichPlotter, IterShufEnrichCombiner
-from af_claseq.pipeline.m_fold_sampling import MFoldSampler, MFoldPlotter
+from af_claseq.pipeline.m_fold_sampling import MFoldSampler
 from af_claseq.pipeline.sequence_voting import SequenceVotingRunner, SequenceVotingPlotter
 from af_claseq.pipeline.sequence_recompile import SequenceRecompiler
 from af_claseq.pipeline.pure_seq_pred import PureSequenceAF2Prediction, create_af2_prediction_config_from_dict
 from af_claseq.pipeline.pure_seq_plot import PureSequencePlotter, create_pure_seq_plot_config_from_dict
+from af_claseq.utils.logging_utils import setup_logger # type: ignore
 
-# Import configuration classes
-from af_claseq.pipeline.config import (
-    PipelineConfig, load_pipeline_config
-)
+from af_claseq.pipeline.config import load_pipeline_config
 
 
 class AFClaSeqPipeline:
@@ -58,25 +48,20 @@ class AFClaSeqPipeline:
         
     def _setup_logging(self) -> logging.Logger:
         """Set up logging configuration"""
-        log_dir = os.path.join(self.config.general.base_dir, "logs")
-        os.makedirs(log_dir, exist_ok=True)
+        base_dir = Path(self.config.general.base_dir)
+        log_dir = base_dir / "logs"
+        log_dir.mkdir(exist_ok=True, parents=True)
         
-        log_file = os.path.join(log_dir, "af_claseq_pipeline.log")
-        logger = logging.getLogger("af_claseq")
+        log_file = log_dir / "af_claseq_pipeline.log"
         
-        if not logger.handlers:  # Only set up handlers if they don't exist
-            logger.setLevel(logging.INFO)
-            formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
-            
-            file_handler = logging.FileHandler(log_file)
-            file_handler.setFormatter(formatter)
-            logger.addHandler(file_handler)
-            
-            console_handler = logging.StreamHandler()
-            console_handler.setFormatter(formatter)
-            logger.addHandler(console_handler)
-        
-        return logger
+        # Set up the root logger for the whole package
+        return setup_logger(
+            name="af_claseq",  # Root logger for the package
+            log_file=log_file,
+            level=logging.INFO,
+            propagate=False,  # Root logger doesn't propagate
+            add_console_handler=True
+        )
     
     def _load_filter_config(self) -> Dict[str, Any]:
         """Load filter configuration from JSON file"""
@@ -104,8 +89,8 @@ class AFClaSeqPipeline:
     
     def _create_directories(self) -> None:
         """Create necessary output directories"""
-        base_dir = self.config.general.base_dir
-        os.makedirs(base_dir, exist_ok=True)
+        base_dir = Path(self.config.general.base_dir)
+        base_dir.mkdir(exist_ok=True, parents=True)
         
         # Create stage directories
         stages = [
@@ -116,7 +101,7 @@ class AFClaSeqPipeline:
         ]
         
         for stage in stages:
-            os.makedirs(os.path.join(base_dir, stage), exist_ok=True)
+            (base_dir / stage).mkdir(exist_ok=True)
     
     def print_welcome(self) -> None:
         """Print welcome message with pipeline information"""
@@ -140,7 +125,7 @@ class AFClaSeqPipeline:
             runner = IterShufEnrichRunner(
                 iter_shuf_input_a3m=self.config.iterative_shuffling.iter_shuf_input_a3m,
                 default_pdb=self.config.general.default_pdb,
-                iter_shuf_enrich_base_dir=os.path.join(self.config.general.base_dir, "01_iterative_shuffling"),
+                iter_shuf_enrich_base_dir=Path(self.config.general.base_dir) / "01_iterative_shuffling",
                 config_file=self.config.general.config_file,
                 slurm_submitter=self.slurm_submitter,
                 seq_num_per_shuffle=self.config.iterative_shuffling.seq_num_per_shuffle,
@@ -181,7 +166,7 @@ class AFClaSeqPipeline:
         try:
             # Create plotter instance
             plotter = IterShufEnrichPlotter(
-                iter_shuf_enrich_base_dir=self.config.general.base_dir,
+                iter_shuf_enrich_base_dir=Path(self.config.general.base_dir) / "01_iterative_shuffling",
                 config_path=self.config.general.config_file,
                 num_cols=self.config.iterative_shuffling.iter_shuf_plot_num_cols,
                 x_min=self.config.iterative_shuffling.iter_shuf_plot_x_min,
@@ -197,7 +182,7 @@ class AFClaSeqPipeline:
             
             # Combine filtered sequences
             combiner = IterShufEnrichCombiner(
-                iter_shuf_enrich_base_dir=self.config.general.base_dir,
+                iter_shuf_enrich_base_dir=Path(self.config.general.base_dir) / "01_iterative_shuffling",
                 config_path=self.config.general.config_file,
                 default_pdb=self.config.general.default_pdb,
                 combine_threshold=self.config.iterative_shuffling.iter_shuf_combine_threshold,
@@ -226,21 +211,18 @@ class AFClaSeqPipeline:
         try:
             # Determine input A3M file
             input_a3m = self.config.m_fold_sampling.m_fold_samp_input_a3m
-            if not os.path.exists(input_a3m):
+            if not Path(input_a3m).exists():
                 # Use output from iterative shuffling if available
-                iter_shuf_output = os.path.join(
-                    self.config.general.base_dir,
-                    "01_iterative_shuffling/gathered_seq_after_iter_shuffling.a3m"
-                )
-                if os.path.exists(iter_shuf_output):
-                    input_a3m = iter_shuf_output
+                iter_shuf_output = Path(self.config.general.base_dir) / "01_iterative_shuffling/gathered_seq_after_iter_shuffling.a3m"
+                if iter_shuf_output.exists():
+                    input_a3m = str(iter_shuf_output)
                     self.logger.info(f"Using iterative shuffling output as input: {input_a3m}")
             
             # Create sampler instance
             sampler = MFoldSampler(
                 input_a3m=input_a3m,
                 default_pdb=self.config.general.default_pdb,
-                m_fold_sampling_base_dir=os.path.join(self.config.general.base_dir, "02_m_fold_sampling"),
+                m_fold_sampling_base_dir=Path(self.config.general.base_dir) / "02_m_fold_sampling",
                 group_size=self.config.m_fold_sampling.m_fold_group_size,
                 coverage_threshold=self.config.general.coverage_threshold,
                 random_select_num_seqs=self.config.m_fold_sampling.m_fold_random_select,
@@ -264,59 +246,135 @@ class AFClaSeqPipeline:
         Stage 02_ANALYSIS: Analyze results of M-fold sampling
         """
         self.logger.info("=== STAGE 02_ANALYSIS: M-FOLD SAMPLING ANALYSIS ===")
-        
+
         try:
-            # Create plotter instance
-            plotter = MFoldPlotter(
-                results_dir=os.path.join(self.config.general.base_dir, "02_m_fold_sampling"),
-                config_file=self.config.general.config_file,
-                output_dir=os.path.join(self.config.general.base_dir, "02_m_fold_sampling/plot"),
-                csv_dir=os.path.join(self.config.general.base_dir, "02_m_fold_sampling/csv"),
-                logger=self.logger
+            # Import plotting functions directly
+            from af_claseq.utils.plotting_manager import (
+                plot_m_fold_sampling_1d,
+                plot_m_fold_sampling_2d
             )
-            
-            # Load filter criteria from config file to determine plot type
+
+            # Setup directories
+            base_dir = Path(self.config.general.base_dir)
+            results_dir = base_dir / "02_m_fold_sampling"
+            output_dir = base_dir / "02_m_fold_sampling/plot"
+            csv_dir = base_dir / "02_m_fold_sampling/csv"
+
+            # Create output directories
+            output_dir.mkdir(parents=True, exist_ok=True)
+            csv_dir.mkdir(parents=True, exist_ok=True)
+
+            # Load filter criteria from config file
             with open(self.config.general.config_file, 'r') as f:
                 config = json.load(f)
-            
-            # Get number of filter criteria
-            num_criteria = len(config.get('filter_criteria', []))
-            
+
+            filter_criteria = config.get('filter_criteria', [])
+            num_criteria = len(filter_criteria)
+
             if num_criteria == 1:
                 # Only one criterion - use 1D plots
                 self.logger.info("One filter criterion detected - generating 1D plots")
-                plotter.plot_1d(
+                metric_name = filter_criteria[0].get('name', 'criterion_0')
+
+                plot_m_fold_sampling_1d(
+                    results_dir=results_dir,
+                    metric_name=metric_name,
+                    output_dir=output_dir,
+                    csv_dir=csv_dir,
+                    config_file=self.config.general.config_file,
                     initial_color=self.config.general.plot_initial_color,
                     end_color=self.config.general.plot_end_color,
-                    x_min=self.config.m_fold_sampling.m_fold_x_min,
-                    x_max=self.config.m_fold_sampling.m_fold_x_max,
-                    y_min=self.config.m_fold_sampling.m_fold_y_min,
-                    y_max=self.config.m_fold_sampling.m_fold_y_max,
-                    plddt_threshold=self.config.m_fold_sampling.m_fold_plddt_threshold
+                    x_min=self.config.m_fold_sampling.m_fold_metric1_min,
+                    x_max=self.config.m_fold_sampling.m_fold_metric1_max,
+                    y_min=self.config.m_fold_sampling.m_fold_count_min,
+                    y_max=self.config.m_fold_sampling.m_fold_count_max,
+                    x_ticks=self.config.m_fold_sampling.m_fold_metric1_ticks,
+                    log_scale=self.config.m_fold_sampling.m_fold_log_scale,
+                    n_plot_bins=self.config.m_fold_sampling.m_fold_n_plot_bins,
+                    gradient_ascending=self.config.m_fold_sampling.m_fold_gradient_ascending,
+                    linear_gradient=self.config.m_fold_sampling.m_fold_linear_gradient,
+                    plddt_threshold=self.config.m_fold_sampling.m_fold_plddt_threshold,
+                    figsize=self.config.m_fold_sampling.m_fold_figsize,
+                    show_bin_lines=self.config.m_fold_sampling.m_fold_show_bin_lines,
+                    logger=self.logger
                 )
+
             elif num_criteria == 2:
-                # Two criteria - use 2D plots
-                self.logger.info("Two filter criteria detected - generating 2D plots")
-                plotter.plot_2d(
-                    x_min=self.config.m_fold_sampling.m_fold_x_min,
-                    x_max=self.config.m_fold_sampling.m_fold_x_max,
-                    y_min=self.config.m_fold_sampling.m_fold_y_min,
-                    y_max=self.config.m_fold_sampling.m_fold_y_max,
-                    plddt_threshold=self.config.m_fold_sampling.m_fold_plddt_threshold
+                # Two criteria - generate both 1D plots for each criterion and 2D plots
+                self.logger.info("Two filter criteria detected - generating 1D plots for each criterion and 2D plots")
+
+                # Get metric names
+                metric_names = [criterion.get('name', f'criterion_{i}') for i, criterion in enumerate(filter_criteria)]
+
+                # Generate 1D plots for each criterion
+                for i, metric_name in enumerate(metric_names):
+                    self.logger.info(f"Generating 1D plot for {metric_name}")
+                    # Use metric1 parameters for first criterion, metric2 for second
+                    if i == 0:
+                        metric_min = self.config.m_fold_sampling.m_fold_metric1_min
+                        metric_max = self.config.m_fold_sampling.m_fold_metric1_max
+                        metric_ticks = self.config.m_fold_sampling.m_fold_metric1_ticks
+                    else:
+                        metric_min = self.config.m_fold_sampling.m_fold_metric2_min
+                        metric_max = self.config.m_fold_sampling.m_fold_metric2_max
+                        metric_ticks = self.config.m_fold_sampling.m_fold_metric2_ticks
+
+                    plot_m_fold_sampling_1d(
+                        results_dir=results_dir,
+                        metric_name=metric_name,
+                        output_dir=output_dir,
+                        csv_dir=csv_dir,
+                        config_file=self.config.general.config_file,
+                        initial_color=self.config.general.plot_initial_color,
+                        end_color=self.config.general.plot_end_color,
+                        x_min=metric_min,
+                        x_max=metric_max,
+                        y_min=self.config.m_fold_sampling.m_fold_count_min,
+                        y_max=self.config.m_fold_sampling.m_fold_count_max,
+                        x_ticks=metric_ticks,
+                        log_scale=self.config.m_fold_sampling.m_fold_log_scale,
+                        n_plot_bins=self.config.m_fold_sampling.m_fold_n_plot_bins,
+                        gradient_ascending=self.config.m_fold_sampling.m_fold_gradient_ascending,
+                        linear_gradient=self.config.m_fold_sampling.m_fold_linear_gradient,
+                        plddt_threshold=self.config.m_fold_sampling.m_fold_plddt_threshold,
+                        figsize=self.config.m_fold_sampling.m_fold_figsize,
+                        show_bin_lines=self.config.m_fold_sampling.m_fold_show_bin_lines,
+                        logger=self.logger
+                    )
+
+                # Generate 2D plot
+                self.logger.info(f"Generating 2D plot for combined criteria: {metric_names[0]} vs {metric_names[1]}")
+                plot_m_fold_sampling_2d(
+                    results_dir=results_dir,
+                    metric_name1=metric_names[0],
+                    metric_name2=metric_names[1],
+                    output_dir=output_dir,
+                    csv_dir=csv_dir,
+                    config_file=self.config.general.config_file,
+                    x_min=self.config.m_fold_sampling.m_fold_metric1_min,
+                    x_max=self.config.m_fold_sampling.m_fold_metric1_max,
+                    y_min=self.config.m_fold_sampling.m_fold_metric2_min,
+                    y_max=self.config.m_fold_sampling.m_fold_metric2_max,
+                    x_ticks=self.config.m_fold_sampling.m_fold_metric1_ticks,
+                    y_ticks=self.config.m_fold_sampling.m_fold_metric2_ticks,
+                    plddt_threshold=self.config.m_fold_sampling.m_fold_plddt_threshold,
+                    logger=self.logger
                 )
+
             elif num_criteria > 2:
                 # More than two criteria - not supported
                 self.logger.error(f"Found {num_criteria} filter criteria. Cannot plot more than 2 dimensions.")
                 self.logger.error("Please modify your config.json to include only 1 or 2 criteria for visualization.")
                 return False
+
             else:
                 # No criteria found
                 self.logger.error("No filter criteria found in config file")
                 return False
-            
+
             self.logger.info("Completed M-fold sampling analysis and plotting successfully")
             return True
-            
+
         except Exception as e:
             self.logger.error(f"Error in M-fold sampling analysis: {str(e)}", exc_info=True)
             return False
@@ -327,23 +385,24 @@ class AFClaSeqPipeline:
         Stage 03: Run sequence voting analysis
         """
         self.logger.info("=== STAGE 03: SEQUENCE VOTING ===")
-        
+
         try:
             # Load filter criteria from config file
             with open(self.config.general.config_file, 'r') as f:
                 filter_config = json.load(f)
-            
+
             filter_criteria = filter_config.get('filter_criteria', [])
             if not filter_criteria:
                 self.logger.error("No filter criteria found in config file")
                 return False
-            
+
             # Create base output directory
-            base_output_dir = os.path.join(self.config.general.base_dir, "03_voting")
-            os.makedirs(base_output_dir, exist_ok=True)
-            
+            base_dir = Path(self.config.general.base_dir)
+            voting_dir = base_dir / "03_voting"
+            voting_dir.mkdir(exist_ok=True)
+
             results_files = []
-            
+
             # Process each filter criterion separately
             for criterion in filter_criteria:
                 criterion_name = criterion.get('name')
@@ -352,14 +411,14 @@ class AFClaSeqPipeline:
                     continue
                 
                 self.logger.info(f"Processing filter criterion: {criterion_name}")
-                
+
                 # Create criterion-specific output directory
-                criterion_output_dir = os.path.join(base_output_dir, criterion_name)
-                os.makedirs(criterion_output_dir, exist_ok=True)
-                
+                criterion_output_dir = voting_dir / criterion_name
+                criterion_output_dir.mkdir(exist_ok=True)
+
                 # Create voting runner instance for this criterion
                 voting_runner = SequenceVotingRunner(
-                    sampling_dir=os.path.join(self.config.general.base_dir, "02_m_fold_sampling"),
+                    sampling_dir=base_dir / "02_m_fold_sampling/02_sampling",
                     source_msa=self.config.general.source_a3m,
                     config_path=self.config.general.config_file,
                     output_dir=criterion_output_dir,
@@ -369,21 +428,19 @@ class AFClaSeqPipeline:
                     min_value=self.config.sequence_voting.vote_min_value,
                     max_value=self.config.sequence_voting.vote_max_value,
                     use_focused_bins=self.config.sequence_voting.use_focused_bins,
-                    precomputed_metrics=self.config.sequence_voting.precomputed_metrics if hasattr(self.config.sequence_voting, 'precomputed_metrics') else None,
+                    precomputed_metrics=base_dir / "02_m_fold_sampling/csv",
                     plddt_threshold=self.config.m_fold_sampling.m_fold_plddt_threshold,
                     hierarchical_sampling=self.config.sequence_voting.vote_hierarchical_sampling,
                     filter_criterion=criterion_name
                 )
-                
-                # Set up logging for voting runner
-                voting_runner.setup_logging()
-                
+
+        
                 # Run voting analysis for this criterion
                 results_file = voting_runner.run()
-                
+
                 if results_file:
                     results_files.append((criterion_name, results_file))
-                    
+
                     # Create plotter for visualization
                     plotter = SequenceVotingPlotter(
                         results_file=results_file,
@@ -393,24 +450,26 @@ class AFClaSeqPipeline:
                         figsize=self.config.sequence_voting.vote_figsize,
                         y_min=self.config.sequence_voting.vote_y_min,
                         y_max=self.config.sequence_voting.vote_y_max,
-                        x_ticks=self.config.sequence_voting.vote_x_ticks
+                        x_ticks=self.config.sequence_voting.vote_x_ticks, 
+                        num_bins=self.config.general.num_bins,
                     )
-                    
+
                     # Plot voting distributions
                     plotter.plot()
                 else:
                     self.logger.error(f"Sequence voting failed to produce results for criterion: {criterion_name}")
-            
+
             if results_files:
                 self.logger.info(f"Completed sequence voting successfully for {len(results_files)} criteria")
                 return True
             else:
                 self.logger.error("No sequence voting results were produced")
                 return False
-            
+
         except Exception as e:
             self.logger.error(f"Error in sequence voting: {str(e)}", exc_info=True)
             return False
+    
     def run_recompile_and_predict(self) -> bool:
         """
         Stage 04: Recompile sequences and run structure prediction
@@ -428,13 +487,15 @@ class AFClaSeqPipeline:
                 return False
             
             # Create base output directory
-            base_output_dir = os.path.join(self.config.general.base_dir, "04_recompile")
-            os.makedirs(base_output_dir, exist_ok=True)
+            base_dir = Path(self.config.general.base_dir)
+            base_output_dir = base_dir / "04_recompile"
+            base_output_dir.mkdir(exist_ok=True)
             
             # Determine input MSA
             source_msa = self.config.general.source_a3m
-            if os.path.exists(os.path.join(self.config.general.base_dir, "01_iterative_shuffling/gathered_seq_after_iter_shuffling.a3m")):
-                source_msa = os.path.join(self.config.general.base_dir, "01_iterative_shuffling/gathered_seq_after_iter_shuffling.a3m")
+            iter_shuf_output = base_dir / "01_iterative_shuffling/gathered_seq_after_iter_shuffling.a3m"
+            if iter_shuf_output.exists():
+                source_msa = str(iter_shuf_output)
             
             # If bin_numbers not specified, report error and stop pipeline
             bin_numbers = self.config.recompile_predict.bin_numbers
@@ -454,14 +515,14 @@ class AFClaSeqPipeline:
                 self.logger.info(f"Processing recompilation and prediction for criterion: {criterion_name}")
                 
                 # Create criterion-specific output directory
-                criterion_output_dir = os.path.join(base_output_dir, criterion_name)
-                os.makedirs(criterion_output_dir, exist_ok=True)
+                criterion_output_dir = base_output_dir / criterion_name
+                criterion_output_dir.mkdir(exist_ok=True)
                 
                 # Get voting results for this criterion
-                voting_results = os.path.join(self.config.general.base_dir, f"03_voting/{criterion_name}/03_voting_results.csv")
-                raw_votes_json = os.path.join(self.config.general.base_dir, f"03_voting/{criterion_name}/raw_sequence_votes.json")
+                voting_results = base_dir / f"03_voting/{criterion_name}/03_voting_results.csv"
+                raw_votes_json = base_dir / f"03_voting/{criterion_name}/raw_sequence_votes.json"
                 
-                if not os.path.exists(voting_results):
+                if not voting_results.exists():
                     self.logger.error(f"Voting results not found for criterion: {criterion_name}")
                     all_successful = False
                     continue
@@ -476,7 +537,7 @@ class AFClaSeqPipeline:
                     num_total_bins=self.config.general.num_bins,
                     initial_color=self.config.general.plot_initial_color,
                     combine_bins=self.config.recompile_predict.combine_bins,
-                    raw_votes_json=raw_votes_json if os.path.exists(raw_votes_json) else None,
+                    raw_votes_json=raw_votes_json if raw_votes_json.exists() else None,
                     logger=self.logger
                 )
                 
@@ -528,6 +589,7 @@ class AFClaSeqPipeline:
         except Exception as e:
             self.logger.error(f"Error in recompilation and prediction: {str(e)}", exc_info=True)
             return False
+        
     def run_pure_sequence_plotting(self) -> bool:
         """
         Stage 05: Plot and analyze prediction results
@@ -545,6 +607,7 @@ class AFClaSeqPipeline:
                 return False
             
             # Create base output directory
+            base_dir = Path(self.config.general.base_dir)
             base_output_dir = os.path.join(self.config.general.base_dir, "05_plots")
             os.makedirs(base_output_dir, exist_ok=True)
             
@@ -578,15 +641,15 @@ class AFClaSeqPipeline:
                     'config_file': self.config.general.config_file,
                     'color_prediction': self.config.general.plot_initial_color,
                     'color_control': self.config.general.plot_end_color if hasattr(self.config.general, 'plot_end_color') else None,
-                    'x_min': getattr(self.config.pure_sequence_plotting, 'x_min', None) if hasattr(self.config, 'pure_sequence_plotting') else None,
-                    'x_max': getattr(self.config.pure_sequence_plotting, 'x_max', None) if hasattr(self.config, 'pure_sequence_plotting') else None,
-                    'y_min': getattr(self.config.pure_sequence_plotting, 'y_min', None) if hasattr(self.config, 'pure_sequence_plotting') else None,
-                    'y_max': getattr(self.config.pure_sequence_plotting, 'y_max', None) if hasattr(self.config, 'pure_sequence_plotting') else None,
-                    'x_ticks': getattr(self.config.pure_sequence_plotting, 'x_ticks', None) if hasattr(self.config, 'pure_sequence_plotting') else None,
-                    'y_ticks': getattr(self.config.pure_sequence_plotting, 'y_ticks', None) if hasattr(self.config, 'pure_sequence_plotting') else None,
-                    'plddt_threshold': getattr(self.config.pure_sequence_plotting, 'plddt_threshold', 70.0) if hasattr(self.config, 'pure_sequence_plotting') else 70.0,
-                    'figsize': getattr(self.config.pure_sequence_plotting, 'figsize', (15, 7)) if hasattr(self.config, 'pure_sequence_plotting') else (15, 7),
-                    'dpi': getattr(self.config.pure_sequence_plotting, 'dpi', 300) if hasattr(self.config, 'pure_sequence_plotting') else 300,
+                    'x_min': self.config.pure_sequence_plotting.x_min,
+                    'x_max': self.config.pure_sequence_plotting.x_max,
+                    'y_min': self.config.pure_sequence_plotting.y_min,
+                    'y_max': self.config.pure_sequence_plotting.y_max,
+                    'x_ticks': self.config.pure_sequence_plotting.x_ticks,
+                    'y_ticks': self.config.pure_sequence_plotting.y_ticks,
+                    'plddt_threshold': self.config.pure_sequence_plotting.plddt_threshold,
+                    'figsize': self.config.pure_sequence_plotting.figsize,
+                    'dpi': self.config.pure_sequence_plotting.dpi,
                     'max_workers': self.config.slurm.max_workers
                 }
                 
@@ -613,6 +676,7 @@ class AFClaSeqPipeline:
         except Exception as e:
             self.logger.error(f"Error in pure sequence plotting: {str(e)}", exc_info=True)
             return False
+        
     def run(self) -> None:
         """Run the pipeline with selected stages"""
         self.print_welcome()
@@ -621,49 +685,60 @@ class AFClaSeqPipeline:
         self.logger.info(f"Configuration loaded from YAML file")
         
         stages_to_run = self.config.pipeline_control.stages
+        pipeline_success = True
         
         try:
             # Stage 01: Iterative Shuffling
             if "01_RUN" in stages_to_run:
                 if not self.run_iterative_shuffling():
                     self.logger.error("Stopping pipeline due to failure in stage 01_RUN")
+                    pipeline_success = False
                     return
             
             if "01_ANALYSIS" in stages_to_run:
                 if not self.analyze_iterative_shuffling():
                     self.logger.error("Stopping pipeline due to failure in stage 01_ANALYSIS")
+                    pipeline_success = False
                     return
             
             # Stage 02: M-fold Sampling
             if "02_RUN" in stages_to_run:
                 if not self.run_m_fold_sampling():
                     self.logger.error("Stopping pipeline due to failure in stage 02_RUN")
+                    pipeline_success = False
                     return
             
             if "02_PLOT" in stages_to_run:
                 if not self.plot_m_fold_sampling():
                     self.logger.error("Stopping pipeline due to failure in stage 02_PLOT")
+                    pipeline_success = False
                     return
             
             # Stage 03: Sequence Voting
             if "03" in stages_to_run:
                 if not self.run_sequence_voting():
                     self.logger.error("Stopping pipeline due to failure in stage 03")
+                    pipeline_success = False
                     return
             
             # Stage 04: Recompilation & Prediction
             if "04" in stages_to_run:
                 if not self.run_recompile_and_predict():
                     self.logger.error("Stopping pipeline due to failure in stage 04")
+                    pipeline_success = False
                     return
             
             # Stage 05: Pure Sequence Plotting
             if "05" in stages_to_run:
                 if not self.run_pure_sequence_plotting():
                     self.logger.error("Stopping pipeline due to failure in stage 05")
+                    pipeline_success = False
                     return
             
-            self.logger.info("=== AF-ClaSEQ PIPELINE COMPLETED SUCCESSFULLY ===")
+            if pipeline_success:
+                self.logger.info("=== AF-ClaSEQ PIPELINE COMPLETED SUCCESSFULLY ===")
+                self.logger.info("All requested stages executed without errors")
+                self.logger.info("Results are ready for analysis in the output directories")
             
         except Exception as e:
             self.logger.error(f"Unhandled error in pipeline: {str(e)}", exc_info=True)

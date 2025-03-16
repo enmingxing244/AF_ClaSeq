@@ -1,31 +1,35 @@
+# af_claseq/utils/plotting_manager.py
+
 import os
 import json
-import matplotlib.pyplot as plt
-import pandas as pd
 import numpy as np
-from tqdm import tqdm
-from af_claseq.utils.structure_analysis import get_result_df, load_filter_modes
-from matplotlib.colors import LinearSegmentedColormap
+import pandas as pd
+import matplotlib.pyplot as plt
 import seaborn as sns
-from typing import List, Dict, Any, Optional, Union, Tuple
+from matplotlib.colors import LinearSegmentedColormap, hex2color
+from typing import List, Dict, Any, Optional, Union, Tuple, Callable
 
-# Set publication-quality font
-plt.rcParams['font.family'] = ['sans-serif']
-plt.rcParams['font.sans-serif'] = ['DejaVu Sans']
-plt.rcParams['font.size'] = 24
-plt.rcParams['axes.labelsize'] = 24
-plt.rcParams['axes.titlesize'] = 24
-plt.rcParams['xtick.labelsize'] = 24
-plt.rcParams['ytick.labelsize'] = 24
+# Import the unified logging utility
+from af_claseq.utils.logging_utils import get_logger
 
-# Plot appearance constants
+# Set publication-quality font defaults
+plt.rcParams.update({
+    'font.family': ['sans-serif'],
+    'font.sans-serif': ['DejaVu Sans'],
+    'font.size': 24,
+    'axes.labelsize': 24,
+    'axes.titlesize': 24,
+    'xtick.labelsize': 24,
+    'ytick.labelsize': 24
+})
+
+# Standard plot parameters
 PLOT_PARAMS = {
     'scatter_size': 100,
     'scatter_alpha': 0.8,
     'scatter_edge': 'none',
     'dpi': 500,
-    'prediction_figsize': (15, 7),
-    'selection_figsize': (14, 8)
+    'correlation_cmap': ['#72b3d4', '#dadada', '#bc6565']
 }
 
 # Color schemes
@@ -33,176 +37,156 @@ COLORS = {
     'default_selection': '#468F8B',
     'default_control': '#AFD2D0',
     'correlation_cmap': ['#72b3d4', '#dadada', '#bc6565']
-    # 'correlation_cmap': ['#e77260', '#dadada', '#f9ba51']
 }
 
-
-def calculate_metric_values(
-    parent_dir: str,
-    config: Dict[str, Any],
-    iteration_dirs: Optional[List[str]] = None,
-    csv_dir: Optional[str] = None
+def load_results_df(
+    results_dir: str,
+    metric_names: List[str],
+    csv_dir: Optional[str] = None,
+    config_file: Optional[str] = None,
+    plddt_threshold: float = 0,
+    logger: Optional[Any] = None
 ) -> pd.DataFrame:
     """
-    Calculate metric values for all PDB files in a directory structure and save to CSV.
-    
-    Args:
-        parent_dir: Root directory containing PDB files to analyze
-        config: Configuration dictionary containing filter criteria and settings
-        iteration_dirs: Optional list of iteration subdirectories to process
-        csv_dir: Optional output directory path for saving CSV results
-        
-    Returns:
-        DataFrame containing calculated metrics for all processed structures
-    """
-    all_data = []
-    
-    # Determine directories to process
-    dirs_to_process = [parent_dir] if iteration_dirs is None else [
-        os.path.join(parent_dir, d) for d in iteration_dirs
-    ]
-
-    # Extract filter criteria from config
-    filter_criteria = [config['filter_criteria'][0]]
-    if len(config['filter_criteria']) > 1:
-        filter_criteria.append(config['filter_criteria'][1])
-    basics = config['basics']
-    
-    # Get metric names from filter criteria
-    metric_names = [criterion['name'] for criterion in filter_criteria]
-    
-    # Process each directory
-    for dir_path in dirs_to_process:
-        # Get results dataframe
-        results_df = get_result_df(
-            parent_dir=dir_path,
-            filter_criteria=filter_criteria,
-            basics=basics
-        )
-        
-        # Extract data from results
-        data = {
-            'PDB': results_df['PDB'],
-            'plddt': results_df['plddt'].dropna()
-        }
-        
-        # Add local_plddt if available
-        if 'local_plddt' in results_df.columns:
-            data['local_plddt'] = results_df['local_plddt'].dropna()
-        
-        # Add metrics for all criteria
-        for metric_name in metric_names:
-            metric_values = results_df[metric_name].dropna()
-            if not metric_values.empty:
-                data[metric_name] = metric_values
-            
-        # Add iteration info if processing multiple iterations
-        if iteration_dirs is not None:
-            data['iteration'] = pd.Series([os.path.basename(dir_path).split('_')[1]] * len(data['PDB']))
-        
-        # Add sequence counts if available
-        if 'seq_count' in results_df.columns:
-            data['seq_count'] = results_df['seq_count']
-            
-        iteration_data = pd.DataFrame(data)
-        all_data.append(iteration_data)
-    
-    # Combine all data
-    combined_df = pd.concat(all_data, ignore_index=True)
-    
-    # Save to CSV if path provided
-    if csv_dir is not None:
-        os.makedirs(csv_dir, exist_ok=True)
-        csv_filename = f"{metric_names[0]}_{metric_names[1] if len(metric_names) > 1 else metric_names[0]}_values.csv"
-        csv_path = os.path.join(csv_dir, csv_filename)
-        combined_df.to_csv(csv_path, index=False)
-    
-    return combined_df
-
-
-def _load_or_calculate_metrics(results_dir: str, config_file: str, csv_dir: str) -> pd.DataFrame:
-    """
-    Load metrics from CSV if available, otherwise calculate them.
+    Load results dataframe from CSV or calculate metrics if needed.
     
     Args:
         results_dir: Directory containing structure results
-        config_file: Path to configuration JSON file
-        csv_dir: Directory for CSV files
+        metric_names: Names of metrics to include
+        csv_dir: Directory for CSV files (optional)
+        config_file: Path to configuration JSON file (optional, required if no CSV)
+        plddt_threshold: Minimum pLDDT value for filtering structures
+        logger: Optional logger to use
         
     Returns:
         DataFrame with metric values
     """
-    with open(config_file, 'r') as f:
-        config = json.load(f)
+    # Use provided logger or create one
+    log = logger or get_logger(__name__)
     
-    # Get metric names from config
-    metric_names = [criterion['name'] for criterion in config['filter_criteria']]
-    metric_name1 = metric_names[0]
-    metric_name2 = metric_names[1] if len(metric_names) > 1 else metric_name1
-    
-    # Check if CSV already exists
-    csv_path = os.path.join(csv_dir, f'{metric_name1}_{metric_name2}_values.csv')
-    if os.path.exists(csv_path):
-        print(f"Loading existing results from {csv_path}")
-        return pd.read_csv(csv_path)
-    else:
-        # Calculate metrics
-        return calculate_metric_values(
-            parent_dir=results_dir,
-            config=config,
-            csv_dir=csv_dir
-        )
-
-
-def _load_data_for_2d_plot(
-    results_dir: str, 
-    config_file: str, 
-    csv_dir: str, 
-    plddt_threshold: float
-) -> Tuple[pd.DataFrame, Tuple[str, str]]:
-    """
-    Load data for 2D plots and return dataframe and metric names.
-    
-    Args:
-        results_dir: Directory containing structure results
-        config_file: Path to configuration JSON file
-        csv_dir: Directory for CSV files
-        plddt_threshold: Minimum pLDDT value to include structures
+    # Create CSV directory if needed and if path provided
+    if csv_dir:
+        os.makedirs(csv_dir, exist_ok=True)
+        csv_filename = f"{'_'.join(metric_names)}_values.csv"
+        csv_path = os.path.join(csv_dir, csv_filename)
         
-    Returns:
-        Tuple of (DataFrame with filtered results, tuple of metric names)
-    """
+        # Check if CSV already exists
+        if os.path.exists(csv_path):
+            log.info(f"Loading existing results from {csv_path}")
+            results_df = pd.read_csv(csv_path)
+            
+            # Filter by pLDDT threshold if specified
+            if plddt_threshold > 0:
+                results_df = results_df[results_df['plddt'] > plddt_threshold]
+                log.info(f"Filtered to {len(results_df)} structures with pLDDT > {plddt_threshold}")
+                
+            return results_df
+    
+    # If no CSV exists, we need to calculate the metrics
+    if not config_file:
+        raise ValueError("Either existing CSV or config_file must be provided")
+    
     # Load config
+    log.info(f"Calculating metrics for {', '.join(metric_names)}")
     with open(config_file, 'r') as f:
         config = json.load(f)
     
-    # Get metric names from config
-    metric_name1 = config['filter_criteria'][0]['name']
-    metric_name2 = config['filter_criteria'][1]['name'] 
+    # Calculate metrics
+    results_df = calculate_metric_values(
+        parent_dir=results_dir,
+        config=config,
+        metric_names=metric_names,
+        logger=log
+    )
     
-    # Check if CSV already exists
-    csv_path = os.path.join(csv_dir, f'{metric_name1}_{metric_name2}_values.csv')
-    if os.path.exists(csv_path):
-        print(f"Loading existing results from {csv_path}")
-        results_df = pd.read_csv(csv_path)
-    else:
-        # Calculate metrics
-        results_df = calculate_metric_values(
-            parent_dir=results_dir,
-            config=config,
-            csv_dir=csv_dir
-        )
-
-    # Filter by pLDDT threshold if specified and sort by pLDDT
-    results_df = results_df.sort_values('plddt', ascending=True)
+    # Save to CSV if path provided
+    if csv_dir:
+        results_df.to_csv(csv_path, index=False)
+        log.info(f"Saved results to {csv_path}")
+    
+    # Filter by pLDDT threshold if specified
     if plddt_threshold > 0:
         results_df = results_df[results_df['plddt'] > plddt_threshold]
+        log.info(f"Filtered to {len(results_df)} structures with pLDDT > {plddt_threshold}")
+    
+    return results_df
+
+def calculate_metric_values(
+    parent_dir: str,
+    config: Dict[str, Any],
+    metric_names: Optional[List[str]] = None,
+    logger: Optional[Any] = None
+) -> pd.DataFrame:
+    """
+    Calculate metric values for all PDB files in a directory.
+    
+    Args:
+        parent_dir: Root directory containing PDB files to analyze
+        config: Configuration dictionary with filter criteria
+        metric_names: Optional list of specific metrics to calculate (defaults to all)
+        logger: Optional logger to use
         
-    return results_df, (metric_name1, metric_name2)
+    Returns:
+        DataFrame with calculated metrics
+    """
+    log = logger or get_logger(__name__)
+    
+    # Lazy import to avoid circular imports
+    from af_claseq.utils.structure_analysis import StructureAnalyzer
+    
+    # Extract filter criteria for requested metrics
+    filter_criteria = []
+    all_criteria = config.get('filter_criteria', [])
+    
+    if metric_names:
+        # Only include requested metrics
+        for criterion in all_criteria:
+            if criterion.get('name') in metric_names:
+                filter_criteria.append(criterion)
+    else:
+        # Include all metrics
+        filter_criteria = all_criteria
+    
+    if not filter_criteria:
+        log.warning(f"No filter criteria found for metrics: {metric_names}")
+        return pd.DataFrame()
+    
+    basics = config.get('basics', {})
+    
+    # Get results using StructureAnalyzer
+    analyzer = StructureAnalyzer()
+    results_df = analyzer.get_result_df(
+        parent_dir=parent_dir,
+        filter_criteria=filter_criteria,
+        basics=basics
+    )
+    
+    # Extract and combine data
+    data = {
+        'PDB': results_df['PDB'],
+        'plddt': results_df['plddt'].dropna()
+    }
+    
+    # Add local_plddt if available
+    if 'local_plddt' in results_df.columns:
+        data['local_plddt'] = results_df['local_plddt'].dropna()
+    
+    # Add metrics for requested criteria
+    for criterion in filter_criteria:
+        metric_name = criterion.get('name')
+        if metric_name in results_df.columns:
+            data[metric_name] = results_df[metric_name].dropna()
+        else:
+            log.warning(f"Metric '{metric_name}' not found in results")
+    
+    # Add sequence counts if available
+    if 'seq_count' in results_df.columns:
+        data['seq_count'] = results_df['seq_count']
+    
+    return pd.DataFrame(data)
 
-
-def _set_axis_limits_and_ticks(
-    plt_obj, 
+def set_axis_limits_and_ticks(
+    plt_obj,
     x_min: Optional[float] = None, 
     x_max: Optional[float] = None, 
     y_min: Optional[float] = None, 
@@ -222,7 +206,7 @@ def _set_axis_limits_and_ticks(
         x_ticks: Custom x-axis tick values
         y_ticks: Custom y-axis tick values
     """
-    # Set x-axis limits explicitly
+    # Set x-axis limits
     if x_min is not None and x_max is not None:
         plt_obj.xlim(x_min, x_max)
         if x_ticks is not None:
@@ -232,6 +216,7 @@ def _set_axis_limits_and_ticks(
         # Move x-axis ticks away from axis
         plt_obj.tick_params(axis='x', which='major', pad=10)
             
+    # Set y-axis limits
     if y_min is not None and y_max is not None:
         plt_obj.ylim(y_min, y_max)
         if y_ticks is not None:
@@ -241,21 +226,157 @@ def _set_axis_limits_and_ticks(
         # Move y-axis ticks away from axis    
         plt_obj.tick_params(axis='y', which='major', pad=10)
 
+def plot_1d_distribution(
+    results_df: pd.DataFrame,
+    metric_name: str,
+    output_dir: str,
+    initial_color: Union[str, Tuple[float, float, float]] = '#87CEEB',
+    end_color: Union[str, Tuple[float, float, float]] = '#FFFFFF',
+    n_plot_bins: int = 50,
+    log_scale: bool = False,
+    gradient_ascending: bool = False,
+    linear_gradient: bool = False,
+    show_bin_lines: bool = False,
+    figsize: Tuple[float, float] = (10, 5),
+    x_min: Optional[float] = None,
+    x_max: Optional[float] = None,
+    y_min: Optional[float] = None,
+    y_max: Optional[float] = None,
+    x_ticks: Optional[List[float]] = None,
+    logger: Optional[Any] = None
+) -> str:
+    """
+    Create 1D distribution plot for a specific metric.
+    
+    Args:
+        results_df: DataFrame containing metric values
+        metric_name: Name of the metric to plot
+        output_dir: Directory to save plot output
+        initial_color: Initial color for gradient (hex or RGB)
+        end_color: End color for gradient (hex or RGB)
+        n_plot_bins: Number of bins for histogram
+        log_scale: Whether to use log scale for y-axis
+        gradient_ascending: Whether to use ascending gradient
+        linear_gradient: Whether to use linear gradient
+        show_bin_lines: Whether to show bin lines
+        figsize: Figure size in inches
+        x_min: Minimum value for metric (x-axis)
+        x_max: Maximum value for metric (x-axis)
+        y_min: Minimum value for count (y-axis)
+        y_max: Maximum value for count (y-axis)
+        x_ticks: Custom tick values for metric (x-axis)
+        logger: Optional logger to use
+        
+    Returns:
+        Path to saved plot
+    """
+    log = logger or get_logger(__name__)
+    
+    # Create output directory
+    os.makedirs(output_dir, exist_ok=True)
+    
+    # Process colors
+    if isinstance(initial_color, str):
+        initial_color = hex2color(initial_color)
+    if isinstance(end_color, str):
+        end_color = hex2color(end_color)
+    
+    # Skip if metric is not in results
+    if metric_name not in results_df.columns:
+        log.warning(f"Metric '{metric_name}' not found in results, skipping plot.")
+        return ""
+    
+    log.info(f"Generating 1D distribution plot for {metric_name}")
+    
+    # Create plot
+    plt.figure(figsize=figsize, dpi=PLOT_PARAMS['dpi'])
+    
+    # Determine range for the metric
+    metric_x_min = results_df[metric_name].min() if x_min is None else x_min
+    metric_x_max = results_df[metric_name].max() if x_max is None else x_max
+    
+    bins = np.linspace(metric_x_min, metric_x_max, n_plot_bins + 1)
 
-def _create_2d_scatter_plot(
+    # Create histogram data without plotting
+    counts, bin_edges, _ = plt.hist(results_df[metric_name], bins=bins.tolist())
+    plt.clf()  # Clear the figure
+
+    # Create color gradient
+    colors = []
+    for i in range(len(bin_edges)-1):
+        if linear_gradient:
+            ratio = i / (len(bin_edges)-2) if gradient_ascending else 1 - i / (len(bin_edges)-2)
+        else:
+            ratio = 1 - i / (len(bin_edges)-2) if gradient_ascending else i / (len(bin_edges)-2)
+            
+        if gradient_ascending:
+            r = end_color[0] + (initial_color[0] - end_color[0]) * ratio
+            g = end_color[1] + (initial_color[1] - end_color[1]) * ratio 
+            b = end_color[2] + (initial_color[2] - end_color[2]) * ratio
+        else:
+            r = initial_color[0] + (end_color[0] - initial_color[0]) * ratio
+            g = initial_color[1] + (end_color[1] - initial_color[1]) * ratio
+            b = initial_color[2] + (end_color[2] - initial_color[2]) * ratio
+            
+        colors.append((r, g, b))
+
+    # Plot each bar with its own color
+    plt.bar(
+        bin_edges[:-1], 
+        counts, 
+        width=np.diff(bin_edges), 
+        align='edge', 
+        color=colors, 
+        edgecolor=None
+    )
+
+    # Add vertical dashed lines at bin boundaries if requested
+    if show_bin_lines:
+        for bin_edge in bin_edges:
+            plt.axvline(x=bin_edge, color='gray', linestyle='--', alpha=0.5)
+    
+    plt.xlabel(f'{metric_name}')
+    plt.ylabel('Count')
+    
+    if log_scale:
+        plt.yscale('log')
+    
+    # Set axis limits and ticks
+    set_axis_limits_and_ticks(
+        plt, 
+        x_min=x_min, 
+        x_max=x_max, 
+        y_min=y_min, 
+        y_max=y_max, 
+        x_ticks=x_ticks
+    )
+
+    # Save plot
+    plot_path = os.path.join(output_dir, f'{metric_name}_1d_distribution.png')
+    plt.savefig(plot_path, dpi=PLOT_PARAMS['dpi'], bbox_inches='tight')
+    plt.close()
+
+    log.info(f"Saved 1D distribution plot to: {plot_path}")
+    log.info(f"Mean {metric_name}: {results_df[metric_name].mean():.2f}")
+    log.info(f"Median {metric_name}: {results_df[metric_name].median():.2f}")
+    
+    return plot_path
+
+def create_2d_scatter_plot(
     results_df: pd.DataFrame, 
     metric_name1: str, 
     metric_name2: str, 
-    color_metric: str, 
-    custom_cmap: LinearSegmentedColormap, 
-    output_dir: str, 
+    output_dir: str,
+    color_metric: str = 'plddt', 
+    cmap_colors: List[str] = None,
     x_min: Optional[float] = None, 
     x_max: Optional[float] = None, 
     y_min: Optional[float] = None, 
     y_max: Optional[float] = None, 
     x_ticks: Optional[List[float]] = None, 
-    y_ticks: Optional[List[float]] = None
-) -> None:
+    y_ticks: Optional[List[float]] = None,
+    logger: Optional[Any] = None
+) -> str:
     """
     Create a 2D scatter plot with the specified parameters.
     
@@ -263,16 +384,31 @@ def _create_2d_scatter_plot(
         results_df: DataFrame containing results
         metric_name1: Name of metric for x-axis
         metric_name2: Name of metric for y-axis
-        color_metric: Metric to use for point coloring
-        custom_cmap: Colormap for scatter points
         output_dir: Directory to save output plot
+        color_metric: Metric to use for point coloring (default: 'plddt')
+        cmap_colors: List of colors for colormap (default: None, uses standard colors)
         x_min: Minimum x-axis value
         x_max: Maximum x-axis value
         y_min: Minimum y-axis value
         y_max: Maximum y-axis value
         x_ticks: Custom x-axis tick values
         y_ticks: Custom y-axis tick values
+        logger: Optional logger to use
+        
+    Returns:
+        Path to saved plot
     """
+    log = logger or get_logger(__name__)
+    
+    # Create output directory
+    os.makedirs(output_dir, exist_ok=True)
+    
+    # Use provided colormap or default
+    if cmap_colors is None:
+        cmap_colors = PLOT_PARAMS['correlation_cmap']
+    
+    custom_cmap = LinearSegmentedColormap.from_list('custom', cmap_colors)
+    
     plt.figure(figsize=(8, 7))
     scatter = plt.scatter(
         results_df[metric_name1],
@@ -291,41 +427,68 @@ def _create_2d_scatter_plot(
     plt.xlabel(metric_name1)
     plt.ylabel(metric_name2)
 
-    _set_axis_limits_and_ticks(plt, x_min, x_max, y_min, y_max, x_ticks, y_ticks)
+    set_axis_limits_and_ticks(
+        plt, 
+        x_min=x_min, 
+        x_max=x_max, 
+        y_min=y_min, 
+        y_max=y_max, 
+        x_ticks=x_ticks, 
+        y_ticks=y_ticks
+    )
 
     plt.tight_layout()
     plot_path = os.path.join(output_dir, f'{metric_name1}_{metric_name2}_scatter_{color_metric}.png')
     plt.savefig(plot_path, bbox_inches='tight', dpi=PLOT_PARAMS['dpi'])
     plt.close()
+    
+    log.info(f"Saved 2D scatter plot to: {plot_path}")
+    
+    return plot_path
 
-
-def _create_joint_plot(
+def create_joint_plot(
     results_df: pd.DataFrame, 
     metric_name1: str, 
     metric_name2: str, 
-    color_metric: str, 
-    custom_cmap: LinearSegmentedColormap, 
-    output_dir: str, 
+    output_dir: str,
+    color_metric: str = 'plddt', 
+    cmap_colors: List[str] = None,
     x_min: Optional[float] = None, 
     x_max: Optional[float] = None, 
     y_min: Optional[float] = None, 
-    y_max: Optional[float] = None
-) -> None:
+    y_max: Optional[float] = None,
+    logger: Optional[Any] = None
+) -> str:
     """
-    Create a joint plot with the specified parameters.
+    Create a joint plot with scatter plot and marginal distributions.
     
     Args:
         results_df: DataFrame containing results
         metric_name1: Name of metric for x-axis
         metric_name2: Name of metric for y-axis
-        color_metric: Metric to use for point coloring
-        custom_cmap: Colormap for scatter points
         output_dir: Directory to save output plot
+        color_metric: Metric to use for point coloring (default: 'plddt')
+        cmap_colors: List of colors for colormap (default: None, uses standard colors)
         x_min: Minimum x-axis value
         x_max: Maximum x-axis value
         y_min: Minimum y-axis value
         y_max: Maximum y-axis value
+        logger: Optional logger to use
+        
+    Returns:
+        Path to saved plot
     """
+    log = logger or get_logger(__name__)
+    
+    # Create output directory
+    os.makedirs(output_dir, exist_ok=True)
+    
+    # Use provided colormap or default
+    if cmap_colors is None:
+        cmap_colors = PLOT_PARAMS['correlation_cmap']
+    
+    custom_cmap = LinearSegmentedColormap.from_list('custom', cmap_colors)
+    
     g = sns.JointGrid(
         data=results_df, 
         x=metric_name1,
@@ -364,384 +527,218 @@ def _create_joint_plot(
     plot_path = os.path.join(output_dir, f'{metric_name1}_{metric_name2}_joint_{color_metric}.png')
     plt.savefig(plot_path, bbox_inches='tight', dpi=PLOT_PARAMS['dpi'])
     plt.close()
-
+    
+    log.info(f"Saved joint plot to: {plot_path}")
+    
+    return plot_path
 
 def plot_m_fold_sampling_1d(
     results_dir: str,
-    config_file: str,
+    metric_name: str,
     output_dir: str,
-    csv_dir: str,
-    gradient_ascending: bool,
-    initial_color: Tuple[float, float, float] = (135/255, 206/255, 235/255),
-    end_color: Tuple[float, float, float] = (1, 1, 1),
+    csv_dir: Optional[str] = None,
+    config_file: Optional[str] = None,
+    initial_color: Union[str, Tuple[float, float, float]] = '#87CEEB',
+    end_color: Union[str, Tuple[float, float, float]] = '#FFFFFF',
     x_min: Optional[float] = None,
     x_max: Optional[float] = None,
-    log_scale: bool = False,
-    n_plot_bins: int = 50,
-    linear_gradient: bool = False,
-    plddt_threshold: float = 0,
-    figsize: Tuple[int, int] = (10, 5),
-    show_bin_lines: bool = False,
     y_min: Optional[float] = None,
     y_max: Optional[float] = None,
-    x_ticks: Optional[List[float]] = None
-) -> None:
+    x_ticks: Optional[List[float]] = None,
+    log_scale: bool = False,
+    n_plot_bins: int = 50,
+    gradient_ascending: bool = False,
+    linear_gradient: bool = False,
+    plddt_threshold: float = 0,
+    figsize: Tuple[float, float] = (10, 5),
+    show_bin_lines: bool = False,
+    logger: Optional[Any] = None
+) -> str:
     """
-    Generate 1D distribution plot for metric values.
+    Generate 1D distribution plot for M-fold sampling metric.
+    
+    This function is a convenience wrapper around the more general plotting 
+    functions, specifically for M-fold sampling analysis.
     
     Args:
         results_dir: Path to directory containing results
-        config_file: Path to config JSON file
+        metric_name: Name of the metric to plot
         output_dir: Path to directory for saving plot outputs
-        csv_dir: Path to directory for saving CSV results
-        gradient_ascending: If True, gradient goes from end_color to initial_color
-        initial_color: RGB values for initial color in gradient (default: skyblue)
-        end_color: RGB values for end color in gradient (default: white)
-        x_min: Minimum x-axis value
-        x_max: Maximum x-axis value
+        csv_dir: Path to directory for saving/loading CSV results (optional)
+        config_file: Path to config JSON file (required if CSV doesn't exist)
+        initial_color: Initial color for gradient (hex or RGB)
+        end_color: End color for gradient (hex or RGB)
+        x_min: Minimum value for metric (x-axis)
+        x_max: Maximum value for metric (x-axis)
+        y_min: Minimum value for count (y-axis)
+        y_max: Maximum value for count (y-axis)
+        x_ticks: Custom tick values for metric (x-axis)
         log_scale: Whether to use log scale for y-axis
         n_plot_bins: Number of bins for histogram
-        linear_gradient: If True, use linear color transition
+        gradient_ascending: Whether to use ascending gradient
+        linear_gradient: Whether to use linear gradient
         plddt_threshold: pLDDT threshold for filtering structures
-        figsize: Figure size in inches (width, height)
-        show_bin_lines: Whether to show vertical dashed lines at bin boundaries
-        y_min: Minimum y-axis value
-        y_max: Maximum y-axis value
-        x_ticks: List of x-axis tick values
+        figsize: Figure size in inches
+        show_bin_lines: Whether to show bin lines
+        logger: Optional logger to use
+        
+    Returns:
+        Path to saved plot
     """
-    # Load data from CSV or calculate metrics
-    results_df = _load_or_calculate_metrics(results_dir, config_file, csv_dir)
+    log = logger or get_logger(__name__)
     
-    # Get metric names from config
-    with open(config_file, 'r') as f:
-        config = json.load(f)
-    filter_criteria = config['filter_criteria']
+    # Load results DataFrame
+    results_df = load_results_df(
+        results_dir=results_dir,
+        metric_names=[metric_name],
+        csv_dir=csv_dir,
+        config_file=config_file,
+        plddt_threshold=plddt_threshold,
+        logger=log
+    )
     
-    # Filter by pLDDT threshold if specified
-    if plddt_threshold > 0:
-        results_df = results_df[results_df['plddt'] > plddt_threshold]
-    
-    # Process each metric in the filter criteria
-    for criterion in filter_criteria:
-        metric_name = criterion['name']
-        
-        # Skip if metric is not in results
-        if metric_name not in results_df.columns:
-            print(f"Warning: Metric '{metric_name}' not found in results, skipping.")
-            continue
-            
-        # Create plot
-        plt.figure(figsize=figsize, dpi=PLOT_PARAMS['dpi'])
-        
-        metric_x_min = results_df[metric_name].min() if x_min is None else x_min
-        metric_x_max = results_df[metric_name].max() if x_max is None else x_max
-        
-        bins = np.linspace(metric_x_min, metric_x_max, n_plot_bins + 1)
-
-        # Create histogram data without plotting
-        counts, bin_edges, _ = plt.hist(results_df[metric_name], bins=bins.tolist())
-        plt.clf()  # Clear the figure
-
-        # Create color gradient
-        colors = []
-        for i in range(len(bin_edges)-1):
-            if linear_gradient:
-                ratio = i / (len(bin_edges)-2) if gradient_ascending else 1 - i / (len(bin_edges)-2)
-            else:
-                ratio = 1 - i / (len(bin_edges)-2) if gradient_ascending else i / (len(bin_edges)-2)
-                
-            if gradient_ascending:
-                r = end_color[0] + (initial_color[0] - end_color[0]) * ratio
-                g = end_color[1] + (initial_color[1] - end_color[1]) * ratio 
-                b = end_color[2] + (initial_color[2] - end_color[2]) * ratio
-            else:
-                r = initial_color[0] + (end_color[0] - initial_color[0]) * ratio
-                g = initial_color[1] + (end_color[1] - initial_color[1]) * ratio
-                b = initial_color[2] + (end_color[2] - initial_color[2]) * ratio
-                
-            colors.append((r, g, b))
-
-        # Plot each bar with its own color
-        plt.bar(
-            bin_edges[:-1], 
-            counts, 
-            width=np.diff(bin_edges), 
-            align='edge', 
-            color=colors, 
-            edgecolor=None
-        )
-
-        # Add vertical dashed lines at bin boundaries if requested
-        if show_bin_lines:
-            for bin_edge in bin_edges:
-                plt.axvline(x=bin_edge, color='gray', linestyle='--', alpha=0.5)
-        
-        plt.xlabel(f'{metric_name}')
-        plt.ylabel('Count')
-        
-        if log_scale:
-            plt.yscale('log')
-        
-        # Set axis limits and ticks
-        _set_axis_limits_and_ticks(plt, x_min, x_max, y_min, y_max, x_ticks)
-
-        # Save plot
-        os.makedirs(output_dir, exist_ok=True)
-        plot_path = os.path.join(output_dir, f'{metric_name}_1d_distribution.png')
-        plt.savefig(plot_path, dpi=PLOT_PARAMS['dpi'], bbox_inches='tight')
-        plt.close()
-
-        print(f"Generated plot for {metric_name} saved to: {plot_path}")
-        print(f"Total structures analyzed{f' (pLDDT > {plddt_threshold})' if plddt_threshold > 0 else ''}: {len(results_df)}")
-        print(f"Mean {metric_name}: {results_df[metric_name].mean():.2f}")
-        print(f"Median {metric_name}: {results_df[metric_name].median():.2f}")
-
+    # Generate the plot
+    return plot_1d_distribution(
+        results_df=results_df,
+        metric_name=metric_name,
+        output_dir=output_dir,
+        initial_color=initial_color,
+        end_color=end_color,
+        n_plot_bins=n_plot_bins,
+        log_scale=log_scale,
+        gradient_ascending=gradient_ascending,
+        linear_gradient=linear_gradient,
+        show_bin_lines=show_bin_lines,
+        figsize=figsize,
+        x_min=x_min,
+        x_max=x_max,
+        y_min=y_min,
+        y_max=y_max,
+        x_ticks=x_ticks,
+        logger=log
+    )
 
 def plot_m_fold_sampling_2d(
     results_dir: str,
-    config_file: str,
+    metric_name1: str,
+    metric_name2: str,
     output_dir: str,
-    csv_dir: str,
+    csv_dir: Optional[str] = None,
+    config_file: Optional[str] = None,
     x_min: Optional[float] = None,
     x_max: Optional[float] = None,
     y_min: Optional[float] = None,
     y_max: Optional[float] = None,
-    plddt_threshold: float = 0,
     x_ticks: Optional[List[float]] = None,
-    y_ticks: Optional[List[float]] = None
-) -> None:
+    y_ticks: Optional[List[float]] = None,
+    plddt_threshold: float = 0,
+    include_joint_plot: bool = True,
+    logger: Optional[Any] = None
+) -> List[str]:
     """
-    Plot 2D sampling distribution of two metrics from M-fold sampling results.
+    Plot 2D sampling distribution for M-fold sampling metrics.
+    
+    This function is a convenience wrapper around the more general plotting 
+    functions, specifically for M-fold sampling analysis.
 
     Args:
         results_dir: Path to directory containing M-fold sampling results
-        config_file: Path to config JSON file specifying metrics to analyze
+        metric_name1: Name of the first metric (x-axis)
+        metric_name2: Name of the second metric (y-axis)
         output_dir: Path to directory for saving plot outputs
-        csv_dir: Path to directory for saving/loading CSV results
-        x_min: Minimum x-axis value
-        x_max: Maximum x-axis value
-        y_min: Minimum y-axis value
-        y_max: Maximum y-axis value
+        csv_dir: Path to directory for saving/loading CSV results (optional)
+        config_file: Path to config JSON file (required if CSV doesn't exist)
+        x_min: Minimum value for first metric (x-axis)
+        x_max: Maximum value for first metric (x-axis)
+        y_min: Minimum value for second metric (y-axis)
+        y_max: Maximum value for second metric (y-axis)
+        x_ticks: Custom tick values for first metric (x-axis)
+        y_ticks: Custom tick values for second metric (y-axis)
         plddt_threshold: pLDDT threshold for filtering structures
-        x_ticks: List of x-axis tick values
-        y_ticks: List of y-axis tick values
+        include_joint_plot: Whether to create joint plots with marginal distributions
+        logger: Optional logger to use
         
-    The function creates two 2D scatter plots showing the distribution of two metrics 
-    specified in the config file. Each point represents a structure from M-fold sampling, 
-    one colored by pLDDT score and one by local pLDDT.
+    Returns:
+        List of paths to saved plots
     """
-    # Load data and get metric names
-    results_df, metric_names = _load_data_for_2d_plot(results_dir, config_file, csv_dir, plddt_threshold)
-    metric_name1, metric_name2 = metric_names
-
-    # Create output directory if it doesn't exist
-    os.makedirs(output_dir, exist_ok=True)
-
-    # Create custom colormap from initial to end color
-    custom_cmap = LinearSegmentedColormap.from_list('custom', COLORS['correlation_cmap'])
+    log = logger or get_logger(__name__)
     
-    # Plot with pLDDT coloring
-    _create_2d_scatter_plot(
-        results_df, metric_name1, metric_name2, 'plddt', 
-        custom_cmap, output_dir, x_min, x_max, y_min, y_max, 
-        x_ticks, y_ticks
+    # Load results DataFrame
+    results_df = load_results_df(
+        results_dir=results_dir,
+        metric_names=[metric_name1, metric_name2],
+        csv_dir=csv_dir,
+        config_file=config_file,
+        plddt_threshold=plddt_threshold,
+        logger=log
     )
-
-    # Only plot local pLDDT if it exists in the dataframe
+    
+    # Sort by pLDDT to have points with higher pLDDT on top
+    results_df = results_df.sort_values('plddt', ascending=True)
+    
+    plot_paths = []
+    
+    # Create scatter plots for pLDDT coloring
+    plot_paths.append(create_2d_scatter_plot(
+        results_df=results_df,
+        metric_name1=metric_name1,
+        metric_name2=metric_name2,
+        output_dir=output_dir,
+        color_metric='plddt',
+        x_min=x_min,
+        x_max=x_max,
+        y_min=y_min,
+        y_max=y_max,
+        x_ticks=x_ticks,
+        y_ticks=y_ticks,
+        logger=log
+    ))
+    
+    # Create scatter plots for local_pLDDT coloring if available
     if 'local_plddt' in results_df.columns:
-        _create_2d_scatter_plot(
-            results_df, metric_name1, metric_name2, 'local_plddt', 
-            custom_cmap, output_dir, x_min, x_max, y_min, y_max, 
-            x_ticks, y_ticks
+        plot_paths.append(create_2d_scatter_plot(
+            results_df=results_df,
+            metric_name1=metric_name1,
+            metric_name2=metric_name2,
+            output_dir=output_dir,
+            color_metric='local_plddt',
+            x_min=x_min,
+            x_max=x_max,
+            y_min=y_min,
+            y_max=y_max,
+            x_ticks=x_ticks,
+            y_ticks=y_ticks,
+            logger=log
+        ))
+    # Create joint plots if requested
+    if include_joint_plot:
+        joint_plot_path = create_joint_plot(
+            results_df=results_df,
+            metric_name1=metric_name1,
+            metric_name2=metric_name2,
+            output_dir=output_dir,
+            color_metric='plddt',
+            x_min=x_min,
+            x_max=x_max,
+            y_min=y_min,
+            y_max=y_max,
+            logger=log
         )
-
-    print(f"Generated scatter plots saved to: {output_dir}")
-    print(f"Total structures analyzed{f' (pLDDT > {plddt_threshold})' if plddt_threshold > 0 else ''}: {len(results_df)}")
-
-
-def plot_m_fold_sampling_2d_joint(
-    results_dir: str,
-    config_file: str,
-    output_dir: str,
-    csv_dir: str,
-    x_min: Optional[float] = None,
-    x_max: Optional[float] = None,
-    y_min: Optional[float] = None,
-    y_max: Optional[float] = None,
-    plddt_threshold: float = 0
-) -> None:
-    """
-    Plot 2D joint plots (scatter + histograms) of two metrics from M-fold sampling results.
-
-    Args:
-        results_dir: Path to directory containing M-fold sampling results
-        config_file: Path to config JSON file specifying metrics to analyze
-        output_dir: Path to directory for saving plot outputs
-        csv_dir: Path to directory for saving/loading CSV results
-        x_min: Minimum x-axis value
-        x_max: Maximum x-axis value
-        y_min: Minimum y-axis value
-        y_max: Maximum y-axis value
-        plddt_threshold: pLDDT threshold for filtering structures
+        plot_paths.append(joint_plot_path)
         
-    The function creates two joint plots using seaborn showing:
-    - Center: 2D scatter plot of two metrics colored by either pLDDT or local pLDDT
-    - Top and Right: Kernel density estimation plots of marginal distributions
-    """
-    # Load data and get metric names
-    results_df, metric_names = _load_data_for_2d_plot(results_dir, config_file, csv_dir, plddt_threshold)
-    metric_name1, metric_name2 = metric_names
-
-    # Create output directory if needed
-    os.makedirs(output_dir, exist_ok=True)
-
-    # Create custom colormap
-    custom_cmap = LinearSegmentedColormap.from_list('custom', COLORS['correlation_cmap'])
-
-    # Plot with pLDDT coloring
-    _create_joint_plot(
-        results_df, metric_name1, metric_name2, 'plddt', 
-        custom_cmap, output_dir, x_min, x_max, y_min, y_max
-    )
-
-    # Only plot local pLDDT if it exists in the dataframe
-    if 'local_plddt' in results_df.columns:
-        _create_joint_plot(
-            results_df, metric_name1, metric_name2, 'local_plddt', 
-            custom_cmap, output_dir, x_min, x_max, y_min, y_max
-        )
-
-    print(f"Generated joint plots saved to: {output_dir}")
-    print(f"Total structures analyzed{f' (pLDDT > {plddt_threshold})' if plddt_threshold > 0 else ''}: {len(results_df)}")
-
-
-def plot_iteration_shuffling_distribution(
-    results_df: pd.DataFrame, 
-    output_dir: str, 
-    initial_color: Tuple[float, float, float], 
-    x_min: Optional[float] = None, 
-    x_max: Optional[float] = None
-) -> None:
-    """
-    Create distribution plots from metric data for each iteration.
+        if 'local_plddt' in results_df.columns:
+            local_joint_plot_path = create_joint_plot(
+                results_df=results_df,
+                metric_name1=metric_name1,
+                metric_name2=metric_name2,
+                output_dir=output_dir,
+                color_metric='local_plddt',
+                x_min=x_min,
+                x_max=x_max,
+                y_min=y_min,
+                y_max=y_max,
+                logger=log
+            )
+            plot_paths.append(local_joint_plot_path)
     
-    Args:
-        results_df: DataFrame containing results with iteration information
-        output_dir: Directory to save output plots
-        initial_color: RGB color for histogram bars
-        x_min: Minimum x-axis value
-        x_max: Maximum x-axis value
-    """
-    iterations = sorted(results_df['iteration'].unique())
-    
-    n_iterations = len(iterations)
-    n_cols = min(3, n_iterations)
-    n_rows = (n_iterations + n_cols - 1) // n_cols
-    
-    # Get metric name from dataframe columns
-    metric_name = [col for col in results_df.columns if col not in ['iteration', 'PDB', 'plddt', 'seq_count']][0]
-    
-    # Create figure with subplots
-    fig, axes = plt.subplots(n_rows, n_cols, figsize=(5*n_cols, 4*n_rows))
-    if n_rows == 1 and n_cols == 1:
-        axes = np.array([[axes]])
-    elif n_rows == 1 or n_cols == 1:
-        axes = axes.reshape(-1, 1) if n_cols == 1 else axes.reshape(1, -1)
-    
-    # Plot each iteration
-    for idx, iteration in enumerate(iterations):
-        row = idx // n_cols
-        col = idx % n_cols
-        
-        iteration_data = results_df[results_df['iteration'] == iteration][metric_name]
-        
-        axes[row, col].hist(iteration_data, bins=80, color=initial_color, edgecolor=None, alpha=0.7)
-        axes[row, col].set_title(f'Iteration {iteration}')
-        axes[row, col].set_xlabel(metric_name)
-        if x_min is not None and x_max is not None:
-            axes[row, col].set_xlim(x_min, x_max)
-        axes[row, col].set_yscale('log')
-        axes[row, col].set_ylabel('Counts of predicted structures')
-    
-    # Remove empty subplots if any
-    for idx in range(len(iterations), n_rows * n_cols):
-        row = idx // n_cols
-        col = idx % n_cols
-        fig.delaxes(axes[row, col])
-    
-    # Adjust layout and save plot
-    plt.tight_layout()
-    output_path = os.path.join(output_dir, f'{metric_name}_distribution_by_iteration.png')
-    plt.savefig(output_path, dpi=PLOT_PARAMS['dpi'], bbox_inches='tight')
-    plt.close()
-    
-    print(f"Distribution plots by iteration saved to {output_path}")
-
-
-def plot_scatter(
-    results_dir: str,
-    config_file: str,
-    output_dir: str,
-    csv_dir: str,
-    initial_color: Tuple[float, float, float] = (135/255, 206/255, 235/255),
-    x_min: Optional[float] = None,
-    x_max: Optional[float] = None,
-    y_min: Optional[float] = None,
-    y_max: Optional[float] = None
-) -> None:
-    """
-    Generate 2D scatter plot of metric vs pLDDT scores.
-    
-    Args:
-        results_dir: Path to directory containing results
-        config_file: Path to config JSON file
-        output_dir: Path to directory for saving plot outputs
-        csv_dir: Path to directory for saving CSV results
-        initial_color: RGB color for scatter points
-        x_min: Minimum x-axis value
-        x_max: Maximum x-axis value
-        y_min: Minimum y-axis value
-        y_max: Maximum y-axis value
-    """
-    # Load config
-    with open(config_file, 'r') as f:
-        config = json.load(f)
-    
-    # Get metric name from config
-    metric_name = config['filter_criteria'][0]['name']
-    
-    # Get results dataframe
-    results_df = calculate_metric_values(
-        parent_dir=results_dir,
-        config=config,
-        csv_dir=csv_dir
-    )
-
-    # Create scatter plot
-    plt.figure(figsize=(6, 6), dpi=600)
-    
-    plt.scatter(results_df[metric_name], results_df['plddt'], 
-               c=[initial_color], alpha=0.5)
-    
-    plt.xlabel(f'{metric_name}')
-    plt.ylabel('pLDDT Score')
-    plt.title(f'{metric_name} vs pLDDT Scores')
-    
-    # Set axis limits if provided
-    if x_min is not None:
-        plt.xlim(left=x_min)
-    if x_max is not None:
-        plt.xlim(right=x_max)
-    if y_min is not None:
-        plt.ylim(bottom=y_min)
-    if y_max is not None:
-        plt.ylim(top=y_max)
-
-    # Save plot
-    os.makedirs(output_dir, exist_ok=True)
-    plot_path = os.path.join(output_dir, f'{metric_name}_plddt_scatter.png')
-    plt.savefig(plot_path, dpi=600, bbox_inches='tight')
-    plt.close()
-
-    print(f"Generated scatter plot saved to: {plot_path}")
-
+    return plot_paths

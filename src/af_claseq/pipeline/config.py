@@ -70,7 +70,6 @@ class IterativeShufflingConfig:
     iter_shuf_plot_bin_step: float = 0.2
     iter_shuf_combine_threshold: float = 0.5
 
-
 @dataclass
 class MFoldSamplingConfig:
     """Stage 02: M-fold Sampling parameters"""
@@ -78,13 +77,23 @@ class MFoldSamplingConfig:
     m_fold_group_size: int = 10
     m_fold_random_select: Optional[int] = None
     m_fold_plddt_threshold: float = 75
-    m_fold_colormap: str = "sequential"
-    m_fold_use_percentage: bool = True
-    m_fold_x_min: Optional[float] = None
-    m_fold_x_max: Optional[float] = None
-    m_fold_y_min: Optional[float] = None
-    m_fold_y_max: Optional[float] = None
-    m_fold_n_best: int = 10
+    m_fold_initial_color: str = "#87CEEB"
+    m_fold_end_color: str = "#FFFFFF"
+    m_fold_log_scale: bool = False
+    m_fold_n_plot_bins: int = 50
+    m_fold_gradient_ascending: bool = False
+    m_fold_linear_gradient: bool = False
+    m_fold_figsize: Tuple[float, float] = (10, 5)
+    m_fold_show_bin_lines: bool = False
+    m_fold_count_min: Optional[float] = None
+    m_fold_count_max: Optional[float] = None
+    m_fold_metric1_min: Optional[float] = None
+    m_fold_metric1_max: Optional[float] = None
+    m_fold_metric2_min: Optional[float] = None
+    m_fold_metric2_max: Optional[float] = None
+    m_fold_metric1_ticks: Optional[List[float]] = None
+    m_fold_metric2_ticks: Optional[List[float]] = None
+
 
 
 @dataclass
@@ -99,7 +108,7 @@ class SequenceVotingConfig:
     vote_x_ticks: Optional[List[int]] = None
     vote_hierarchical_sampling: bool = False
     use_focused_bins: bool = False
-    precomputed_metrics: Optional[str] = None
+    
 
 @dataclass
 class RecompilePredictConfig:
