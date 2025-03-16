@@ -30,7 +30,7 @@ class SequenceRecompiler:
         source_msa: str,
         default_pdb: str,
         voting_results: str,
-        bin_numbers: List[int],
+        bin_numbers: Union[List[int], int],
         num_total_bins: int = 20,
         initial_color: str = '#2486b9',
         combine_bins: bool = False,
@@ -46,7 +46,7 @@ class SequenceRecompiler:
             source_msa: Path to source MSA file
             default_pdb: Path to reference PDB file for getting query sequence
             voting_results: Path to voting results CSV file
-            bin_numbers: List of bin numbers to compile sequences from
+            bin_numbers: List of bin numbers or single bin number to compile sequences from
             num_total_bins: Number of total bins to include in vote distribution plots
             initial_color: Initial color for vote distribution plots in hex format
             combine_bins: Whether to combine sequences from all input bins into one directory
@@ -58,7 +58,8 @@ class SequenceRecompiler:
         self.source_msa = source_msa
         self.default_pdb = default_pdb
         self.voting_results = voting_results
-        self.bin_numbers = bin_numbers
+        # Convert bin_numbers to list if it's an integer
+        self.bin_numbers = bin_numbers if isinstance(bin_numbers, list) else [bin_numbers]
         self.num_total_bins = num_total_bins
         self.initial_color = initial_color
         self.combine_bins = combine_bins
@@ -429,7 +430,10 @@ class SequenceRecompiler:
     
     def process_individual_bins(self) -> None:
         """Process each bin individually."""
-        for bin_number in self.bin_numbers:
+        # Check if bin_numbers is a single integer wrapped in a list
+        if len(self.bin_numbers) == 1:
+            
+            bin_number = self.bin_numbers[0]
             self.logger.info(f"Processing bin {bin_number}")
             
             # Get headers for current bin
@@ -465,6 +469,44 @@ class SequenceRecompiler:
             self.create_control_file(bin_headers=bin_headers, output_file=control_prediction_file)
             
             self.logger.info(f"Completed processing bin {bin_number}")
+        else:
+            # Process multiple bins with a for loop
+            for bin_number in self.bin_numbers:
+                self.logger.info(f"Processing bin {bin_number}")
+                
+                # Get headers for current bin
+                self.logger.info(f"Extracting headers for bin {bin_number}")
+                bin_headers = self.get_bin_headers(bin_numbers=[bin_number])
+                
+                # Create vote distribution plot if raw votes data is available
+                if self.raw_votes_data:
+                    self.logger.info(f"Creating vote distribution plot for bin {bin_number}")
+                    try:
+                        self.plot_sequence_vote_ratios(
+                            bin_headers=bin_headers,
+                            target_bin=bin_number
+                        )
+                    except Exception as e:
+                        self.logger.error(f"Error creating vote distribution plot for bin {bin_number}: {e}")
+                
+                # Create prediction directory for this bin
+                prediction_bin_dir = os.path.join(self.dirs["prediction"], f"bin_{bin_number}")
+                os.makedirs(prediction_bin_dir, exist_ok=True)
+                
+                # Compile sequences for prediction
+                prediction_file = os.path.join(prediction_bin_dir, f"bin{bin_number}_sequences.a3m")
+                self.logger.info(f"Compiling sequences for prediction")
+                self.compile_sequences(bin_headers=bin_headers, output_file=prediction_file)
+                
+                # Create control prediction with random sequences
+                self.logger.info(f"Creating control prediction file")
+                control_prediction_bin_dir = os.path.join(self.dirs["control_prediction"], f"bin_{bin_number}")
+                os.makedirs(control_prediction_bin_dir, exist_ok=True)
+                
+                control_prediction_file = os.path.join(control_prediction_bin_dir, f"bin{bin_number}_random_seq.a3m")
+                self.create_control_file(bin_headers=bin_headers, output_file=control_prediction_file)
+                
+                self.logger.info(f"Completed processing bin {bin_number}")
     
     def recompile_sequences(self) -> Dict[str, str]:
         """
