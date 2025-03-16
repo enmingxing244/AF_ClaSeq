@@ -8,7 +8,7 @@ and functions to load configuration from YAML files.
 import yaml
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional, Any, Tuple, Union
-
+from af_claseq.utils.plotting_manager import COLORS
 
 @dataclass
 class GeneralConfig:
@@ -113,23 +113,27 @@ class SequenceVotingConfig:
 @dataclass
 class RecompilePredictConfig:
     """Stage 04: Recompilation & Prediction parameters"""
-    bin_numbers: List[int] = field(default_factory=list)
+    bin_numbers_1: Union[List[int], int] = field(default_factory=list)
+    bin_numbers_2: Union[List[int], int] = field(default_factory=list)
     combine_bins: bool = False
+    metric_name_1: Optional[str] = None
+    metric_name_2: Optional[str] = None
     prediction_num_model: int = 5
     prediction_num_seed: int = 8
 
 @dataclass
 class PureSequencePlottingConfig:
-    """Stage 05: Pure Sequence Plotting parameters"""
-    x_min: Optional[float] = None
-    x_max: Optional[float] = None
-    y_min: Optional[float] = None
-    y_max: Optional[float] = None
-    x_ticks: Optional[List[float]] = None
-    y_ticks: Optional[List[float]] = None
+    """Configuration for pure sequence plotting."""
+    metric1_min: Optional[float] = None
+    metric1_max: Optional[float] = None
+    metric2_min: Optional[float] = None
+    metric2_max: Optional[float] = None
+    metric1_ticks: Optional[List[float]] = None
+    metric2_ticks: Optional[List[float]] = None
     plddt_threshold: float = 70.0
-    figsize: Tuple[int, int] = (15, 7)
-    dpi: int = 300
+    figsize: Tuple[int, int] = (15, 7)  # Updated to match PureSequencePlottingConfig
+    dpi: int = 300  # Updated to match PureSequencePlottingConfig
+    max_workers: int = 8
 
 @dataclass
 class PipelineConfig:

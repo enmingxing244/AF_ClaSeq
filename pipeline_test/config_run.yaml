@@ -35,9 +35,9 @@ pipeline_control:
     # - "01_ANALYSIS"
     # - "02_RUN"
     # - "02_PLOT"  # Note: This should be "02_ANALYSIS" to match default in config.py
-    - "03"
+    # - "03"
     # - "04"
-    # - "05"  # Added stage 05 for pure sequence plotting
+    - "05"  # Added stage 05 for pure sequence plotting
   check_interval: 60
 
 iterative_shuffling:
@@ -90,20 +90,23 @@ sequence_voting:
   vote_hierarchical_sampling: false
   use_focused_bins: True
   
-
 recompile_predict:
-  bin_numbers: [5, 6, 7, 8, 9, 10]
+  bin_numbers_1: 10
+  bin_numbers_2: 1
   combine_bins: false
+  metric_name_1: "1CDL_tmscore"
+  metric_name_2: "1CLL_tmscore"
   prediction_num_model: 5
-  prediction_num_seed: 8
+  prediction_num_seed: 1
   
 pure_sequence_plotting:
-  x_min: null
-  x_max: null
-  y_min: null
-  y_max: null
-  x_ticks: null
-  y_ticks: null
-  plddt_threshold: 70.0
+  plddt_threshold: 0
   figsize: [15, 7]
-  dpi: 300
+  dpi: 600
+  metric1_min: 0.5
+  metric1_max: 1.0
+  metric2_min: 0.5
+  metric2_max: 1.0
+  metric1_ticks: [0.5, 0.6, 0.7, 0.8, 0.9, 1.0]
+  metric2_ticks: [0.5, 0.6, 0.7, 0.8, 0.9, 1.0]
+  max_workers: 8

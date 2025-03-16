@@ -10,32 +10,8 @@ import os
 import logging
 from pathlib import Path
 from typing import List, Dict, Tuple, Optional, Union, Any
-from dataclasses import dataclass, field
 
 from af_claseq.utils.slurm_utils import SlurmJobSubmitter
-
-
-@dataclass
-class AF2PredictionConfig:
-    """Configuration for sequence prediction jobs."""
-    pure_seq_pred_base_dir: str
-    bin_numbers: List[int]
-    combine_bins: bool = False
-    conda_env_path: str = "/fs/ess/PAA0203/xing244/.conda/envs/colabfold"
-    slurm_account: str = "PAA0203"
-    slurm_output: str = "/dev/null"
-    slurm_error: str = "/dev/null"
-    slurm_nodes: int = 1
-    slurm_gpus_per_task: int = 1
-    slurm_tasks: int = 1
-    slurm_cpus_per_task: int = 4
-    slurm_time: str = "04:00:00"
-    slurm_partition: str = "nextgen"
-    prediction_num_model: int = 5
-    prediction_num_seed: int = 8
-    check_interval: int = 60
-    max_workers: int = 64
-    job_name_prefix: Optional[str] = None
 
 
 class PureSequenceAF2Prediction:
@@ -48,19 +24,23 @@ class PureSequenceAF2Prediction:
     """
     
     def __init__(self, 
-                 config: AF2PredictionConfig, 
+                 config: Any,  # Using Any to accept config from pipeline
                  logger: Optional[logging.Logger] = None):
         """
         Initialize the sequence prediction manager.
         
         Args:
-            config: Configuration options for prediction
+            config: Configuration options for prediction from pipeline
             logger: Optional logger, will create one if not provided
         """
         self.config = config
         self.logger = logger or self._setup_logger()
         self.submitter = self._init_slurm_submitter()
         self.job_configs = {}
+        
+        # Convert bin_numbers to list if it's a single integer
+        if isinstance(self.config.bin_numbers, int):
+            self.config.bin_numbers = [self.config.bin_numbers]
         
     def _setup_logger(self) -> logging.Logger:
         """Set up a default logger if none was provided."""
@@ -79,7 +59,7 @@ class PureSequenceAF2Prediction:
     def _init_slurm_submitter(self) -> SlurmJobSubmitter:
         """Initialize the SLURM job submitter with configuration options."""
         # Extract job name prefix from base directory if not specified
-        job_prefix = self.config.job_name_prefix
+        job_prefix = getattr(self.config, 'job_name_prefix', None)
         if not job_prefix:
             base_path_parts = self.config.pure_seq_pred_base_dir.split(os.sep)
             try:
@@ -230,32 +210,3 @@ class PureSequenceAF2Prediction:
         except Exception as e:
             self.logger.error(f"Unexpected error in prediction process: {str(e)}")
             return False
-
-
-def create_af2_prediction_config_from_dict(config_dict: Dict[str, Any]) -> AF2PredictionConfig:
-    """
-    Create a AF2PredictionConfig from a dictionary.
-    
-    Args:
-        config_dict: Dictionary containing configuration values
-        
-    Returns:
-        Configured PredictionConfig object
-    """
-    # Use a subset of keys that match the PredictionConfig parameters
-    valid_keys = {
-        'pure_seq_pred_base_dir', 'bin_numbers', 'combine_bins', 'conda_env_path', 'slurm_account',
-        'slurm_output', 'slurm_error', 'slurm_nodes', 'slurm_gpus_per_task',
-        'slurm_tasks', 'slurm_cpus_per_task', 'slurm_time', 'slurm_partition',
-        'prediction_num_model', 'prediction_num_seed', 'check_interval',
-        'max_workers', 'job_name_prefix'
-    }
-    
-    # Filter to only include valid keys
-    filtered_dict = {k: v for k, v in config_dict.items() if k in valid_keys}
-    
-    # Handle the case where the old 'base_dir' key is in the config but not 'pure_seq_pred_base_dir'
-    if 'base_dir' in config_dict and 'pure_seq_pred_base_dir' not in filtered_dict:
-        filtered_dict['pure_seq_pred_base_dir'] = config_dict['base_dir']
-    
-    return AF2PredictionConfig(**filtered_dict)

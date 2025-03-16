@@ -34,7 +34,7 @@ PLOT_PARAMS = {
 
 # Color schemes
 COLORS = {
-    'default_selection': '#468F8B',
+    'default_prediction': '#468F8B',
     'default_control': '#AFD2D0',
     'correlation_cmap': ['#72b3d4', '#dadada', '#bc6565']
 }

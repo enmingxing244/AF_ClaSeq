@@ -20,9 +20,9 @@ from af_claseq.pipeline.iter_shuf_enrich import IterShufEnrichRunner, IterShufEn
 from af_claseq.pipeline.m_fold_sampling import MFoldSampler
 from af_claseq.pipeline.sequence_voting import SequenceVotingRunner, SequenceVotingPlotter
 from af_claseq.pipeline.sequence_recompile import SequenceRecompiler
-from af_claseq.pipeline.pure_seq_pred import PureSequenceAF2Prediction, create_af2_prediction_config_from_dict
+from af_claseq.pipeline.pure_seq_pred import PureSequenceAF2Prediction
 from af_claseq.pipeline.pure_seq_plot import PureSequencePlotter, create_pure_seq_plot_config_from_dict
-from af_claseq.utils.logging_utils import setup_logger # type: ignore
+from af_claseq.utils.logging_utils import setup_logger 
 
 from af_claseq.pipeline.config import load_pipeline_config
 
@@ -493,15 +493,8 @@ class AFClaSeqPipeline:
             
             # Determine input MSA
             source_msa = self.config.general.source_a3m
-            iter_shuf_output = base_dir / "01_iterative_shuffling/gathered_seq_after_iter_shuffling.a3m"
-            if iter_shuf_output.exists():
-                source_msa = str(iter_shuf_output)
-            
-            # If bin_numbers not specified, report error and stop pipeline
-            bin_numbers = self.config.recompile_predict.bin_numbers
-            if not bin_numbers:
-                self.logger.error("Pipeline stopped: No bin numbers specified in configuration. Please specify bin_numbers in the recompile_predict section of your configuration file.")
-                return False
+            if (base_dir / "01_iterative_shuffling/gathered_seq_after_iter_shuffling.a3m").exists():
+                source_msa = str(base_dir / "01_iterative_shuffling/gathered_seq_after_iter_shuffling.a3m")
             
             all_successful = True
             
@@ -519,11 +512,32 @@ class AFClaSeqPipeline:
                 criterion_output_dir.mkdir(exist_ok=True)
                 
                 # Get voting results for this criterion
-                voting_results = base_dir / f"03_voting/{criterion_name}/03_voting_results.csv"
+                voting_results = base_dir / f"03_voting/{criterion_name}/voting_results.csv"
                 raw_votes_json = base_dir / f"03_voting/{criterion_name}/raw_sequence_votes.json"
                 
                 if not voting_results.exists():
                     self.logger.error(f"Voting results not found for criterion: {criterion_name}")
+                    all_successful = False
+                    continue
+                
+                # Determine bin numbers for this criterion
+                bin_numbers = None
+                if len(filter_criteria) == 1:
+                    # Single criterion case - use the default bin_numbers
+                    bin_numbers = self.config.recompile_predict.bin_numbers_1
+                else:
+                    # Multiple criteria case - match criterion name with metric names
+                    if criterion_name == self.config.recompile_predict.metric_name_1:
+                        bin_numbers = self.config.recompile_predict.bin_numbers_1
+                    elif criterion_name == self.config.recompile_predict.metric_name_2:
+                        bin_numbers = self.config.recompile_predict.bin_numbers_2
+                    else:
+                        # Fall back to default bin_numbers if no match found
+                        bin_numbers = self.config.recompile_predict.bin_numbers_1
+                
+                # If bin_numbers not specified, report error and skip this criterion
+                if not bin_numbers:
+                    self.logger.error(f"No bin numbers specified for criterion: {criterion_name}. Please specify bin_numbers_1 in the recompile_predict section of your configuration file.")
                     all_successful = False
                     continue
                 
@@ -567,9 +581,8 @@ class AFClaSeqPipeline:
                 }
                 
                 # Create and run predictor
-                af2_config = create_af2_prediction_config_from_dict(prediction_config)
                 predictor = PureSequenceAF2Prediction(
-                    config=af2_config,
+                    config=prediction_config,
                     logger=self.logger
                 )
                 
@@ -641,12 +654,12 @@ class AFClaSeqPipeline:
                     'config_file': self.config.general.config_file,
                     'color_prediction': self.config.general.plot_initial_color,
                     'color_control': self.config.general.plot_end_color if hasattr(self.config.general, 'plot_end_color') else None,
-                    'x_min': self.config.pure_sequence_plotting.x_min,
-                    'x_max': self.config.pure_sequence_plotting.x_max,
-                    'y_min': self.config.pure_sequence_plotting.y_min,
-                    'y_max': self.config.pure_sequence_plotting.y_max,
-                    'x_ticks': self.config.pure_sequence_plotting.x_ticks,
-                    'y_ticks': self.config.pure_sequence_plotting.y_ticks,
+                    'metric1_min': self.config.pure_sequence_plotting.metric1_min,
+                    'metric1_max': self.config.pure_sequence_plotting.metric1_max,
+                    'metric2_min': self.config.pure_sequence_plotting.metric2_min,
+                    'metric2_max': self.config.pure_sequence_plotting.metric2_max,
+                    'metric1_ticks': self.config.pure_sequence_plotting.metric1_ticks,
+                    'metric2_ticks': self.config.pure_sequence_plotting.metric2_ticks,
                     'plddt_threshold': self.config.pure_sequence_plotting.plddt_threshold,
                     'figsize': self.config.pure_sequence_plotting.figsize,
                     'dpi': self.config.pure_sequence_plotting.dpi,
@@ -654,9 +667,8 @@ class AFClaSeqPipeline:
                 }
                 
                 # Create and run plotter
-                plot_config_obj = create_pure_seq_plot_config_from_dict(plot_config)
                 plotter = PureSequencePlotter(
-                    config=plot_config_obj,
+                    config=create_pure_seq_plot_config_from_dict(plot_config),
                     logger=self.logger
                 )
                 
