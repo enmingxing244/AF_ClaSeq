@@ -113,7 +113,6 @@ class AFClaSeqPipeline:
         print(f"Base directory: {self.config.general.base_dir}")
         print(f"Configuration file: {self.config.general.config_file}")
         print("="*80 + "\n")
-    
     def run_iterative_shuffling(self) -> bool:
         """
         Stage 01_RUN: Run iterative shuffling of sequences
@@ -137,7 +136,8 @@ class AFClaSeqPipeline:
                 resume_from_iter=self.config.iterative_shuffling.resume_from_iter,
                 max_workers=self.config.slurm.max_workers,
                 check_interval=self.config.pipeline_control.check_interval,
-                random_seed=self.config.general.random_seed
+                random_seed=self.config.general.random_seed,
+                enrich_filter_criteria=self.config.iterative_shuffling.enrich_filter_criteria
             )
             
             # Set up logging and log parameters
@@ -218,24 +218,47 @@ class AFClaSeqPipeline:
                     input_a3m = str(iter_shuf_output)
                     self.logger.info(f"Using iterative shuffling output as input: {input_a3m}")
             
-            # Create sampler instance
-            sampler = MFoldSampler(
-                input_a3m=input_a3m,
-                default_pdb=self.config.general.default_pdb,
-                m_fold_sampling_base_dir=Path(self.config.general.base_dir) / "02_m_fold_sampling",
-                group_size=self.config.m_fold_sampling.m_fold_group_size,
-                coverage_threshold=self.config.general.coverage_threshold,
-                random_select_num_seqs=self.config.m_fold_sampling.m_fold_random_select,
-                slurm_submitter=self.slurm_submitter,
-                random_seed=self.config.general.random_seed,
-                max_workers=self.config.slurm.max_workers,
-                logger=self.logger
-            )
+            # Get number of rounds from configuration
+            num_rounds = self.config.m_fold_sampling.rounds
+            self.logger.info(f"Running M-fold sampling for {num_rounds} rounds")
             
-            # Run the sampling process
-            sampler.run()
-            self.logger.info("Completed M-fold sampling successfully")
-            return True
+            all_successful = True
+            
+            # Run M-fold sampling for each round
+            for round_num in range(1, num_rounds + 1):
+                self.logger.info(f"Starting M-fold sampling round {round_num}/{num_rounds}")
+                
+                # Create round-specific directory
+                round_base_dir = Path(self.config.general.base_dir) / "02_m_fold_sampling" / f"round_{round_num}"
+                round_base_dir.mkdir(exist_ok=True, parents=True)
+                
+                # Create sampler instance for this round
+                sampler = MFoldSampler(
+                    input_a3m=input_a3m,
+                    default_pdb=self.config.general.default_pdb,
+                    m_fold_sampling_base_dir=str(round_base_dir),
+                    group_size=self.config.m_fold_sampling.m_fold_group_size,
+                    coverage_threshold=self.config.general.coverage_threshold,
+                    random_select_num_seqs=self.config.m_fold_sampling.m_fold_random_select,
+                    slurm_submitter=self.slurm_submitter,
+                    random_seed=self.config.general.random_seed + round_num,  # Use different seed for each round
+                    max_workers=self.config.slurm.max_workers,
+                    logger=self.logger
+                )
+                
+                # Run the sampling process for this round
+                round_success = sampler.run()
+                
+                if not round_success:
+                    self.logger.error(f"Error in M-fold sampling round {round_num}")
+                    all_successful = False
+            
+            if all_successful:
+                self.logger.info(f"Completed all {num_rounds} rounds of M-fold sampling successfully")
+            else:
+                self.logger.warning(f"Completed M-fold sampling with some errors")
+                
+            return all_successful
             
         except Exception as e:
             self.logger.error(f"Error in M-fold sampling: {str(e)}", exc_info=True)
@@ -256,10 +279,9 @@ class AFClaSeqPipeline:
 
             # Setup directories
             base_dir = Path(self.config.general.base_dir)
-            results_dir = base_dir / "02_m_fold_sampling"
             output_dir = base_dir / "02_m_fold_sampling/plot"
             csv_dir = base_dir / "02_m_fold_sampling/csv"
-
+            
             # Create output directories
             output_dir.mkdir(parents=True, exist_ok=True)
             csv_dir.mkdir(parents=True, exist_ok=True)
@@ -270,14 +292,30 @@ class AFClaSeqPipeline:
 
             filter_criteria = config.get('filter_criteria', [])
             num_criteria = len(filter_criteria)
-
+            
+            # Get number of rounds from configuration
+            num_rounds = self.config.m_fold_sampling.rounds
+            self.logger.info(f"Analyzing data from {num_rounds} rounds of M-fold sampling")
+            
+            # Gather all results directories from all rounds
+            all_results_dirs = []
+            for round_num in range(1, num_rounds + 1):
+                round_dir = base_dir / "02_m_fold_sampling" / f"round_{round_num}"
+                if round_dir.exists():
+                    all_results_dirs.append(round_dir)
+                    self.logger.info(f"Including round {round_num} in analysis")
+            
+            if not all_results_dirs:
+                self.logger.error("No M-fold sampling round directories found")
+                return False
+            
             if num_criteria == 1:
                 # Only one criterion - use 1D plots
                 self.logger.info("One filter criterion detected - generating 1D plots")
                 metric_name = filter_criteria[0].get('name', 'criterion_0')
 
                 plot_m_fold_sampling_1d(
-                    results_dir=results_dir,
+                    results_dir=all_results_dirs,  # Pass list of all round directories
                     metric_name=metric_name,
                     output_dir=output_dir,
                     csv_dir=csv_dir,
@@ -320,7 +358,7 @@ class AFClaSeqPipeline:
                         metric_ticks = self.config.m_fold_sampling.m_fold_metric2_ticks
 
                     plot_m_fold_sampling_1d(
-                        results_dir=results_dir,
+                        results_dir=all_results_dirs,  # Pass list of all round directories
                         metric_name=metric_name,
                         output_dir=output_dir,
                         csv_dir=csv_dir,
@@ -345,7 +383,7 @@ class AFClaSeqPipeline:
                 # Generate 2D plot
                 self.logger.info(f"Generating 2D plot for combined criteria: {metric_names[0]} vs {metric_names[1]}")
                 plot_m_fold_sampling_2d(
-                    results_dir=results_dir,
+                    results_dir=all_results_dirs,  # Pass list of all round directories
                     metric_name1=metric_names[0],
                     metric_name2=metric_names[1],
                     output_dir=output_dir,
@@ -378,8 +416,6 @@ class AFClaSeqPipeline:
         except Exception as e:
             self.logger.error(f"Error in M-fold sampling analysis: {str(e)}", exc_info=True)
             return False
-        
-        
     def run_sequence_voting(self) -> bool:
         """
         Stage 03: Run sequence voting analysis
@@ -400,7 +436,10 @@ class AFClaSeqPipeline:
             base_dir = Path(self.config.general.base_dir)
             voting_dir = base_dir / "03_voting"
             voting_dir.mkdir(exist_ok=True)
-
+            
+            # Use the correct path for m-fold sampling directory
+            m_fold_sampling_dir = base_dir / "02_m_fold_sampling"
+            
             results_files = []
 
             # Process each filter criterion separately
@@ -418,7 +457,7 @@ class AFClaSeqPipeline:
 
                 # Create voting runner instance for this criterion
                 voting_runner = SequenceVotingRunner(
-                    sampling_dir=base_dir / "02_m_fold_sampling/02_sampling",
+                    sampling_dir=m_fold_sampling_dir,  # Updated to use the base m-fold directory
                     source_msa=self.config.general.source_a3m,
                     config_path=self.config.general.config_file,
                     output_dir=criterion_output_dir,
@@ -430,14 +469,12 @@ class AFClaSeqPipeline:
                     use_focused_bins=self.config.sequence_voting.use_focused_bins,
                     precomputed_metrics=base_dir / "02_m_fold_sampling/csv",
                     plddt_threshold=self.config.m_fold_sampling.m_fold_plddt_threshold,
-                    hierarchical_sampling=self.config.sequence_voting.vote_hierarchical_sampling,
                     filter_criterion=criterion_name
                 )
 
-        
                 # Run voting analysis for this criterion
                 results_file = voting_runner.run()
-
+                
                 if results_file:
                     results_files.append((criterion_name, results_file))
 
