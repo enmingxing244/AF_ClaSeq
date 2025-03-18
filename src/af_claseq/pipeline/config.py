@@ -69,6 +69,8 @@ class IterativeShufflingConfig:
     iter_shuf_plot_xticks: Optional[List[float]] = None
     iter_shuf_plot_bin_step: float = 0.2
     iter_shuf_combine_threshold: float = 0.5
+    enrich_filter_criteria: Optional[List[str]] = None
+
 
 @dataclass
 class MFoldSamplingConfig:
@@ -93,6 +95,7 @@ class MFoldSamplingConfig:
     m_fold_metric2_max: Optional[float] = None
     m_fold_metric1_ticks: Optional[List[float]] = None
     m_fold_metric2_ticks: Optional[List[float]] = None
+    rounds: int = 1  # New parameter for number of sampling rounds
 
 
 

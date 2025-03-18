@@ -62,7 +62,8 @@ class IterShufEnrichRunner:
         resume_from_iter: Optional[int] = None,
         max_workers: int = 64,
         check_interval: int = 60,
-        random_seed: int = 42
+        random_seed: int = 42,
+        enrich_filter_criteria: Optional[List[str]] = None
     ):
         """
         Initialize the runner with configuration parameters.
@@ -83,6 +84,7 @@ class IterShufEnrichRunner:
             max_workers: Maximum number of concurrent workers
             check_interval: Interval to check job status in seconds
             random_seed: Random seed for reproducibility
+            enrich_filter_criteria: List of specific filter criteria names to use (if None, use all)
         """
         self.iter_shuf_input_a3m = iter_shuf_input_a3m
         self.default_pdb = default_pdb
@@ -97,6 +99,7 @@ class IterShufEnrichRunner:
         self.resume_from_iter = resume_from_iter
         self.max_workers = max_workers
         self.check_interval = check_interval
+        self.enrich_filter_criteria = enrich_filter_criteria
         
         # Set random seed for reproducibility
         random.seed(random_seed)
@@ -211,7 +214,7 @@ class IterShufEnrichRunner:
             )
             
             # Get job name prefix from base directory path
-            base_path_parts = self.iter_shuf_enrich_base_dir.split(os.sep)
+            base_path_parts = str(self.iter_shuf_enrich_base_dir).split(os.sep)
             try:
                 results_idx = base_path_parts.index('results')
                 job_name_prefix = base_path_parts[results_idx + 1] if results_idx + 1 < len(base_path_parts) else "fold"
@@ -239,10 +242,24 @@ class IterShufEnrichRunner:
             )
             
             result_df_filtered = result_df[result_df['plddt'] > self.plddt_threshold]
+            print(result_df_filtered)
+            
+            # Filter the criteria list if specific criteria are specified
+            filter_criteria_to_use = self.config['filter_criteria']
+            if self.enrich_filter_criteria:
+                self.logger.info(f"Using specific filter criteria: {self.enrich_filter_criteria}")
+                filter_criteria_to_use = [
+                    criterion for criterion in self.config['filter_criteria'] 
+                    if criterion.get('name') in self.enrich_filter_criteria
+                ]
+                if not filter_criteria_to_use:
+                    self.logger.warning("No matching filter criteria found! Using all available criteria, which may cause issues!!")
+                    filter_criteria_to_use = self.config['filter_criteria']
+            
             filtered_df = apply_filters(
                 df_threshold=result_df_filtered,
                 df_operate=result_df_filtered,
-                filter_criteria=self.config['filter_criteria'],
+                filter_criteria=filter_criteria_to_use,
                 quantile=self.quantile
             )
             

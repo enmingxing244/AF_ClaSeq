@@ -38,9 +38,8 @@ COLORS = {
     'default_control': '#AFD2D0',
     'correlation_cmap': ['#72b3d4', '#dadada', '#bc6565']
 }
-
 def load_results_df(
-    results_dir: str,
+    results_dir: Union[str, List[str]],
     metric_names: List[str],
     csv_dir: Optional[str] = None,
     config_file: Optional[str] = None,
@@ -51,7 +50,7 @@ def load_results_df(
     Load results dataframe from CSV or calculate metrics if needed.
     
     Args:
-        results_dir: Directory containing structure results
+        results_dir: Directory or list of directories containing structure results
         metric_names: Names of metrics to include
         csv_dir: Directory for CSV files (optional)
         config_file: Path to configuration JSON file (optional, required if no CSV)
@@ -91,13 +90,37 @@ def load_results_df(
     with open(config_file, 'r') as f:
         config = json.load(f)
     
-    # Calculate metrics
-    results_df = calculate_metric_values(
-        parent_dir=results_dir,
-        config=config,
-        metric_names=metric_names,
-        logger=log
-    )
+    # Handle multiple results directories
+    if isinstance(results_dir, list):
+        log.info(f"Processing results from {len(results_dir)} directories")
+        all_results = []
+        
+        for dir_index, directory in enumerate(results_dir):
+            log.info(f"Processing directory {dir_index+1}/{len(results_dir)}: {directory}")
+            # Process each directory and add a round identifier
+            dir_results = calculate_metric_values(
+                parent_dir=directory,
+                config=config,
+                metric_names=metric_names,
+                logger=log
+            )
+            
+            # Add a column to identify which round this data came from
+            round_num = os.path.basename(directory).replace("round_", "")
+            dir_results['round'] = round_num
+            all_results.append(dir_results)
+            
+        # Combine all results into a single DataFrame
+        results_df = pd.concat(all_results, ignore_index=True)
+        log.info(f"Combined {len(results_df)} results from all directories")
+    else:
+        # Process a single directory (original behavior)
+        results_df = calculate_metric_values(
+            parent_dir=results_dir,
+            config=config,
+            metric_names=metric_names,
+            logger=log
+        )
     
     # Save to CSV if path provided
     if csv_dir:
@@ -110,7 +133,6 @@ def load_results_df(
         log.info(f"Filtered to {len(results_df)} structures with pLDDT > {plddt_threshold}")
     
     return results_df
-
 def calculate_metric_values(
     parent_dir: str,
     config: Dict[str, Any],
@@ -531,9 +553,8 @@ def create_joint_plot(
     log.info(f"Saved joint plot to: {plot_path}")
     
     return plot_path
-
 def plot_m_fold_sampling_1d(
-    results_dir: str,
+    results_dir: Union[str, List[str]],
     metric_name: str,
     output_dir: str,
     csv_dir: Optional[str] = None,
@@ -553,41 +574,38 @@ def plot_m_fold_sampling_1d(
     figsize: Tuple[float, float] = (10, 5),
     show_bin_lines: bool = False,
     logger: Optional[Any] = None
-) -> str:
+) -> List[str]:
     """
-    Generate 1D distribution plot for M-fold sampling metric.
-    
-    This function is a convenience wrapper around the more general plotting 
-    functions, specifically for M-fold sampling analysis.
+    Plot 1D sampling distribution for M-fold sampling metrics.
     
     Args:
-        results_dir: Path to directory containing results
+        results_dir: Directory or list of directories containing M-fold sampling results
         metric_name: Name of the metric to plot
-        output_dir: Path to directory for saving plot outputs
-        csv_dir: Path to directory for saving/loading CSV results (optional)
+        output_dir: Directory for output plots
+        csv_dir: Directory for CSV files (optional)
         config_file: Path to config JSON file (required if CSV doesn't exist)
-        initial_color: Initial color for gradient (hex or RGB)
-        end_color: End color for gradient (hex or RGB)
-        x_min: Minimum value for metric (x-axis)
-        x_max: Maximum value for metric (x-axis)
-        y_min: Minimum value for count (y-axis)
-        y_max: Maximum value for count (y-axis)
-        x_ticks: Custom tick values for metric (x-axis)
-        log_scale: Whether to use log scale for y-axis
+        initial_color: Initial color for gradient
+        end_color: End color for gradient
+        x_min: Minimum value for x-axis
+        x_max: Maximum value for x-axis
+        y_min: Minimum value for y-axis
+        y_max: Maximum value for y-axis
+        x_ticks: Custom tick values for x-axis
+        log_scale: Use log scale for y-axis
         n_plot_bins: Number of bins for histogram
-        gradient_ascending: Whether to use ascending gradient
-        linear_gradient: Whether to use linear gradient
+        gradient_ascending: Use ascending gradient (low to high values)
+        linear_gradient: Use linear instead of logarithmic gradient
         plddt_threshold: pLDDT threshold for filtering structures
-        figsize: Figure size in inches
-        show_bin_lines: Whether to show bin lines
-        logger: Optional logger to use
+        figsize: Figure size (width, height)
+        show_bin_lines: Show vertical lines at bin boundaries
+        logger: Optional logger
         
     Returns:
-        Path to saved plot
+        List of paths to saved plots
     """
     log = logger or get_logger(__name__)
     
-    # Load results DataFrame
+    # Load results DataFrame - now handling multiple directories
     results_df = load_results_df(
         results_dir=results_dir,
         metric_names=[metric_name],
@@ -598,7 +616,7 @@ def plot_m_fold_sampling_1d(
     )
     
     # Generate the plot
-    return plot_1d_distribution(
+    plot_path = plot_1d_distribution(
         results_df=results_df,
         metric_name=metric_name,
         output_dir=output_dir,
@@ -617,9 +635,11 @@ def plot_m_fold_sampling_1d(
         x_ticks=x_ticks,
         logger=log
     )
+    
+    return [plot_path]
 
 def plot_m_fold_sampling_2d(
-    results_dir: str,
+    results_dir: Union[str, List[str]],
     metric_name1: str,
     metric_name2: str,
     output_dir: str,
@@ -642,7 +662,7 @@ def plot_m_fold_sampling_2d(
     functions, specifically for M-fold sampling analysis.
 
     Args:
-        results_dir: Path to directory containing M-fold sampling results
+        results_dir: Directory or list of directories containing M-fold sampling results
         metric_name1: Name of the first metric (x-axis)
         metric_name2: Name of the second metric (y-axis)
         output_dir: Path to directory for saving plot outputs
@@ -663,7 +683,7 @@ def plot_m_fold_sampling_2d(
     """
     log = logger or get_logger(__name__)
     
-    # Load results DataFrame
+    # Load results DataFrame - now handling multiple directories
     results_df = load_results_df(
         results_dir=results_dir,
         metric_names=[metric_name1, metric_name2],

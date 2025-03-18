@@ -24,7 +24,7 @@ class PureSequenceAF2Prediction:
     """
     
     def __init__(self, 
-                 config: Any,  # Using Any to accept config from pipeline
+                 config: Dict[str, Any],  # Using Dict to accept config from pipeline
                  logger: Optional[logging.Logger] = None):
         """
         Initialize the sequence prediction manager.
@@ -39,8 +39,8 @@ class PureSequenceAF2Prediction:
         self.job_configs = {}
         
         # Convert bin_numbers to list if it's a single integer
-        if isinstance(self.config.bin_numbers, int):
-            self.config.bin_numbers = [self.config.bin_numbers]
+        if isinstance(self.config['bin_numbers'], int):
+            self.config['bin_numbers'] = [self.config['bin_numbers']]
         
     def _setup_logger(self) -> logging.Logger:
         """Set up a default logger if none was provided."""
@@ -59,31 +59,33 @@ class PureSequenceAF2Prediction:
     def _init_slurm_submitter(self) -> SlurmJobSubmitter:
         """Initialize the SLURM job submitter with configuration options."""
         # Extract job name prefix from base directory if not specified
-        job_prefix = getattr(self.config, 'job_name_prefix', None)
+        job_prefix = self.config.get('job_name_prefix')
         if not job_prefix:
-            base_path_parts = self.config.pure_seq_pred_base_dir.split(os.sep)
+            base_dir = Path(self.config['pure_seq_pred_base_dir'])
             try:
-                results_idx = base_path_parts.index('results')
+                # Convert Path to parts safely
+                base_path_parts = base_dir.parts
+                results_idx = list(base_path_parts).index('results')
                 job_prefix = base_path_parts[results_idx + 1] if results_idx + 1 < len(base_path_parts) else "fold"
-            except ValueError:
+            except (ValueError, AttributeError, IndexError):
                 job_prefix = "fold"
                 self.logger.warning("Could not extract job prefix from pure_seq_pred_base_dir path, using default: 'fold'")
         
         return SlurmJobSubmitter(
-            conda_env_path=self.config.conda_env_path,
-            slurm_account=self.config.slurm_account,
-            slurm_output=self.config.slurm_output,
-            slurm_error=self.config.slurm_error,
-            slurm_nodes=self.config.slurm_nodes,
-            slurm_gpus_per_task=self.config.slurm_gpus_per_task,
-            slurm_tasks=self.config.slurm_tasks,
-            slurm_cpus_per_task=self.config.slurm_cpus_per_task,
-            slurm_time=self.config.slurm_time,
-            slurm_partition=self.config.slurm_partition,
-            check_interval=self.config.check_interval,
+            conda_env_path=self.config['conda_env_path'],
+            slurm_account=self.config['slurm_account'],
+            slurm_output=self.config['slurm_output'],
+            slurm_error=self.config['slurm_error'],
+            slurm_nodes=self.config['slurm_nodes'],
+            slurm_gpus_per_task=self.config['slurm_gpus_per_task'],
+            slurm_tasks=self.config['slurm_tasks'],
+            slurm_cpus_per_task=self.config['slurm_cpus_per_task'],
+            slurm_time=self.config['slurm_time'],
+            slurm_partition=self.config['slurm_partition'],
+            check_interval=self.config['check_interval'],
             job_name_prefix=job_prefix,
-            num_models=self.config.prediction_num_model,
-            random_seed=self.config.prediction_num_seed
+            num_models=self.config['prediction_num_model'],
+            random_seed=self.config['prediction_num_seed']
         )
         
     def collect_job_configs(self) -> Tuple[List[str], List[str], List[str]]:
@@ -97,11 +99,13 @@ class PureSequenceAF2Prediction:
         all_job_ids = []
         job_types = []
         
-        if not os.path.exists(self.config.pure_seq_pred_base_dir):
-            self.logger.error(f"Base directory not found: {self.config.pure_seq_pred_base_dir}")
+        base_dir = self.config['pure_seq_pred_base_dir']
+        if not os.path.exists(base_dir):
+            self.logger.error(f"Base directory not found: {base_dir}")
             return all_jobs, all_job_ids, job_types
             
-        if not self.config.bin_numbers:
+        bin_numbers = self.config['bin_numbers']
+        if not bin_numbers:
             self.logger.error("No bin numbers provided")
             return all_jobs, all_job_ids, job_types
         
@@ -113,16 +117,16 @@ class PureSequenceAF2Prediction:
         
         # Process each directory type
         for dir_name, (job_prefix, job_type) in dir_types.items():
-            dir_path = os.path.join(self.config.pure_seq_pred_base_dir, dir_name)
+            dir_path = os.path.join(base_dir, dir_name)
             if not os.path.exists(dir_path):
                 self.logger.warning(f"{dir_name} directory not found: {dir_path}")
                 continue
                 
             self.logger.info(f"Collecting jobs from {dir_name} directory: {dir_path}")
             
-            if self.config.combine_bins:
+            if self.config['combine_bins']:
                 # Create combined bin name (e.g. "bin_5_6_7")
-                bin_name = f"bin_{'_'.join(str(b) for b in sorted(self.config.bin_numbers))}"
+                bin_name = f"bin_{'_'.join(str(b) for b in sorted(bin_numbers))}"
                 bin_dir = os.path.join(dir_path, bin_name)
                 
                 if os.path.exists(bin_dir):
@@ -135,7 +139,7 @@ class PureSequenceAF2Prediction:
                     self.logger.warning(f"Combined bin directory not found: {bin_dir}")
             else:
                 # Process each bin directory separately
-                for bin_num in self.config.bin_numbers:
+                for bin_num in bin_numbers:
                     bin_dir = os.path.join(dir_path, f"bin_{bin_num}")
                     if os.path.exists(bin_dir):
                         job_id = f"{job_prefix}_bin{bin_num}"
@@ -173,10 +177,11 @@ class PureSequenceAF2Prediction:
         if all_jobs:
             self.logger.info(f"Processing {len(all_jobs)} jobs concurrently...")
             try:
+                max_workers = self.config.get('max_workers', 4)  # Default to 4 if not specified
                 self.submitter.process_folders_concurrently(
                     folders=all_jobs,
                     job_ids=all_job_ids,
-                    max_workers=self.config.max_workers,
+                    max_workers=max_workers,
                     job_types=job_types
                 )
                 self.logger.info("All prediction jobs submitted successfully")

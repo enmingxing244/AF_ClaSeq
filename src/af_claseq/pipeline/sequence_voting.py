@@ -40,14 +40,14 @@ class VotingAnalyzer:
         """
         self.max_workers = max_workers
         self.structure_analyzer = StructureAnalyzer()
+        self.logger = get_logger(__name__)
 
     def process_sampling_dirs(self, 
                               base_dir: str, 
                               filter_criteria: List[Dict[str, Any]], 
                               basics: Dict[str, Any],
                               precomputed_metrics_file: Optional[str] = None,
-                              plddt_threshold: float = 0,
-                              hierarchical: bool = False) -> Dict[str, Dict[str, float]]:
+                              plddt_threshold: float = 0) -> Dict[str, Dict[str, float]]:
         """Process sampling directories to calculate metrics in parallel.
         
         Args:
@@ -73,10 +73,10 @@ class VotingAnalyzer:
                 return results
 
         # If no precomputed metrics or they couldn't be loaded, collect PDB files
-        pdb_files = self._collect_pdb_files(base_dir, hierarchical)
+        pdb_files = self._collect_pdb_files(base_dir)
 
         if not pdb_files:
-            logging.warning("No PDB files found in sampling directories")
+            self.logger.warning("No PDB files found in sampling directories")
             return results
 
         # Process PDB files in parallel
@@ -94,7 +94,7 @@ class VotingAnalyzer:
                     pdb_path, metrics = result
                     results[pdb_path] = metrics
                     
-        logging.info(f"Calculated metrics for {len(results)} structures")
+        self.logger.info(f"Calculated metrics for {len(results)} structures")
         return results
 
     def _process_pdb_file(self, pdb_path, filter_criteria, basics, plddt_threshold):
@@ -125,32 +125,32 @@ class VotingAnalyzer:
         
         # Handle directory with multiple CSV files
         if os.path.isdir(precomputed_metrics_file):
-            logging.info(f"Looking for precomputed metrics in directory: {precomputed_metrics_file}")
+            self.logger.info(f"Looking for precomputed metrics in directory: {precomputed_metrics_file}")
             csv_files = [f for f in os.listdir(precomputed_metrics_file) if f.endswith('.csv')]
             
             if not csv_files:
-                logging.warning(f"No CSV files found in {precomputed_metrics_file}")
+                self.logger.warning(f"No CSV files found in {precomputed_metrics_file}")
                 return results
                 
-            logging.info(f"Found {len(csv_files)} CSV files")
+            self.logger.info(f"Found {len(csv_files)} CSV files")
             
             for csv_file in csv_files:
                 try:
                     csv_path = os.path.join(precomputed_metrics_file, csv_file)
                     self._process_metrics_csv(csv_path, metric_names, plddt_threshold, results)
                 except Exception as e:
-                    logging.error(f"Error processing CSV file {csv_file}: {str(e)}")
+                    self.logger.error(f"Error processing CSV file {csv_file}: {str(e)}")
         
         # Handle single CSV file
         elif os.path.exists(precomputed_metrics_file) and precomputed_metrics_file.endswith('.csv'):
-            logging.info(f"Loading precomputed metrics from {precomputed_metrics_file}")
+            self.logger.info(f"Loading precomputed metrics from {precomputed_metrics_file}")
             try:
                 self._process_metrics_csv(precomputed_metrics_file, metric_names, plddt_threshold, results)
             except Exception as e:
-                logging.error(f"Error loading precomputed metrics: {str(e)}")
+                self.logger.error(f"Error loading precomputed metrics: {str(e)}")
         
         if results:
-            logging.info(f"Loaded metrics for {len(results)} structures from precomputed files")
+            self.logger.info(f"Loaded metrics for {len(results)} structures from precomputed files")
             
         return results
     
@@ -180,16 +180,19 @@ class VotingAnalyzer:
                 if metric_name in row:
                     results[pdb_path][metric_name] = row[metric_name]
 
-    def _collect_pdb_files(self, base_dir: str, hierarchical: bool) -> List[str]:
-        """Collect PDB files from sampling directories."""
+    def _collect_pdb_files(self, base_dir: str) -> List[str]:
+        """Collect PDB files from single or multi-round sampling directories."""
         pdb_files = []
         
-        if hierarchical:
-            # Handle hierarchical directory structure
-            sampling_rounds = [d for d in os.listdir(base_dir) if d.startswith('sampling_round_')]
-            
-            for round_dir in sampling_rounds:
-                sampling_path = os.path.join(base_dir, round_dir, '02_sampling')
+        # Check if we have a rounds-based directory structure
+        round_dirs = [d for d in os.listdir(base_dir) if d.startswith('round_')]
+        
+        if round_dirs:
+            # Multi-round structure
+            for round_dir in round_dirs:
+                round_path = os.path.join(base_dir, round_dir)
+                sampling_path = os.path.join(round_path, '02_sampling')
+                
                 if not os.path.exists(sampling_path):
                     continue
                     
@@ -198,14 +201,14 @@ class VotingAnalyzer:
                 for sampling_dir in sampling_dirs:
                     dir_path = os.path.join(sampling_path, sampling_dir)
                     for group_dir in os.listdir(dir_path):
-                        if group_dir.startswith('group_') and group_dir.endswith('.a3m'):
+                        if group_dir.endswith('.a3m'):
                             a3m_path = os.path.join(dir_path, group_dir)
                             base_name = os.path.splitext(a3m_path)[0]
                             pdb_name = f"{base_name}_unrelaxed_rank_001_alphafold2_ptm_model_1_seed_042.pdb"
                             if os.path.exists(pdb_name):
                                 pdb_files.append(pdb_name)
         else:
-            # Handle standard directory structure
+            # Standard directory structure (single round)
             sampling_dirs = [d for d in os.listdir(base_dir) if d.startswith('sampling_')]
             
             for sampling_dir in sampling_dirs:
@@ -216,9 +219,8 @@ class VotingAnalyzer:
                         pdb_name = f"{base_name}_unrelaxed_rank_001_alphafold2_ptm_model_1_seed_042.pdb"
                         if os.path.exists(pdb_name):
                             pdb_files.append(pdb_name)
-                            
+                        
         return pdb_files
-    
     
     def _extract_indices(self, indices_spec, default_indices):
         """Extract indices from specification or use defaults."""
@@ -423,11 +425,11 @@ class VotingAnalyzer:
         if not a3m_files:
             raise ValueError("No valid A3M/PDB file pairs found")
 
-        logging.info(f"Processing {len(a3m_files)} A3M files")
+        self.logger.info(f"Processing {len(a3m_files)} A3M files")
 
         # Process files in batches for better parallelization
         batch_size = max(1, len(a3m_files) // (self.max_workers * 4))
-        logging.info(f"batch_size: {batch_size}")
+        self.logger.info(f"batch_size: {batch_size}")
         
         batches = [a3m_files[i:i + batch_size] for i in range(0, len(a3m_files), batch_size)]
         
@@ -445,21 +447,27 @@ class VotingAnalyzer:
         sequence_votes = self._process_votes(all_votes, is_2d, is_3d, vote_threshold)
 
         if not sequence_votes:
-            logging.warning("No sequence votes met the threshold criteria")
+            self.logger.warning("No sequence votes met the threshold criteria")
 
         return sequence_votes, dict(all_votes)
     
     def _collect_a3m_files(self, sampling_base_dir: str, hierarchical: bool) -> List[Tuple[str, str]]:
-        """Collect A3M files and their corresponding PDB files."""
+        """Collect A3M files and their corresponding PDB files from single or multi-round sampling."""
         a3m_files = []
         
-        if hierarchical:
-            # Handle hierarchical directory structure
-            sampling_rounds = [d for d in os.listdir(sampling_base_dir) if d.startswith('sampling_round_')]
-            for round_dir in sampling_rounds:
-                sampling_path = os.path.join(sampling_base_dir, round_dir, '02_sampling')
+        # Check if we have a rounds-based directory structure
+        round_dirs = [d for d in os.listdir(sampling_base_dir) if d.startswith('round_')]
+        
+        if round_dirs:
+            # Multi-round structure
+            self.logger.info(f"Found {len(round_dirs)} sampling rounds")
+            for round_dir in round_dirs:
+                round_path = os.path.join(sampling_base_dir, round_dir)
+                sampling_path = os.path.join(round_path, '02_sampling')
+                
                 if os.path.exists(sampling_path):
                     sampling_dirs = [d for d in os.listdir(sampling_path) if d.startswith('sampling_')]
+                    
                     for sampling_dir in sampling_dirs:
                         dir_path = os.path.join(sampling_path, sampling_dir)
                         for group_file in os.listdir(dir_path):
@@ -471,19 +479,21 @@ class VotingAnalyzer:
                                 if os.path.exists(pdb_file):
                                     a3m_files.append((a3m_path, pdb_file))
         else:
-            # Handle flat sampling directory structure
-            for sampling_dir in os.listdir(sampling_base_dir):
-                if sampling_dir.startswith('sampling_'):
-                    dir_path = os.path.join(sampling_base_dir, sampling_dir)
-                    for a3m_file in os.listdir(dir_path):
-                        if a3m_file.endswith('.a3m'):
-                            a3m_path = os.path.join(dir_path, a3m_file)
-                            base_name = os.path.splitext(a3m_file)[0]
-                            pdb_name = f"{base_name}_unrelaxed_rank_001_alphafold2_ptm_model_1_seed_042.pdb"
-                            pdb_file = os.path.join(dir_path, pdb_name)
-                            if os.path.exists(pdb_file):
-                                a3m_files.append((a3m_path, pdb_file))
-                                
+            # Single round structure (flat directory)
+            sampling_dirs = [d for d in os.listdir(sampling_base_dir) if d.startswith('sampling_')]
+            
+            for sampling_dir in sampling_dirs:
+                dir_path = os.path.join(sampling_base_dir, sampling_dir)
+                for a3m_file in os.listdir(dir_path):
+                    if a3m_file.endswith('.a3m'):
+                        a3m_path = os.path.join(dir_path, a3m_file)
+                        base_name = os.path.splitext(a3m_file)[0]
+                        pdb_name = f"{base_name}_unrelaxed_rank_001_alphafold2_ptm_model_1_seed_042.pdb"
+                        pdb_file = os.path.join(dir_path, pdb_name)
+                        if os.path.exists(pdb_file):
+                            a3m_files.append((a3m_path, pdb_file))
+                            
+        self.logger.info(f"Collected {len(a3m_files)} A3M/PDB file pairs")
         return a3m_files
     
     def _process_votes(self, all_votes, is_2d, is_3d, vote_threshold):
@@ -591,7 +601,7 @@ class SequenceVotingPlotter:
         self.y_max = y_max
         self.x_ticks = x_ticks
         self.num_bins = num_bins
-        self.logger = logging.getLogger(__name__)
+        self.logger = get_logger(__name__)
         
         # Configure matplotlib for publication-quality plots
         plt.rcParams.update({
@@ -725,7 +735,6 @@ class SequenceVotingRunner:
         use_focused_bins: bool = False,
         precomputed_metrics: Optional[str] = None,
         plddt_threshold: float = 0,
-        hierarchical_sampling: bool = False,
         filter_criterion: Optional[str] = None
     ):
         """
@@ -744,7 +753,6 @@ class SequenceVotingRunner:
             use_focused_bins: Whether to use focused 1D binning with outlier bins
             precomputed_metrics: Path to precomputed metrics CSV file or directory
             plddt_threshold: pLDDT threshold for filtering structures
-            hierarchical_sampling: Whether sampling directories have hierarchical structure
             filter_criterion: Specific filter criterion name to process
         """
         self.sampling_dir = sampling_dir
@@ -759,7 +767,6 @@ class SequenceVotingRunner:
         self.use_focused_bins = use_focused_bins
         self.precomputed_metrics = precomputed_metrics
         self.plddt_threshold = plddt_threshold
-        self.hierarchical_sampling = hierarchical_sampling
         self.filter_criterion = filter_criterion
         
         # Initialize output directories
@@ -767,14 +774,13 @@ class SequenceVotingRunner:
         os.makedirs(self.voting_dir, exist_ok=True)
         
         # Set up logger
-        self.logger = logging.getLogger(__name__)
+        self.logger = get_logger(__name__)
         
         # Load configuration
         self._load_config()
         
         # Initialize voting analyzer
         self.analyzer = VotingAnalyzer(max_workers=self.max_workers)
-    
     def _load_config(self) -> None:
         """Load configuration from JSON file."""
         try:
@@ -853,8 +859,7 @@ class SequenceVotingRunner:
                 self.config['filter_criteria'], 
                 self.config['basics'],
                 precomputed_metrics_file=self.precomputed_metrics,
-                plddt_threshold=self.plddt_threshold,
-                hierarchical=self.hierarchical_sampling
+                plddt_threshold=self.plddt_threshold
             )
             
             if not results:
@@ -890,8 +895,7 @@ class SequenceVotingRunner:
                 pdb_bins,
                 is_2d=self.is_2d,
                 is_3d=self.is_3d,
-                vote_threshold=self.vote_threshold,
-                hierarchical=self.hierarchical_sampling
+                vote_threshold=self.vote_threshold
             )
             
             if not sequence_votes:
