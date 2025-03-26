@@ -5,7 +5,7 @@ test/
 af_cluster_compar/
 pyrightconfig.json
 af_cluster_compar/
-./.vscode/
+.vscode/
 v0-0-2_backup_code/
 af3_runs/
 pipeline_test/
