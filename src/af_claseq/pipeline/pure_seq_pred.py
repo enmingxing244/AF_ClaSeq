@@ -84,8 +84,8 @@ class PureSequenceAF2Prediction:
             slurm_partition=self.config['slurm_partition'],
             check_interval=self.config['check_interval'],
             job_name_prefix=job_prefix,
-            num_models=self.config['prediction_num_model'],
-            random_seed=self.config['prediction_num_seed']
+            prediction_num_model=self.config['prediction_num_model'],
+            prediction_num_seed=self.config['prediction_num_seed']
         )
         
     def collect_job_configs(self) -> Tuple[List[str], List[str], List[str]]:

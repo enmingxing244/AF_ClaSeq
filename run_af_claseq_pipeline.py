@@ -137,7 +137,8 @@ class AFClaSeqPipeline:
                 max_workers=self.config.slurm.max_workers,
                 check_interval=self.config.pipeline_control.check_interval,
                 random_seed=self.config.general.random_seed,
-                enrich_filter_criteria=self.config.iterative_shuffling.enrich_filter_criteria
+                enrich_filter_criteria=self.config.iterative_shuffling.enrich_filter_criteria,
+                iter_shuf_random_select=self.config.iterative_shuffling.iter_shuf_random_select
             )
             
             # Set up logging and log parameters

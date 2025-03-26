@@ -76,7 +76,7 @@ def load_results_df(
             
             # Filter by pLDDT threshold if specified
             if plddt_threshold > 0:
-                results_df = results_df[results_df['plddt'] > plddt_threshold]
+                results_df = results_df[results_df['local_plddt'] > plddt_threshold]
                 log.info(f"Filtered to {len(results_df)} structures with pLDDT > {plddt_threshold}")
                 
             return results_df
@@ -129,7 +129,7 @@ def load_results_df(
     
     # Filter by pLDDT threshold if specified
     if plddt_threshold > 0:
-        results_df = results_df[results_df['plddt'] > plddt_threshold]
+        results_df = results_df[results_df['local_plddt'] > plddt_threshold]
         log.info(f"Filtered to {len(results_df)} structures with pLDDT > {plddt_threshold}")
     
     return results_df
@@ -397,6 +397,7 @@ def create_2d_scatter_plot(
     y_max: Optional[float] = None, 
     x_ticks: Optional[List[float]] = None, 
     y_ticks: Optional[List[float]] = None,
+    title: Optional[str] = None,
     logger: Optional[Any] = None
 ) -> str:
     """
@@ -415,6 +416,7 @@ def create_2d_scatter_plot(
         y_max: Maximum y-axis value
         x_ticks: Custom x-axis tick values
         y_ticks: Custom y-axis tick values
+        title: Optional title for the plot
         logger: Optional logger to use
         
     Returns:
@@ -448,6 +450,9 @@ def create_2d_scatter_plot(
     plt.colorbar(scatter, label=f'{color_metric.replace("plddt", "pLDDT")} Score')
     plt.xlabel(metric_name1)
     plt.ylabel(metric_name2)
+    
+    if title:
+        plt.title(title)
 
     set_axis_limits_and_ticks(
         plt, 

@@ -70,6 +70,7 @@ class IterativeShufflingConfig:
     iter_shuf_plot_bin_step: float = 0.2
     iter_shuf_combine_threshold: float = 0.5
     enrich_filter_criteria: Optional[List[str]] = None
+    iter_shuf_random_select: Optional[int] = None
 
 
 @dataclass
