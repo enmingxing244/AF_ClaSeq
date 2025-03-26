@@ -63,7 +63,8 @@ class IterShufEnrichRunner:
         max_workers: int = 64,
         check_interval: int = 60,
         random_seed: int = 42,
-        enrich_filter_criteria: Optional[List[str]] = None
+        enrich_filter_criteria: Optional[List[str]] = None,
+        iter_shuf_random_select: Optional[int] = None
     ):
         """
         Initialize the runner with configuration parameters.
@@ -85,6 +86,7 @@ class IterShufEnrichRunner:
             check_interval: Interval to check job status in seconds
             random_seed: Random seed for reproducibility
             enrich_filter_criteria: List of specific filter criteria names to use (if None, use all)
+            iter_shuf_random_select: Number of sequences to randomly select after coverage filtering
         """
         self.iter_shuf_input_a3m = iter_shuf_input_a3m
         self.default_pdb = default_pdb
@@ -100,6 +102,7 @@ class IterShufEnrichRunner:
         self.max_workers = max_workers
         self.check_interval = check_interval
         self.enrich_filter_criteria = enrich_filter_criteria
+        self.iter_shuf_random_select = iter_shuf_random_select
         
         # Set random seed for reproducibility
         random.seed(random_seed)
@@ -148,6 +151,15 @@ class IterShufEnrichRunner:
                 
                 if not filtered_sequences:
                     raise ValueError("No sequences remained after filtering")
+                
+                # Apply random selection if specified
+                if self.iter_shuf_random_select is not None and self.iter_shuf_random_select < len(filtered_sequences):
+                    headers = list(filtered_sequences.keys())
+                    random.shuffle(headers)
+                    selected_headers = headers[:self.iter_shuf_random_select]
+                    filtered_sequences = {h: filtered_sequences[h] for h in selected_headers}
+                    self.logger.info(f"Randomly selected {len(filtered_sequences)} sequences from filtered set "
+                                    f"based on iter_shuf_random_select={self.iter_shuf_random_select}")
                 
                 filtered_a3m_path = os.path.join(self.iter_shuf_enrich_base_dir, "filtered_sequences.a3m")
                 write_a3m(filtered_sequences, filtered_a3m_path, reference_pdb=self.default_pdb)

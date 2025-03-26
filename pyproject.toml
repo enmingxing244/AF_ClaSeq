@@ -1,0 +1,85 @@
+[tool.poetry]
+name = "af_claseq"
+version = "1.0.0"
+description = "Leveraging Sequence Purification for Accurate Prediction of Multiple Conformational States with AlphaFold2"
+authors = ["Enming Xing <xing244@osu.edu>"]
+license = "MIT"
+readme = "README.md"
+repository = "https://github.com/enmingxing244/AF_ClaSeq"
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Operating System :: OS Independent",
+    "Topic :: Scientific/Engineering :: Bio-Informatics",
+    "Intended Audience :: Science/Research"
+]
+packages = [{include = "af_claseq", from = "src"}]
+
+[tool.poetry.dependencies]
+python = ">=3.10,<4.0"
+numpy = "^1.10.1"
+biopython = "^1.79"
+tqdm = "^4.66.2"
+pyyaml = "^6.0.1"
+pandas = "^1.5.3"
+matplotlib = "^3.8.3"
+seaborn = "^0.13.2"
+scipy = "^1.10.1"
+scikit-learn = "^1.4.1"
+plotly = "^5.20.0"
+networkx = "^3.4.2"
+loguru = "^0.7.3"
+h5py = "^3.10.0"
+biotite = "^1.1.0"
+mdanalysis = "^2.8.0"
+mdtraj = "^1.10.3"
+nglview = "^3.1.4"
+py3dmol = "^2.0.4"
+# Optional dependencies
+colabfold = {version = "^1.5.5", optional = true}
+alphafold-colabfold = {version = "^2.3.6", optional = true}
+jax = {version = "^0.4.13", optional = true}
+jaxlib = {version = "^0.4.13", optional = true}
+dm-haiku = {version = "^0.0.10", optional = true}
+ml-collections = {version = "^0.1.1", optional = true}
+
+[tool.poetry.group.dev.dependencies]
+pytest = "^8.3.4"
+black = "^23.7.0"
+isort = "^5.12.0"
+flake8 = "^6.1.0"
+mypy = "^1.5.0"
+
+[tool.poetry.extras]
+full = [
+    "colabfold", 
+    "alphafold-colabfold", 
+    "jax", 
+    "jaxlib", 
+    "dm-haiku", 
+    "ml-collections"
+]
+visualization = ["nglview", "py3dmol", "plotly"]
+analysis = ["mdanalysis", "mdtraj", "biotite"]
+
+[build-system]
+requires = ["poetry-core>=1.0.0"]
+build-backend = "poetry.core.masonry.api"
+
+[tool.black]
+line-length = 88
+target-version = ["py310"]
+
+[tool.isort]
+profile = "black"
+line_length = 88
+
+[tool.mypy]
+python_version = "3.10"
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = false
+disallow_incomplete_defs = false
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = "test_*.py"

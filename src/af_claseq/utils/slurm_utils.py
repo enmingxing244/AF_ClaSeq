@@ -76,7 +76,12 @@ class SlurmJobSubmitter:
                 'prediction': {
                     'num_models': kwargs.get('prediction_num_model', 1),
                     'num_seeds': kwargs.get('prediction_num_seed', 1)
+                },
+                'control_prediction': {
+                    'num_models': kwargs.get('prediction_num_model', 1),
+                    'num_seeds': kwargs.get('prediction_num_seed', 1)
                 }
+                
             }
         else:
             self.mode = 'batch_pred'

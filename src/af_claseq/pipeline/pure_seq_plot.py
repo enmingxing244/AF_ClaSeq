@@ -210,7 +210,7 @@ class PureSequencePlotter:
                             continue
                             
                         # Use central utility function for 2D scatter plot
-                        output_plot_path = os.path.join(bin_output_dir, f'{name}_metric_correlation.png')
+                        output_dir = os.path.join(bin_output_dir, name)
                         title = f"{name.replace('_', ' ').title()} Metric Correlation - {bin_pattern}"
                         
                         # Create scatter plot
@@ -218,7 +218,7 @@ class PureSequencePlotter:
                             results_df=data,
                             metric_name1=metric1_name,
                             metric_name2=metric2_name,
-                            output_dir=bin_output_dir,
+                            output_dir=output_dir,
                             color_metric='plddt',
                             x_min=self.config.metric1_min,
                             x_max=self.config.metric1_max,
@@ -226,6 +226,7 @@ class PureSequencePlotter:
                             y_max=self.config.metric2_max,
                             x_ticks=self.config.metric1_ticks,
                             y_ticks=self.config.metric2_ticks,
+                            title=title,
                             logger=self.logger
                         )
                         
