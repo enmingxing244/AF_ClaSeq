@@ -98,6 +98,7 @@ class AFClaSeqPipeline:
             "02_m_fold_sampling",
             "03_voting",
             "04_recompile",
+            "05_plots"
         ]
         
         for stage in stages:

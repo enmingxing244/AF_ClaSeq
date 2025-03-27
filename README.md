@@ -1,30 +1,33 @@
-# AF-ClaSeq: Protein Structure Prediction Pipeline
+# AF-ClaSeq: Leveraging Sequence Purification for Accurate Prediction of Multiple Conformational States with AlphaFold2
 
-AF-ClaSeq is a comprehensive pipeline for protein structure prediction and analysis using AlphaFold2 and sequence-based sampling approaches. The pipeline is designed to leverage sequence purification for accurate prediction of multiple conformational states.
+AF-ClaSeq is a comprehensive pipeline for protein structure prediction and analysis that leverages sequence purification to accurately predict multiple conformational states using AlphaFold2.
 
 ## Overview
 
-AF-ClaSeq uses evolutionary sequence information to generate diverse sequence profiles, which are then used to predict protein structures with AlphaFold2. The pipeline consists of multiple stages, including iterative shuffling, M-fold sampling, sequence voting, recompilation, and prediction analysis.
+AlphaFold2 has revolutionized protein structure prediction by utilizing co-evolutionary information embedded in multiple sequence alignments (MSAs). AF-ClaSeq extends this capability by systematically isolating co-evolutionary signals through sequence purification and iterative enrichment. The pipeline extracts sequence subsets that preferentially encode distinct structural states, enabling high-confidence predictions of alternative conformations.
+
+Rather than relying solely on MSA depth, AF-ClaSeq focuses on sequence purity to successfully sample alternative states. Our research has revealed that sequences encoding specific structural states are distributed across phylogenetic clades and superfamilies, not limited to specific lineages.
 
 ## Features
 
-- **Iterative Shuffling**: Enriches sequences through iterative selection based on structure prediction metrics
-- **M-fold Sampling**: Performs multiple rounds of sequence sampling to generate diverse predictions
-- **Sequence Voting**: Analyzes the distribution of sequence-based predictions to identify patterns
-- **Recompilation & Prediction**: Recompiles selected sequences and predicts structures
-- **Analysis & Visualization**: Provides comprehensive visualization tools for analyzing results
+- **Iterative Shuffling and Enrichment**: Systematically enriches sequences through multiple iterations based on structural metrics
+- **M-fold Sampling**: Creates and analyzes multiple sequence groups to explore conformational landscapes
+- **Sequence Voting**: Identifies sequences that consistently contribute to specific conformational states
+- **Recompilation & Prediction**: Generates purified MSAs for targeted structure prediction
+- **Comprehensive Visualization**: Provides detailed analysis tools across all pipeline stages
 
 ## Installation
 
 ### Prerequisites
 
-- Python 3.10 or newer
-- SLURM compute cluster (recommended for large-scale predictions)
-- AlphaFold2 installation (or ColabFold)
+- Python 3.10+
+- SLURM-enabled compute cluster (for large-scale predictions)
+- ColabFold installation (see [ColabFold repository](https://github.com/sokrypton/ColabFold))
+- TM-align program (available from [TM-align website](https://zhanggroup.org/TM-align/))
 
-### Using Poetry
+### Installation Options
 
-The recommended way to install AF-ClaSeq is using Poetry:
+#### Using Poetry (Recommended)
 
 ```bash
 # Clone the repository
@@ -33,306 +36,482 @@ cd AF_ClaSeq
 
 # Install with Poetry
 poetry install
-
-# For full installation with all dependencies
-poetry install --extras "full"
-
-# For visualization tools only
-poetry install --extras "visualization"
-
-# For analysis tools only
-poetry install --extras "analysis"
 ```
 
-### Using pip
-
-Alternatively, you can install using pip:
+#### Using pip
 
 ```bash
-pip install git+https://github.com/enmingxing244/AF_ClaSeq.git
+# Clone the repository
+git clone https://github.com/enmingxing244/AF_ClaSeq.git
+cd AF_ClaSeq
+
+# Install with pip
+pip install -e .
 ```
 
-## Demo Usage
+## Pipeline Workflow
 
-AF-ClaSeq includes an example dataset for the KaiB protein in the `examples/KaiB` directory. Here's how to run a simple demo:
+AF-ClaSeq consists of five main stages:
 
-### Example with KaiB Protein
+1. **Iterative Shuffling** (`01_ITER_SHUF_RUN` & `01_ITER_SHUF_ANALYSIS`): Enriches sequences based on structural metrics through multiple iterations
+2. **M-fold Sampling** (`02_M_FOLD_SAMPLING_RUN` & `02_M_FOLD_SAMPLING_PLOT`): Performs multiple rounds of sequence sampling
+3. **Sequence Voting** (`03_VOTING_RUN`): Analyzes which sequences contribute to specific conformational states
+4. **Recompilation & Prediction** (`04_RECOMPILE_PREDICT_RUN`): Recompiles selected sequences and predicts structures
+5. **Analysis & Visualization** (`05_PURE_SEQ_PLOT_RUN`): Creates comprehensive visualizations
 
-1. First, generate the default ColabFold predicted results using the provided MSA input:
+## Usage
+
+### Basic Usage
+
+The pipeline is executed using the `run_af_claseq_pipeline.py` script with a YAML configuration file:
+
 ```bash
-pip install git+https://github.com/enmingxing244/AF_ClaSeq.git
+python run_af_claseq_pipeline.py config_run.yaml
 ```
 
+### Configuration Files
 
+AF-ClaSeq requires two configuration files:
 
+1. **YAML Configuration File** (`config_run.yaml`): Controls pipeline execution parameters
+2. **JSON Filter Configuration** (`config.json`): Defines structural metrics and filters
 
-## Configuration
+#### YAML Configuration File Structure
 
-AF-ClaSeq requires a YAML configuration file to specify pipeline parameters. Below is an example configuration:
+The YAML configuration file contains several sections:
 
 ```yaml
+# Main configuration sections
+general:            # Basic parameters and file paths
+slurm:              # SLURM job submission parameters
+pipeline_control:   # Stages to execute and control parameters
+iterative_shuffling:# Parameters for iterative shuffling stage
+m_fold_sampling:    # Parameters for M-fold sampling stage
+sequence_voting:    # Parameters for sequence voting stage
+recompile_predict:  # Parameters for recompilation and prediction stage
+pure_sequence_plotting: # Parameters for analysis and visualization
+```
+
+**Key Sections Explained:**
+
+**General Section**
+```yaml
 general:
-  protein_name: "my_protein"
-  base_dir: "/path/to/output"
-  config_file: "/path/to/config.json"
-  default_pdb: "/path/to/reference.pdb"
-  source_a3m: "/path/to/starting.a3m"
-  num_models: 5
-  num_bins: 10
+  # Input MSA file for the pipeline
+  source_a3m: "path/to/input.a3m"
+  # Reference PDB structure for analysis
+  default_pdb: "path/to/reference.pdb"
+  # Base directory for all pipeline outputs
+  base_dir: "run_directory"
+  # JSON file containing filter criteria definitions
+  config_file: "path/to/config.json"
+  # Name of the protein being analyzed
+  protein_name: "MyProtein"
+  # Minimum coverage required for sequence alignment
   coverage_threshold: 0.8
+  # Number of models to generate per prediction
+  num_models: 1
+  # Random seed for reproducibility
   random_seed: 42
-  plot_initial_color: "blue"
-  plot_end_color: "red"
+  # Number of bins for histogram analysis
+  num_bins: 30  
+  # Colors for plots
+  plot_initial_color: "#87CEEB"
+  plot_end_color: "#FFFFFF"
+```
 
-pipeline_control:
-  stages:
-    - "01_ITER_SHUF_RUN"
-    - "01_ITER_SHUF_ANALYSIS"
-    - "02_M_FOLD_SAMPLING_RUN"
-    - "02_M_FOLD_SAMPLING_PLOT"
-    - "03_VOTING_RUN"
-    - "04_RECOMPILE_PREDICT_RUN"
-    - "05_PURE_SEQ_PLOT_RUN"
-  check_interval: 60
-
+**SLURM Section**
+```yaml
 slurm:
-  conda_env_path: "/path/to/conda/env"
-  slurm_account: "account_name"
-  slurm_output: "slurm-%j.out"
-  slurm_error: "slurm-%j.err"
+  # Path to conda environment
+  conda_env_path: "/path/to/conda/env/"
+  # SLURM account for job submission
+  slurm_account: "your_account"
+  # Various SLURM job parameters
+  slurm_output: "/dev/null"
+  slurm_error: "/dev/null"
   slurm_nodes: 1
   slurm_gpus_per_task: 1
   slurm_tasks: 1
-  slurm_cpus_per_task: 8
-  slurm_time: "24:00:00"
-  slurm_partition: "gpu"
-  max_workers: 4
-
-iterative_shuffling:
-  iter_shuf_input_a3m: "/path/to/input.a3m"
-  seq_num_per_shuffle: 100
-  num_shuffles: 10
-  num_iterations: 5
-  quantile: 0.8
-  plddt_threshold: 70.0
-  resume_from_iter: 0
-  enrich_filter_criteria: ["plddt", "rmsd"]
-  iter_shuf_random_select: 10
-  iter_shuf_plot_num_cols: 4
-  iter_shuf_plot_x_min: 0
-  iter_shuf_plot_x_max: 100
-  iter_shuf_plot_y_min: 0
-  iter_shuf_plot_y_max: 100
-  iter_shuf_plot_xticks: [0, 20, 40, 60, 80, 100]
-  iter_shuf_plot_bin_step: 5
-  iter_shuf_combine_threshold: 0.8
-
-m_fold_sampling:
-  m_fold_samp_input_a3m: "/path/to/input.a3m"
-  rounds: 3
-  m_fold_group_size: 20
-  m_fold_random_select: 10
-  m_fold_metric1_min: 0
-  m_fold_metric1_max: 100
-  m_fold_metric2_min: 0
-  m_fold_metric2_max: 10
-  m_fold_metric1_ticks: [0, 25, 50, 75, 100]
-  m_fold_metric2_ticks: [0, 2, 4, 6, 8, 10]
-  m_fold_count_min: 0
-  m_fold_count_max: 100
-  m_fold_log_scale: false
-  m_fold_n_plot_bins: 20
-  m_fold_gradient_ascending: true
-  m_fold_linear_gradient: true
-  m_fold_plddt_threshold: 70.0
-  m_fold_figsize: [10, 6]
-  m_fold_show_bin_lines: true
-
-sequence_voting:
-  vote_threshold: 5
-  vote_min_value: 0
-  vote_max_value: 100
-  use_focused_bins: true
-  vote_figsize: [12, 8]
-  vote_y_min: 0
-  vote_y_max: 100
-  vote_x_ticks: [0, 2, 4, 6, 8, 10]
-
-recompile_predict:
-  bin_numbers_1: [1, 3, 5, 7, 9]
-  bin_numbers_2: [2, 4, 6, 8, 10]
-  metric_name_1: "plddt"
-  metric_name_2: "rmsd"
-  combine_bins: true
-  prediction_num_model: 5
-  prediction_num_seed: 3
-
-pure_sequence_plotting:
-  metric1_min: 0
-  metric1_max: 100
-  metric2_min: 0
-  metric2_max: 10
-  metric1_ticks: [0, 25, 50, 75, 100]
-  metric2_ticks: [0, 2, 4, 6, 8, 10]
-  plddt_threshold: 70.0
-  figsize: [12, 10]
-  dpi: 300
+  slurm_cpus_per_task: 4
+  slurm_time: "04:00:00"
+  slurm_partition: "your_partition"
+  # Maximum number of concurrent workers
+  max_workers: 64
 ```
 
-## Filter Configuration
+**Pipeline Control Section**
+```yaml
+pipeline_control:
+  # Pipeline stages to execute
+  stages:
+    - "01_ITER_SHUF_RUN"       # Run iterative shuffling
+    - "01_ITER_SHUF_ANALYSIS"  # Analyze iterative shuffling results
+    - "02_M_FOLD_SAMPLING_RUN" # Run M-fold sampling
+    - "02_M_FOLD_SAMPLING_PLOT" # Plot M-fold sampling results
+    - "03_VOTING_RUN"          # Run sequence voting
+    - "04_RECOMPILE_PREDICT_RUN" # Recompile and predict structures
+    - "05_PURE_SEQ_PLOT_RUN"   # Generate plots
+  # Interval (seconds) to check job status
+  check_interval: 60
+```
 
-In addition to the YAML configuration file, AF-ClaSeq requires a JSON configuration file specifying filter criteria for structure evaluation. Here's an example:
+**Stage-Specific Parameters**
+
+Each pipeline stage has its own parameters section. For example:
+
+```yaml
+iterative_shuffling:
+  # Input MSA file
+  iter_shuf_input_a3m: "path/to/input.a3m"
+  # Number of iterations
+  num_iterations: 8
+  # Number of shuffles per iteration
+  num_shuffles: 10
+  # Number of sequences per shuffle
+  seq_num_per_shuffle: 16
+  # Minimum pLDDT score threshold
+  plddt_threshold: 75
+  # Filter criteria for enrichment
+  enrich_filter_criteria: ["tmscore_to_structureA"]
+  # Quantile threshold for filtering
+  quantile: 0.2
+  # Resume from a specific iteration (null to start fresh)
+  resume_from_iter: null
+  # Plot parameters
+  iter_shuf_plot_num_cols: 4
+  iter_shuf_plot_x_min: 0.4
+  # ... other plotting parameters
+```
+
+#### JSON Filter Configuration Structure
+
+The JSON configuration file defines structural metrics and filters for comparing predicted structures. This is a critical component as it determines which conformational states you'll be analyzing.
 
 ```json
 {
+  "basics": {
+    "full_index": {"start": 1, "end": 91}
+  },
   "filter_criteria": [
     {
-      "name": "plddt",
-      "type": "plddt",
-      "min_value": 0,
-      "max_value": 100,
-      "description": "AlphaFold2 pLDDT confidence score",
-      "higher_is_better": true
-    },
-    {
-      "name": "rmsd",
-      "type": "rmsd",
-      "reference_pdb": "/path/to/reference.pdb",
-      "min_value": 0,
-      "max_value": 10,
-      "description": "RMSD to reference structure",
-      "higher_is_better": false
+      "name": "metric_name",
+      "type": "metric_type",
+      "method": "filtering_method",
+      "additional_parameters": "value"
     }
   ]
 }
 ```
 
-## Usage
+**Common Components:**
 
-To run the AF-ClaSeq pipeline:
+- `basics`: Defines basic parameters such as residue ranges
+  - `full_index`: Residue range for the entire protein
+  - `local_index` (optional): Specific region for local pLDDT calculation
 
-```bash
-python -m af_claseq.run_af_claseq_pipeline config.yaml
-```
+- `filter_criteria`: Array of metrics used to evaluate and filter structures
+  - `name`: Identifier for the metric (used in plots and analysis)
+  - `type`: Type of structural metric (see below)
+  - `method`: Filtering approach (`above` or `below`)
 
-Where `config.yaml` is your configuration file.
+**Supported Metric Types and Required Parameters:**
 
-### Pipeline Stages
+1. **TM-score**
+   ```json
+   {
+     "name": "tmscore_to_refA",
+     "type": "tmscore",
+     "method": "above",
+     "ref_pdb": "path/to/reference.pdb"
+   }
+   ```
+   Calculates TM-score between predicted structures and a reference PDB. Higher values (0-1) indicate better structural similarity.
 
-AF-ClaSeq consists of the following stages, which can be enabled or disabled in the configuration:
+2. **RMSD**
+   ```json
+   {
+     "name": "rmsd_to_refA",
+     "type": "rmsd",
+     "method": "below",
+     "superposition_indices": {"start": 1, "end": 100},
+     "rmsd_indices": {"start": 1, "end": 100},
+     "ref_pdb": "path/to/reference.pdb"
+   }
+   ```
+   Calculates Cα RMSD between predicted structures and a reference. Lower values indicate better similarity.
+   - `superposition_indices`: Residues used for structural alignment
+   - `rmsd_indices`: Residues used for RMSD calculation (can differ from superposition indices)
 
-1. **01_RUN**: Iterative shuffling of sequences
-2. **01_ANALYSIS**: Analysis of iterative shuffling results
-3. **02_RUN**: M-fold sampling of sequences
-4. **02_PLOT**: Plotting and analysis of M-fold sampling results
-5. **03**: Sequence voting analysis
-6. **04**: Recompilation of sequences and structure prediction
-7. **05**: Plotting and analysis of prediction results
+3. **All-Atom RMSD**
+   ```json
+   {
+     "name": "all_atom_rmsd_to_refA",
+     "type": "all_atom_rmsd",
+     "method": "below",
+     "superposition_indices": {"start": 1, "end": 100},
+     "rmsd_indices": {"start": 1, "end": 100},
+     "ref_pdb": "path/to/reference.pdb"
+   }
+   ```
+   Similar to RMSD but uses all atoms instead of just Cα atoms.
 
-## Example Workflow
+4. **Distance Measurement**
+   ```json
+   {
+     "name": "domain_distance",
+     "type": "distance",
+     "method": "above",
+     "indices": {
+       "set1": [10, 11, 12, 13],
+       "set2": [100, 101, 102, 103]
+     }
+   }
+   ```
+   Calculates distance between centers of two residue sets.
+   - `set1`: First set of residue indices
+   - `set2`: Second set of residue indices
 
-Here's a typical workflow using AF-ClaSeq:
+5. **Angle Measurement**
+   ```json
+   {
+     "name": "domain_angle",
+     "type": "angle",
+     "method": "above",
+     "indices": {
+       "domain1": [10, 11, 12, 13],
+       "domain2": [100, 101, 102, 103],
+       "hinge": [50, 51, 52]
+     }
+   }
+   ```
+   Calculates angle between two domains with respect to a hinge region.
+   - `domain1`: First domain residue indices
+   - `domain2`: Second domain residue indices
+   - `hinge`: Hinge region residue indices
 
-1. **Prepare Input Files**:
-   - Initial MSA file (A3M format)
-   - Reference PDB structure (optional)
-   - Configuration files (YAML and JSON)
+**Advanced Index Specification:**
 
-2. **Run Pipeline**:
-   ```bash
-   python -m af_claseq.run_af_claseq_pipeline config.yaml
+Residue indices can be specified in two ways:
+1. As a range: `{"start": 1, "end": 100}`
+2. As a list of individual residues or multiple ranges:
+   ```json
+   [
+     {"start": 10, "end": 20},
+     {"start": 50, "end": 60}
+   ]
    ```
 
-3. **Analyze Results**:
-   - Examine plots in output directories
-   - Use predicted structures for further analysis
+**Example Configurations:**
 
-## Output Structure
+1. **Conformational State Analysis (TM-score-based)**
+   ```json
+   {
+     "basics": {
+       "full_index": {"start": 1, "end": 91}
+     },
+     "filter_criteria": [
+       {
+         "name": "2qke_tmscore", 
+         "type": "tmscore",
+         "method": "above",
+         "ref_pdb": "ref/2qkeE.pdb"
+       },
+       {
+         "name": "5jyt_tmscore",
+         "type": "tmscore", 
+         "method": "above",
+         "ref_pdb": "ref/5jytA.pdb"
+       }
+     ]
+   }
+   ```
+   This example compares predicted structures to two reference states (2QKE and 5JYT) using TM-score.
 
-The pipeline creates a directory structure according to the configured `base_dir`:
+2. **Domain Movement Analysis (RMSD-based)**
+   ```json
+   {
+     "basics": {
+       "full_index": {"start": 1, "end": 214}
+     },
+     "filter_criteria": [
+       {
+         "name": "1ake_rmsd",
+         "type": "rmsd",
+         "method": "below",
+         "superposition_indices": {"start": 1, "end": 214},
+         "rmsd_indices": {"start": 1, "end": 214},
+         "ref_pdb": "ref/1AKE.pdb"
+       },
+       {
+         "name": "4ake_rmsd",
+         "type": "rmsd",
+         "method": "below",
+         "superposition_indices": {"start": 1, "end": 214},
+         "rmsd_indices": {"start": 1, "end": 214},
+         "ref_pdb": "ref/4AKE.pdb"
+       }
+     ]
+   }
+   ```
+   This example compares structures to open (1AKE) and closed (4AKE) states of adenylate kinase using RMSD.
+
+3. **Combined Metrics Analysis**
+   ```json
+   {
+     "basics": {
+       "full_index": {"start": 1, "end": 395}
+     },
+     "filter_criteria": [
+       {
+         "name": "TM3_TM6_distance",
+         "type": "distance",
+         "indices": {
+           "set1": [317, 318, 319, 320],
+           "set2": [235, 236, 237, 238]
+         }
+       },
+       {
+         "name": "6ln2_tmscore",
+         "type": "tmscore",
+         "ref_pdb": "ref/6LN2_tr_TMonly.pdb"
+       }
+     ]
+   }
+   ```
+   This example combines distance measurement between two transmembrane helices (TM3 and TM6) with TM-score comparison to a reference structure.
+
+## Example: Running with KaiB Protein
+
+Here's how to set up and run the pipeline for the KaiB protein:
+
+1. **Prepare Input Files**
+   - MSA file: `2QKEE_colabfold-8128Seqs.a3m`
+   - Reference PDB: `2QKEE_colabfold-8128Seqs_unrelaxed_rank_001_alphafold2_ptm_model_4_seed_000.pdb`
+   - Reference structures for metrics: `2qkeE.pdb` and `5jytA.pdb`
+
+2. **Create YAML Configuration**
+   ```yaml
+   general:
+     source_a3m: "default/2QKEE_colabfold-8128Seqs.a3m"
+     default_pdb: "default/2QKEE_colabfold-8128Seqs_unrelaxed_rank_001_alphafold2_ptm_model_4_seed_000.pdb"
+     base_dir: "run"
+     config_file: "configs/config_2qke_5jyt_tmscore.json"
+     protein_name: "KaiB"
+     coverage_threshold: 0.8
+     # ... other parameters
+   ```
+
+3. **Create JSON Configuration**
+   ```json
+   {
+     "basics": {
+       "full_index": {"start": 1, "end": 91}
+     },
+     "filter_criteria": [
+       {
+         "name": "2qke_tmscore", 
+         "type": "tmscore",
+         "method": "above",
+         "ref_pdb": "ref/2qkeE.pdb"
+       },
+       {
+         "name": "5jyt_tmscore",
+         "type": "tmscore", 
+         "method": "above",
+         "ref_pdb": "ref/5jytA.pdb"
+       }
+     ]
+   }
+   ```
+
+4. **Run the Pipeline**
+   ```bash
+   python run_af_claseq_pipeline.py config_run.yaml
+   ```
+
+## Understanding the Results
+
+After running the pipeline, results are organized in the base directory specified in your configuration:
 
 ```
-base_dir/
-├── logs/
-│   └── af_claseq_pipeline.log
-├── 01_iterative_shuffling/
-│   ├── iteration_1/
-│   ├── iteration_2/
-│   └── ...
-├── 02_m_fold_sampling/
-│   ├── round_1/
-│   ├── round_2/
-│   ├── csv/
-│   └── plot/
-├── 03_voting/
-│   ├── criterion_1/
-│   └── criterion_2/
-├── 04_recompile/
-│   ├── criterion_1/
-│   └── criterion_2/
-└── 05_plots/
-    ├── criterion_1/
-    └── criterion_2/
+run/
+├── 01_iterative_shuffling/      # Iterative shuffling results
+├── 02_m_fold_sampling/          # M-fold sampling results
+├── 03_voting/                   # Sequence voting results
+├── 04_recompile/                # Recompiled sequences and predictions
+├── 05_plots/                    # Analysis plots and visualizations
+└── logs/                        # Pipeline logs
 ```
 
-## Advanced Usage
+### Key Output Files
 
-### Running on SLURM Cluster
+- **TM-score Distribution Plots**: Found in `01_iterative_shuffling/analysis/plot/`
+- **M-fold Sampling Plots**: Found in `02_m_fold_sampling/plot/`
+- **Sequence Vote Distributions**: Found in `03_voting/[metric_name]/`
+- **Predicted Structures**: Found in `04_recompile/[metric_name]/prediction/`
+- **Comparative Analysis**: Found in `05_plots/[metric_name]/`
 
-AF-ClaSeq is designed to work with SLURM job schedulers. Configure the SLURM parameters in the configuration file to match your cluster setup.
+### Interpreting Structural Metrics
 
-### Custom Filter Criteria
+- **TM-score**: Ranges from 0 to 1, with 1 indicating identical structures. Values > 0.5 generally indicate the same fold.
+- **RMSD**: Measured in Ångstroms. Lower values indicate better structural similarity. Context-dependent but values < 2Å typically indicate high similarity.
+- **Distance**: Measured in Ångstroms between centers of specified residue sets.
+- **Angle**: Measured in degrees between domains relative to a hinge.
 
-You can define custom filter criteria in the JSON configuration file to evaluate structures based on your specific needs.
+## Customizing for Different Proteins
 
-### Partial Pipeline Execution
+### Selecting Appropriate Metrics
 
-You can run specific stages of the pipeline by modifying the `stages` list in the configuration file.
+Choose metrics based on your research question:
 
-## Dependencies
+1. **Conformational State Analysis**: Use TM-score or RMSD to compare with known reference states
+2. **Domain Movement Analysis**: Use domain distance or angle measurements
+3. **Local Structural Changes**: Use RMSD with specific superposition and RMSD regions
+4. **Combined Analysis**: Use multiple metrics to capture different aspects of structural variation
 
-AF-ClaSeq depends on the following Python packages:
+### Bin Selection Strategy
 
-- numpy
-- biopython
-- tqdm
-- pyyaml
-- pandas
-- matplotlib
-- seaborn
-- scipy
-- scikit-learn
-- plotly
-- networkx
-- loguru
-- h5py
-- biotite
-- mdanalysis
-- mdtraj
-- nglview
-- py3dmol
+After the sequence voting stage, carefully select bins for final prediction:
 
-Optional dependencies:
-- colabfold
-- alphafold-colabfold
-- jax
-- jaxlib
-- dm-haiku
-- ml-collections
+1. **For Two Conformational States**: Choose bins at extremes of the distribution
+2. **For Multiple States**: Select bins at local maxima in the distribution
+3. **For Novel Conformations**: Explore bins with unusual metric combinations
+
+## Troubleshooting
+
+### Common Issues
+
+1. **Missing Dependencies**
+   - Ensure ColabFold and TM-align are properly installed and in your PATH
+   - Verify that all Python dependencies are installed
+
+2. **SLURM Configuration**
+   - Check that your SLURM account and partition settings are correct
+   - Ensure the conda environment path is correctly specified
+
+3. **File Path Issues**
+   - Verify all file paths in your configuration files are correct and accessible
+   - Use absolute paths if relative paths cause issues
+
+4. **Memory or Resource Limitations**
+   - Adjust SLURM settings for memory-intensive jobs
+   - Reduce the number of concurrent workers if hitting resource limits
+
+5. **Pipeline Stages Failing**
+   - Check the log files in the `logs` directory for detailed error messages
+   - Use the `resume_from_iter` parameter to resume iterative shuffling from a specific point
+
+6. **Analysis Metric Issues**
+   - Ensure reference PDB files are properly formatted
+   - Check that residue indices in your configuration match your protein sequence
+   - For distance/angle calculations, verify that specified indices exist in the structure
 
 ## Citation
 
 If you use AF-ClaSeq in your research, please cite:
 
-```
-@article{xing2025afclaseq,
-  title={AF-ClaSeq: Leveraging Sequence Purification for Accurate Prediction of Multiple Conformational States with AlphaFold2},
-  author={Xing, Enming},
-  year={2025},
-  publisher={GitHub},
-  url={https://github.com/enmingxing244/AF_ClaSeq}
-}
-```
+> Xing, E., Zhang, J., Wang, S., Cheng, X. (2025). Leveraging Sequence Purification for Accurate Prediction of Multiple Conformational States with AlphaFold2. *arXiv preprint* arXiv:2503.00165.
 
 ## License
 
@@ -340,10 +519,6 @@ This project is licensed under the MIT License - see the LICENSE file for detail
 
 ## Contact
 
-For questions and support, please contact:
-- Enming Xing - xing244@osu.edu
-
-## Acknowledgments
-
-- AlphaFold2 team for their groundbreaking protein structure prediction method
-- Contributors to the open-source bioinformatics tools used in this project
+For questions, issues, or suggestions, please contact:
+- Email: xing.244@osu.edu
+- GitHub Issues: [AF-ClaSeq Issues](https://github.com/enmingxing244/AF_ClaSeq/issues)
