@@ -52,6 +52,16 @@ Alternatively, you can install using pip:
 pip install git+https://github.com/enmingxing244/AF_ClaSeq.git
 ```
 
+## Demo Usage
+
+AF-ClaSeq includes an example dataset for the KaiB protein in the `examples/KaiB` directory. Here's how to run a simple demo:
+
+### Example with KaiB Protein
+
+1. First, generate the default ColabFold predicted results using the provided MSA input:
+```bash
+pip install git+https://github.com/enmingxing244/AF_ClaSeq.git
+```
 
 
 
