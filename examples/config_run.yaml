@@ -1,0 +1,201 @@
+# AF-ClaSeq Pipeline Configuration
+
+general:
+  # Input MSA file for the pipeline
+  source_a3m: "default/2QKEE_colabfold-8128Seqs.a3m"
+  # Reference PDB structure for analysis
+  default_pdb: "default/2QKEE_colabfold-8128Seqs_unrelaxed_rank_001_alphafold2_ptm_model_4_seed_000.pdb"
+  # Base directory for all pipeline outputs
+  base_dir: "run"
+  # JSON file containing filter criteria definitions
+  config_file: "configs/config_2qke_5jyt_tmscore.json"
+  # Name of the protein being analyzed
+  protein_name: "KaiB"
+  
+  # Minimum coverage required for sequence alignment
+  coverage_threshold: 0.8
+  # Number of models to generate per prediction
+  num_models: 1
+  # Random seed for reproducibility
+  random_seed: 42
+  # Number of bins for histogram analysis
+  num_bins: 30  
+  # Primary color for plots (prediction data)
+  plot_initial_color: "#b985ba"
+  # Secondary color for plots (control data)
+  plot_end_color: "#b985ba"
+
+slurm:
+  # Path to conda environment for SLURM jobs
+  conda_env_path: "/path/to/conda/env/"
+  # SLURM account for job submission
+  slurm_account: "YOUR_SLURM_ACCOUNT"
+  # File for SLURM standard output
+  slurm_output: "/dev/null"
+  # File for SLURM error output
+  slurm_error: "/dev/null"
+  # Number of nodes per SLURM job
+  slurm_nodes: 1
+  # GPUs per task for SLURM jobs
+  slurm_gpus_per_task: 1
+  # Number of tasks per SLURM job
+  slurm_tasks: 1
+  # CPUs per task for SLURM jobs
+  slurm_cpus_per_task: 4
+  # Time limit for SLURM jobs
+  slurm_time: "04:00:00"
+  # SLURM partition to use
+  slurm_partition: "YOUR_SLURM_PARTITION"
+  # Maximum number of concurrent workers
+  max_workers: 200
+
+pipeline_control:
+  # Pipeline stages to execute in order
+  stages:
+    - "01_ITER_SHUF_RUN"       # Run iterative shuffling
+    - "01_ITER_SHUF_ANALYSIS"  # Analyze iterative shuffling results
+    - "02_M_FOLD_SAMPLING_RUN" # Run M-fold sampling
+    - "02_M_FOLD_SAMPLING_PLOT" # Plot M-fold sampling results
+    - "03_VOTING_RUN"          # Run sequence voting
+    - "04_RECOMPILE_PREDICT_RUN" # Recompile and predict structures
+    - "05_PURE_SEQ_PLOT_RUN"   # Generate pure sequence plots
+  # Interval (seconds) to check job status
+  check_interval: 60
+
+iterative_shuffling:
+  # Input MSA file for iterative shuffling
+  iter_shuf_input_a3m: "default/2QKEE_colabfold-8128Seqs.a3m"
+  # Number of iterations for shuffling
+  num_iterations: 8
+  # Number of shuffles per iteration
+  num_shuffles: 10
+  # Number of sequences per shuffle
+  seq_num_per_shuffle: 16
+  # Minimum pLDDT score threshold
+  plddt_threshold: 75
+  # Filter criteria for enrichment
+  enrich_filter_criteria: ["2qke_tmscore"]
+  # Quantile threshold for sequence selection
+  quantile: 0.2
+  # Resume from specific iteration (null to start fresh)
+  resume_from_iter: null
+  # Number of sequences to randomly select (null for no random selection)
+  iter_shuf_random_select: null
+  # Number of columns in plot layout
+  iter_shuf_plot_num_cols: 4
+  # Minimum x-axis value for plots
+  iter_shuf_plot_x_min: 0.4
+  # Maximum x-axis value for plots
+  iter_shuf_plot_x_max: 1.0
+  # Minimum y-axis value for plots
+  iter_shuf_plot_y_min: 0.8
+  # Maximum y-axis value for plots
+  iter_shuf_plot_y_max: 10000
+  # Custom x-axis tick positions
+  iter_shuf_plot_xticks: null
+  # Step size for histogram bins
+  iter_shuf_plot_bin_step: 1
+  # Threshold for combining sequences
+  iter_shuf_combine_threshold: 0.65
+
+m_fold_sampling:
+  # Input MSA file for M-fold sampling (output from iterative shuffling)
+  m_fold_samp_input_a3m: "run/01_iterative_shuffling/analysis/a3m_combine/gathered_seq_after_iter_shuffling.a3m"
+  # Size of each group for M-fold sampling
+  m_fold_group_size: 10
+  # Number of sequences to randomly select (null for no random selection)
+  m_fold_random_select: null
+  # Minimum pLDDT score threshold
+  m_fold_plddt_threshold: 0
+  # Initial color for gradient plots
+  m_fold_initial_color: "#87CEEB"
+  # End color for gradient plots
+  m_fold_end_color: "#87CEEB"
+  # Use logarithmic scale for count axis
+  m_fold_log_scale: False
+  # Number of bins for plotting
+  m_fold_n_plot_bins: 30
+  # Whether gradient should ascend (false = descend)
+  m_fold_gradient_ascending: false
+  # Use linear gradient instead of exponential
+  m_fold_linear_gradient: false
+  # Figure size for plots [width, height]
+  m_fold_figsize: [10, 5]
+  # Show bin dividing lines on plots
+  m_fold_show_bin_lines: True
+  # Minimum count value for y-axis
+  m_fold_count_min: 0
+  # Maximum count value for y-axis
+  m_fold_count_max: 1600
+  # Minimum value for metric 1 (x-axis in 1D plots)
+  m_fold_metric1_min: 0.4
+  # Maximum value for metric 1
+  m_fold_metric1_max: 1.0
+  # Minimum value for metric 2 (y-axis in 2D plots)
+  m_fold_metric2_min: 0.4
+  # Maximum value for metric 2
+  m_fold_metric2_max: 1.0
+  # Custom tick positions for metric 1 axis
+  m_fold_metric1_ticks: [0.4, 0.6, 0.8, 1.0]
+  # Custom tick positions for metric 2 axis
+  m_fold_metric2_ticks: [0.4, 0.6, 0.8, 1.0]
+  # Number of rounds for M-fold sampling (default is 1)
+  rounds: 1
+
+sequence_voting:
+  # Threshold for sequence voting
+  vote_threshold: 0.0
+  # Minimum value for metric range
+  vote_min_value: 0.4
+  # Maximum value for metric range
+  vote_max_value: 1.0
+  # Figure size for plots [width, height]
+  vote_figsize: [10, 5]
+  # Minimum y-axis value for plots
+  vote_y_min: 0.8
+  # Maximum y-axis value for plots
+  vote_y_max: 1000
+  # Custom x-axis tick positions
+  vote_x_ticks: [1,10,20,30]
+  # Use hierarchical sampling strategy
+  vote_hierarchical_sampling: false
+  # Use focused bins for sampling
+  use_focused_bins: True
+  
+recompile_predict:
+  # Bin numbers to select for metric 1
+  bin_numbers_1: [26]
+  # Bin numbers to select for metric 2
+  bin_numbers_2: [19]
+  # Whether to combine bins from different metrics
+  combine_bins: false
+  # Name of first metric for bin selection
+  metric_name_1: "2qke_tmscore"
+  # Name of second metric for bin selection
+  metric_name_2: "5jyt_tmscore"
+  # Number of models to generate per prediction
+  prediction_num_model: 5
+  # Number of random seeds for prediction
+  prediction_num_seed: 8
+  
+pure_sequence_plotting:
+  # Minimum pLDDT score threshold for filtering
+  plddt_threshold: 0
+  # Figure size for plots [width, height]
+  figsize: [15, 7]
+  # Resolution (dots per inch) for saved plots
+  dpi: 600
+  # Minimum value for metric 1 axis
+  metric1_min: 0.4
+  # Maximum value for metric 1 axis
+  metric1_max: 1.0
+  # Minimum value for metric 2 axis
+  metric2_min: 0.4
+  # Maximum value for metric 2 axis
+  metric2_max: 1.0
+  # Custom tick positions for metric 1 axis
+  metric1_ticks: [0.4, 0.6, 0.8, 1.0]
+  # Custom tick positions for metric 2 axis
+  metric2_ticks: [0.4, 0.6, 0.8, 1.0]
+  # Maximum number of concurrent workers
+  max_workers: 8

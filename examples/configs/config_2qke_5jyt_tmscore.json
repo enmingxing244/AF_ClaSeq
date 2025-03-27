@@ -1,0 +1,20 @@
+{
+    "basics": {
+      "full_index": {"start": 1, "end": 91}
+      
+    },
+    "filter_criteria": [
+      {
+        "name": "2qke_tmscore", 
+        "type": "tmscore",
+        "method": "above",
+        "ref_pdb": "ref/2qkeE.pdb"
+      },
+      {
+        "name": "5jyt_tmscore",
+        "type": "tmscore", 
+        "method": "above",
+        "ref_pdb": "ref/5jytA.pdb"
+      }
+    ]
+  }

@@ -13,7 +13,7 @@ from af_claseq.utils.sequence_processing import count_sequences_in_a3m
 from af_claseq.utils.logging_utils import get_logger
 
 # Default path for TMalign executable
-DEFAULT_TMALIGN_PATH = "/fs/ess/PAA0203/xing244/TMalign"
+DEFAULT_TMALIGN_PATH = "TMalign" # or you can put in your own path to TMalign executable
 
 # Get logger for this module
 logger = get_logger(__name__)

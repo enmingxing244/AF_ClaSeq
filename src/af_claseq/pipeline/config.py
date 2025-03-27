@@ -29,24 +29,27 @@ class GeneralConfig:
 @dataclass
 class SlurmConfig:
     """SLURM configuration options"""
-    conda_env_path: str = "/fs/ess/PAA0203/xing244/.conda/envs/colabfold"
-    slurm_account: str = "PAA0203"
-    slurm_output: str = "/dev/null"
-    slurm_error: str = "/dev/null"
-    slurm_nodes: int = 1
-    slurm_gpus_per_task: int = 1
-    slurm_tasks: int = 1
-    slurm_cpus_per_task: int = 4
-    slurm_time: str = "04:00:00"
-    slurm_partition: str = "nextgen"
-    max_workers: int = 64
+    conda_env_path: str
+    slurm_account: str
+    slurm_output: str
+    slurm_error: str
+    slurm_nodes: int
+    slurm_gpus_per_task: int
+    slurm_tasks: int
+    slurm_cpus_per_task: int
+    slurm_time: str
+    slurm_partition: str
+    max_workers: int
 
 
 @dataclass
 class PipelineControlConfig:
     """Pipeline control options"""
     stages: List[str] = field(default_factory=lambda: [
-        "01_RUN", "01_ANALYSIS", "02_RUN", "02_ANALYSIS", "03", "04"
+        "01_ITER_SHUF_RUN", "01_ITER_SHUF_ANALYSIS", 
+        "02_M_FOLD_SAMPLING_RUN", "02_M_FOLD_SAMPLING_PLOT", 
+        "03_VOTING_RUN", "04_RECOMPILE_PREDICT_RUN", 
+        "05_PURE_SEQ_PLOT_RUN"
     ])
     check_interval: int = 60
 
