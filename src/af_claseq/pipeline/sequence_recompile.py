@@ -336,12 +336,19 @@ class SequenceRecompiler:
         # Calculate figure size based on number of bins
         # When num_bins=20, we want width=8
         # Scale width proportionally for different num_bins
-        width = 8 * (self.num_total_bins/20) 
-        height = min(40, len(seq_names)*0.3)  # Keep height scaling but cap at 40
+        width = 8 * (self.num_total_bins/20)
+        
+        # Adjust height based on sequence count with minimum and maximum constraints
+        # Ensure height per sequence is reasonable even with few sequences
+        if len(seq_names) <= 5:
+            # For very few sequences, use fixed height per sequence
+            height = max(4, len(seq_names) * 0.8)  # Minimum height of 4
+        else:
+            # Scale height with sequence count but with decreasing per-sequence height as count increases
+            height = min(40, max(6, len(seq_names) * 0.3))  # Cap at 40, minimum of 6
         
         # Create figure
         fig, ax = plt.subplots(figsize=(width, height))
-        
         # Convert hex color to RGB
         r, g, b = hex2color(self.initial_color)
         
