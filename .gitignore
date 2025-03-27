@@ -10,3 +10,4 @@ pipeline_test/
 af_claseq.egg-info/
 TODO.md
 setup.py
+pipeline_test/
