@@ -739,47 +739,47 @@ class AFClaSeqPipeline:
         
         try:
             # Stage 01: Iterative Shuffling
-            if "01_RUN" in stages_to_run:
+            if "01_ITER_SHUF_RUN" in stages_to_run:
                 if not self.run_iterative_shuffling():
                     self.logger.error("Stopping pipeline due to failure in stage 01_RUN")
                     pipeline_success = False
                     return
             
-            if "01_ANALYSIS" in stages_to_run:
+            if "01_ITER_SHUF_ANALYSIS" in stages_to_run:
                 if not self.analyze_iterative_shuffling():
                     self.logger.error("Stopping pipeline due to failure in stage 01_ANALYSIS")
                     pipeline_success = False
                     return
             
             # Stage 02: M-fold Sampling
-            if "02_RUN" in stages_to_run:
+            if "02_M_FOLD_SAMPLING_RUN" in stages_to_run:
                 if not self.run_m_fold_sampling():
                     self.logger.error("Stopping pipeline due to failure in stage 02_RUN")
                     pipeline_success = False
                     return
             
-            if "02_PLOT" in stages_to_run:
+            if "02_M_FOLD_SAMPLING_PLOT" in stages_to_run:
                 if not self.plot_m_fold_sampling():
                     self.logger.error("Stopping pipeline due to failure in stage 02_PLOT")
                     pipeline_success = False
                     return
             
             # Stage 03: Sequence Voting
-            if "03" in stages_to_run:
+            if "03_VOTING_RUN" in stages_to_run:
                 if not self.run_sequence_voting():
                     self.logger.error("Stopping pipeline due to failure in stage 03")
                     pipeline_success = False
                     return
             
             # Stage 04: Recompilation & Prediction
-            if "04" in stages_to_run:
+            if "04_RECOMPILE_PREDICT_RUN" in stages_to_run:
                 if not self.run_recompile_and_predict():
                     self.logger.error("Stopping pipeline due to failure in stage 04")
                     pipeline_success = False
                     return
             
             # Stage 05: Pure Sequence Plotting
-            if "05" in stages_to_run:
+            if "05_PURE_SEQ_PLOT_RUN" in stages_to_run:
                 if not self.run_pure_sequence_plotting():
                     self.logger.error("Stopping pipeline due to failure in stage 05")
                     pipeline_success = False

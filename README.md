@@ -1,353 +1,339 @@
-# AF_ClaSeq: AlphaFold-based Conformational Landscape Sequence Analysis
+# AF-ClaSeq: Protein Structure Prediction Pipeline
 
-AF_ClaSeq is a comprehensive pipeline for analyzing protein conformational landscapes using AlphaFold2 predictions and sequence-structure relationships. This tool enables the identification and classification of sequences based on their structural preferences through iterative sampling and voting mechanisms.
+AF-ClaSeq is a comprehensive pipeline for protein structure prediction and analysis using AlphaFold2 and sequence-based sampling approaches. The pipeline is designed to leverage sequence purification for accurate prediction of multiple conformational states.
+
+## Overview
+
+AF-ClaSeq uses evolutionary sequence information to generate diverse sequence profiles, which are then used to predict protein structures with AlphaFold2. The pipeline consists of multiple stages, including iterative shuffling, M-fold sampling, sequence voting, recompilation, and prediction analysis.
 
 ## Features
 
-- Iterative sequence shuffling and structure prediction
-- M-fold sampling for conformational space exploration
-- Multi-dimensional sequence voting system (1D/2D/3D)
-- Structure quality assessment and filtering
-- Advanced visualization and analysis tools
-- Parallel processing support with SLURM integration
+- **Iterative Shuffling**: Enriches sequences through iterative selection based on structure prediction metrics
+- **M-fold Sampling**: Performs multiple rounds of sequence sampling to generate diverse predictions
+- **Sequence Voting**: Analyzes the distribution of sequence-based predictions to identify patterns
+- **Recompilation & Prediction**: Recompiles selected sequences and predicts structures
+- **Analysis & Visualization**: Provides comprehensive visualization tools for analyzing results
 
 ## Installation
+
+### Prerequisites
+
+- Python 3.10 or newer
+- SLURM compute cluster (recommended for large-scale predictions)
+- AlphaFold2 installation (or ColabFold)
+
+### Using Poetry
+
+The recommended way to install AF-ClaSeq is using Poetry:
 
 ```bash
 # Clone the repository
 git clone https://github.com/enmingxing244/AF_ClaSeq.git
 cd AF_ClaSeq
 
-# Create and activate conda environment
-conda create -n af_claseq python=3.10
-conda activate af_claseq
+# Install with Poetry
+poetry install
 
-# Install dependencies
-pip install -r requirements.txt
+# For full installation with all dependencies
+poetry install --extras "full"
+
+# For visualization tools only
+poetry install --extras "visualization"
+
+# For analysis tools only
+poetry install --extras "analysis"
 ```
 
-## Dependencies
+### Using pip
 
-- Python 3.10+
-- Colabfold
-- BioPython
-- NumPy
-- Pandas
-- Matplotlib
-- TMalign
-
-## Directory Structure
-
-```
-AF_ClaSeq/
-├── scripts/                 # Main execution scripts
-│   ├── 01_iterative_shuffling_run.py
-│   ├── 02_M_fold_sampling_run.py
-│   ├── 03_sequence_voting_run.py
-│   └── 04_recompile_run.py
-├── src/af_claseq/          # Core functionality modules
-│   ├── sequence_processing.py
-│   ├── structure_analysis.py
-│   ├── voting.py
-│   └── slurm_utils.py
-└── docs/                   # Documentation
-```
-
-## Detailed Usage Guide
-
-### 1. Iterative Sequence Shuffling
-
-The first step in the pipeline performs iterative sequence filtering and structure prediction to identify promising sequence subsets.
+Alternatively, you can install using pip:
 
 ```bash
-python scripts/01_iterative_shuffling_run.py \
-    --input_a3m input.a3m \                    # Input multiple sequence alignment in A3M format
-    --default_pdb reference.pdb \              # Reference PDB structure
-    --base_dir output_dir \                    # Output directory for results
-    --config_file config.json \                # Configuration file with filter criteria
-    --coverage_threshold 0.8 \                 # Minimum sequence coverage (0-1)
-    --num_iterations 3 \                       # Number of iteration rounds
-    --group_size 10 \                          # Number of sequences per group
-    --num_shuffles 10 \                        # Number of shuffle attempts per iteration
-    --quantile 0.6 \                          # Quantile threshold for filtering
-    --plddt_threshold 75                       # Minimum pLDDT score threshold
+pip install git+https://github.com/enmingxing244/AF_ClaSeq.git
 ```
 
-Optional SLURM-specific arguments:
-```bash
-    --conda_env_path /path/to/conda/env \     # Path to conda environment
-    --slurm_account ACCOUNT \                 # SLURM account name
-    --slurm_time "04:00:00" \                # Wall time limit
-    --slurm_nodes 1 \                        # Number of nodes per job
-    --slurm_gpus_per_task 1 \                # GPUs per task
-    --max_workers 64                         # Maximum concurrent workers
+
+
+
+
+## Configuration
+
+AF-ClaSeq requires a YAML configuration file to specify pipeline parameters. Below is an example configuration:
+
+```yaml
+general:
+  protein_name: "my_protein"
+  base_dir: "/path/to/output"
+  config_file: "/path/to/config.json"
+  default_pdb: "/path/to/reference.pdb"
+  source_a3m: "/path/to/starting.a3m"
+  num_models: 5
+  num_bins: 10
+  coverage_threshold: 0.8
+  random_seed: 42
+  plot_initial_color: "blue"
+  plot_end_color: "red"
+
+pipeline_control:
+  stages:
+    - "01_ITER_SHUF_RUN"
+    - "01_ITER_SHUF_ANALYSIS"
+    - "02_M_FOLD_SAMPLING_RUN"
+    - "02_M_FOLD_SAMPLING_PLOT"
+    - "03_VOTING_RUN"
+    - "04_RECOMPILE_PREDICT_RUN"
+    - "05_PURE_SEQ_PLOT_RUN"
+  check_interval: 60
+
+slurm:
+  conda_env_path: "/path/to/conda/env"
+  slurm_account: "account_name"
+  slurm_output: "slurm-%j.out"
+  slurm_error: "slurm-%j.err"
+  slurm_nodes: 1
+  slurm_gpus_per_task: 1
+  slurm_tasks: 1
+  slurm_cpus_per_task: 8
+  slurm_time: "24:00:00"
+  slurm_partition: "gpu"
+  max_workers: 4
+
+iterative_shuffling:
+  iter_shuf_input_a3m: "/path/to/input.a3m"
+  seq_num_per_shuffle: 100
+  num_shuffles: 10
+  num_iterations: 5
+  quantile: 0.8
+  plddt_threshold: 70.0
+  resume_from_iter: 0
+  enrich_filter_criteria: ["plddt", "rmsd"]
+  iter_shuf_random_select: 10
+  iter_shuf_plot_num_cols: 4
+  iter_shuf_plot_x_min: 0
+  iter_shuf_plot_x_max: 100
+  iter_shuf_plot_y_min: 0
+  iter_shuf_plot_y_max: 100
+  iter_shuf_plot_xticks: [0, 20, 40, 60, 80, 100]
+  iter_shuf_plot_bin_step: 5
+  iter_shuf_combine_threshold: 0.8
+
+m_fold_sampling:
+  m_fold_samp_input_a3m: "/path/to/input.a3m"
+  rounds: 3
+  m_fold_group_size: 20
+  m_fold_random_select: 10
+  m_fold_metric1_min: 0
+  m_fold_metric1_max: 100
+  m_fold_metric2_min: 0
+  m_fold_metric2_max: 10
+  m_fold_metric1_ticks: [0, 25, 50, 75, 100]
+  m_fold_metric2_ticks: [0, 2, 4, 6, 8, 10]
+  m_fold_count_min: 0
+  m_fold_count_max: 100
+  m_fold_log_scale: false
+  m_fold_n_plot_bins: 20
+  m_fold_gradient_ascending: true
+  m_fold_linear_gradient: true
+  m_fold_plddt_threshold: 70.0
+  m_fold_figsize: [10, 6]
+  m_fold_show_bin_lines: true
+
+sequence_voting:
+  vote_threshold: 5
+  vote_min_value: 0
+  vote_max_value: 100
+  use_focused_bins: true
+  vote_figsize: [12, 8]
+  vote_y_min: 0
+  vote_y_max: 100
+  vote_x_ticks: [0, 2, 4, 6, 8, 10]
+
+recompile_predict:
+  bin_numbers_1: [1, 3, 5, 7, 9]
+  bin_numbers_2: [2, 4, 6, 8, 10]
+  metric_name_1: "plddt"
+  metric_name_2: "rmsd"
+  combine_bins: true
+  prediction_num_model: 5
+  prediction_num_seed: 3
+
+pure_sequence_plotting:
+  metric1_min: 0
+  metric1_max: 100
+  metric2_min: 0
+  metric2_max: 10
+  metric1_ticks: [0, 25, 50, 75, 100]
+  metric2_ticks: [0, 2, 4, 6, 8, 10]
+  plddt_threshold: 70.0
+  figsize: [12, 10]
+  dpi: 300
 ```
 
-### 2. M-fold Sampling
+## Filter Configuration
 
-This step systematically explores the conformational space through M-fold cross-validation sampling.
-
-```bash
-python scripts/02_M_fold_sampling_run.py \
-    --input_a3m filtered_sequences.a3m \       # Input MSA from previous step
-    --default_pdb reference.pdb \              # Reference PDB structure
-    --base_dir output_dir \                    # Output directory
-    --group_size 10 \                          # Sequences per group
-    --coverage_threshold 0.0 \                 # Additional coverage filter (0 = no filtering)
-    --random_select_num_seqs 1000 \           # Number of sequences to randomly select
-    --max_workers 64                          # Maximum concurrent workers
-```
-
-The M-fold sampling creates:
-- Initial random splits
-- Systematic sampling combinations
-- Structure predictions for each split
-- Quality assessment metrics
-
-### 3. Sequence Voting
-
-The voting system classifies sequences based on their structural preferences using multiple metrics.
-
-```bash
-python scripts/03_sequence_voting_run.py \
-    --sampling_dir sampling_output \           # Directory containing sampling results
-    --source_msa input.a3m \                  # Original MSA file
-    --config_path config.json \               # Configuration file
-    --num_bins 20 \                           # Number of bins for classification
-    --vote_threshold 0.2 \                    # Minimum vote ratio threshold
-    --max_workers 88 \                        # Maximum concurrent workers
-    --output_dir voting_output \              # Output directory
-    --min_value 0.5 \                        # Minimum value for metric range
-    --max_value 1.0 \                        # Maximum value for metric range
-    --initial_color "#d3b0b0" \              # Color for plotting
-    --use_focused_bins \                     # Use focused binning with outliers
-    --plddt_threshold 70                     # pLDDT score threshold
-```
-
-#### Voting Dimensions
-1. **1D Voting**: Single metric (e.g., TM-score)
-   ```json
-   {
-       "filter_criteria": [{
-           "name": "tmscore",
-           "type": "tmscore",
-           "method": "above"
-       }]
-   }
-   ```
-
-2. **2D Voting**: Two metrics (e.g., TM-score and pLDDT)
-   ```json
-   {
-       "filter_criteria": [
-           {
-               "name": "tmscore",
-               "type": "tmscore",
-               "method": "above"
-           },
-           {
-               "name": "plddt",
-               "type": "plddt",
-               "method": "above"
-           }
-       ]
-   }
-   ```
-
-3. **3D Voting**: Three metrics
-   ```json
-   {
-       "filter_criteria": [
-           {
-               "name": "tmscore",
-               "type": "tmscore",
-               "method": "above"
-           },
-           {
-               "name": "plddt",
-               "type": "plddt",
-               "method": "above"
-           },
-           {
-               "name": "rmsd",
-               "type": "rmsd",
-               "method": "below"
-           }
-       ]
-   }
-   ```
-
-### 4. Sequence Recompilation
-
-Final step to select and validate sequences from specific bins:
-
-```bash
-python scripts/04_recompile_run.py \
-    --output_dir final_output \               # Output directory
-    --bin_numbers 4 5 6 \                     # Bin numbers to compile from
-    --source_msa input.a3m \                  # Source MSA file
-    --num_selections 20 \                     # Number of random selections
-    --default_pdb reference.pdb \             # Reference PDB file
-    --seq_num_per_selection 12 \              # Sequences per selection
-    --voting_results_path results.csv \       # Voting results file
-    --raw_votes_json votes.json \             # Raw votes data
-    --initial_color "#2486b9" \              # Plot color
-    --num_total_bins 20 \                    # Total number of bins
-    --combine_bins                           # Combine sequences from all bins
-```
-
-#### Output Structure
-```
-final_output/
-├── prediction/                # Main prediction results
-│   └── bin_*/
-│       └── sequences.a3m
-├── control_prediction/        # Control group predictions
-│   └── bin_*/
-│       └── random_seq.a3m
-├── random_selection/         # Random subsets for validation
-│   └── bin_*/
-│       └── selection_*.a3m
-└── plots/                    # Visualization outputs
-    └── *_sequence_vote_ratios.png
-```
-
-### Configuration File Details
-
-The `config.json` file supports various metric types and filtering methods:
+In addition to the YAML configuration file, AF-ClaSeq requires a JSON configuration file specifying filter criteria for structure evaluation. Here's an example:
 
 ```json
 {
-    "filter_criteria": [
-        {
-            "name": "tmscore",
-            "type": "tmscore",
-            "method": "above",
-            "ref_pdb": "reference.pdb"
-        },
-        {
-            "name": "distance",
-            "type": "distance",
-            "method": "below",
-            "indices": {
-                "set1": [10, 11, 12],
-                "set2": [20, 21, 22]
-            }
-        },
-        {
-            "name": "angle",
-            "type": "angle",
-            "method": "above",
-            "indices": {
-                "domain1": [1, 2, 3],
-                "domain2": [30, 31, 32],
-                "hinge": [15, 16, 17]
-            }
-        },
-        {
-            "name": "rmsd",
-            "type": "rmsd",
-            "method": "below",
-            "superposition_indices": {
-                "start": 1,
-                "end": 50
-            },
-            "rmsd_indices": {
-                "start": 51,
-                "end": 100
-            }
-        }
-    ],
-    "basics": {
-        "full_index": {
-            "start": 1,
-            "end": 100
-        },
-        "local_index": {
-            "start": 20,
-            "end": 80
-        }
+  "filter_criteria": [
+    {
+      "name": "plddt",
+      "type": "plddt",
+      "min_value": 0,
+      "max_value": 100,
+      "description": "AlphaFold2 pLDDT confidence score",
+      "higher_is_better": true
+    },
+    {
+      "name": "rmsd",
+      "type": "rmsd",
+      "reference_pdb": "/path/to/reference.pdb",
+      "min_value": 0,
+      "max_value": 10,
+      "description": "RMSD to reference structure",
+      "higher_is_better": false
     }
+  ]
 }
 ```
 
-### Error Handling and Troubleshooting
+## Usage
 
-1. **Common Issues**:
-   - Missing dependencies: Ensure all required packages are installed
-   - GPU memory errors: Reduce batch size or group size
-   - SLURM job failures: Check resource requirements
-   - File permissions: Ensure write access to output directories
+To run the AF-ClaSeq pipeline:
 
-2. **Quality Control**:
-   - Monitor pLDDT scores for structure quality
-   - Check vote distribution plots for anomalies
-   - Validate results against control groups
-   - Verify sequence coverage and representation
+```bash
+python -m af_claseq.run_af_claseq_pipeline config.yaml
+```
 
-3. **Performance Optimization**:
-   - Adjust `max_workers` based on system resources
-   - Use appropriate GPU allocation for structure prediction
-   - Monitor memory usage with large sequence sets
-   - Consider using precomputed metrics when available
+Where `config.yaml` is your configuration file.
+
+### Pipeline Stages
+
+AF-ClaSeq consists of the following stages, which can be enabled or disabled in the configuration:
+
+1. **01_RUN**: Iterative shuffling of sequences
+2. **01_ANALYSIS**: Analysis of iterative shuffling results
+3. **02_RUN**: M-fold sampling of sequences
+4. **02_PLOT**: Plotting and analysis of M-fold sampling results
+5. **03**: Sequence voting analysis
+6. **04**: Recompilation of sequences and structure prediction
+7. **05**: Plotting and analysis of prediction results
+
+## Example Workflow
+
+Here's a typical workflow using AF-ClaSeq:
+
+1. **Prepare Input Files**:
+   - Initial MSA file (A3M format)
+   - Reference PDB structure (optional)
+   - Configuration files (YAML and JSON)
+
+2. **Run Pipeline**:
+   ```bash
+   python -m af_claseq.run_af_claseq_pipeline config.yaml
+   ```
+
+3. **Analyze Results**:
+   - Examine plots in output directories
+   - Use predicted structures for further analysis
 
 ## Output Structure
 
+The pipeline creates a directory structure according to the configured `base_dir`:
+
 ```
-output_dir/
+base_dir/
+├── logs/
+│   └── af_claseq_pipeline.log
 ├── 01_iterative_shuffling/
-│   └── Iteration_*/
-├── 02_sampling/
-│   └── sampling_*/
+│   ├── iteration_1/
+│   ├── iteration_2/
+│   └── ...
+├── 02_m_fold_sampling/
+│   ├── round_1/
+│   ├── round_2/
+│   ├── csv/
+│   └── plot/
 ├── 03_voting/
-│   ├── voting_results.csv
-│   └── vote_distribution.png
-└── 04_recompile/
-    ├── prediction/
-    ├── control_prediction/
-    └── plots/
+│   ├── criterion_1/
+│   └── criterion_2/
+├── 04_recompile/
+│   ├── criterion_1/
+│   └── criterion_2/
+└── 05_plots/
+    ├── criterion_1/
+    └── criterion_2/
 ```
 
-## Visualization
+## Advanced Usage
 
-The pipeline generates various visualization outputs:
-- Sequence vote distribution plots
-- Structure quality metric distributions
-- Conformational landscape maps
-- Validation and control comparisons
+### Running on SLURM Cluster
 
-## Performance Considerations
+AF-ClaSeq is designed to work with SLURM job schedulers. Configure the SLURM parameters in the configuration file to match your cluster setup.
 
-- Memory usage scales with sequence count and group size
-- GPU requirements depend on AlphaFold2 configuration
-- Parallel processing capability through SLURM integration
-- Recommended minimum 32GB RAM for standard datasets
+### Custom Filter Criteria
 
-## Error Handling
+You can define custom filter criteria in the JSON configuration file to evaluate structures based on your specific needs.
 
-The pipeline includes comprehensive error handling:
-- Input validation
-- File existence checks
-- Structure quality assessment
-- Vote confidence thresholds
+### Partial Pipeline Execution
 
-## Contributing
+You can run specific stages of the pipeline by modifying the `stages` list in the configuration file.
 
-1. Fork the repository
-2. Create your feature branch
-3. Commit your changes
-4. Push to the branch
-5. Create a Pull Request
+## Dependencies
+
+AF-ClaSeq depends on the following Python packages:
+
+- numpy
+- biopython
+- tqdm
+- pyyaml
+- pandas
+- matplotlib
+- seaborn
+- scipy
+- scikit-learn
+- plotly
+- networkx
+- loguru
+- h5py
+- biotite
+- mdanalysis
+- mdtraj
+- nglview
+- py3dmol
+
+Optional dependencies:
+- colabfold
+- alphafold-colabfold
+- jax
+- jaxlib
+- dm-haiku
+- ml-collections
+
+## Citation
+
+If you use AF-ClaSeq in your research, please cite:
+
+```
+@article{xing2025afclaseq,
+  title={AF-ClaSeq: Leveraging Sequence Purification for Accurate Prediction of Multiple Conformational States with AlphaFold2},
+  author={Xing, Enming},
+  year={2025},
+  publisher={GitHub},
+  url={https://github.com/enmingxing244/AF_ClaSeq}
+}
+```
 
 ## License
 
 This project is licensed under the MIT License - see the LICENSE file for details.
 
-## Citation
-
-If you use AF_ClaSeq in your research, please cite:
-[Citation information to be added]
-
 ## Contact
 
-For questions and support, please open an issue on GitHub or contact [your contact information].
+For questions and support, please contact:
+- Enming Xing - xing244@osu.edu
+
+## Acknowledgments
+
+- AlphaFold2 team for their groundbreaking protein structure prediction method
+- Contributors to the open-source bioinformatics tools used in this project
