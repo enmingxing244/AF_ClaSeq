@@ -82,14 +82,14 @@ The YAML configuration file contains several sections:
 
 ```yaml
 # Main configuration sections
-general:            # Basic parameters and file paths
-slurm:              # SLURM job submission parameters
-pipeline_control:   # Stages to execute and control parameters
-iterative_shuffling:# Parameters for iterative shuffling stage
-m_fold_sampling:    # Parameters for M-fold sampling stage
-sequence_voting:    # Parameters for sequence voting stage
-recompile_predict:  # Parameters for recompilation and prediction stage
-pure_sequence_plotting: # Parameters for analysis and visualization
+general:                   # Basic parameters and file paths
+slurm:                     # SLURM job submission parameters
+pipeline_control:          # Stages to execute and control parameters
+iterative_shuffling:       # Parameters for iterative shuffling stage
+m_fold_sampling:           # Parameters for M-fold sampling stage
+sequence_voting:           # Parameters for sequence voting stage
+recompile_predict:         # Parameters for recompilation and prediction stage
+pure_sequence_plotting:    # Parameters for analysis and visualization
 ```
 
 **Key Sections Explained:**
@@ -186,12 +186,12 @@ iterative_shuffling:
 
 #### JSON Filter Configuration Structure
 
-The JSON configuration file defines structural metrics and filters for comparing predicted structures. This is a critical component as it determines which conformational states you'll be analyzing.
+The JSON configuration file defines structural metrics and filters for comparing predicted structures. This is a critical component as it determines how you will be measuring the structural metrics, adn what metrics you will be using for iterative shuffling enrichment and voting.
 
 ```json
 {
   "basics": {
-    "full_index": {"start": 1, "end": 91}
+    "full_index": {"start": 1, "end": 218}
   },
   "filter_criteria": [
     {
@@ -207,13 +207,14 @@ The JSON configuration file defines structural metrics and filters for comparing
 **Common Components:**
 
 - `basics`: Defines basic parameters such as residue ranges
-  - `full_index`: Residue range for the entire protein
+  - `full_index`: Residue range for the entire protein in the prediction scale
   - `local_index` (optional): Specific region for local pLDDT calculation
 
 - `filter_criteria`: Array of metrics used to evaluate and filter structures
   - `name`: Identifier for the metric (used in plots and analysis)
   - `type`: Type of structural metric (see below)
-  - `method`: Filtering approach (`above` or `below`)
+  - `method`: Filtering approach (`above` or `below`) that will be used in the enrichment step
+  - `ref_pdb`: Path to the reference PDB file that will be used for the metric calculation
 
 **Supported Metric Types and Required Parameters:**
 
@@ -239,7 +240,7 @@ The JSON configuration file defines structural metrics and filters for comparing
      "ref_pdb": "path/to/reference.pdb"
    }
    ```
-   Calculates Cα RMSD between predicted structures and a reference. Lower values indicate better similarity.
+   Calculates Cα RMSD between predicted structures and a reference. Lower values indicate better similarity. The indices can be incontinous.
    - `superposition_indices`: Residues used for structural alignment
    - `rmsd_indices`: Residues used for RMSD calculation (can differ from superposition indices)
 
@@ -364,7 +365,7 @@ Residue indices can be specified in two ways:
      },
      "filter_criteria": [
        {
-         "name": "TM3_TM6_distance",
+         "name": "some_distance",
          "type": "distance",
          "indices": {
            "set1": [317, 318, 319, 320],
@@ -372,14 +373,14 @@ Residue indices can be specified in two ways:
          }
        },
        {
-         "name": "6ln2_tmscore",
+         "name": "some_tmscore",
          "type": "tmscore",
-         "ref_pdb": "ref/6LN2_tr_TMonly.pdb"
+         "ref_pdb": "path/to/reference.pdb"
        }
      ]
    }
    ```
-   This example combines distance measurement between two transmembrane helices (TM3 and TM6) with TM-score comparison to a reference structure.
+   This example combines distance measurement with TM-score comparison to a reference structure.
 
 ## Example: Running with KaiB Protein
 
