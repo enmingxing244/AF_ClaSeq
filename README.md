@@ -4,9 +4,9 @@ AF-ClaSeq is a comprehensive pipeline for protein structure prediction and analy
 
 ## Overview
 
-AlphaFold2 has revolutionized protein structure prediction by utilizing co-evolutionary information embedded in multiple sequence alignments (MSAs). AF-ClaSeq extends this capability by systematically isolating co-evolutionary signals through sequence purification and iterative enrichment. The pipeline extracts sequence subsets that preferentially encode distinct structural states, enabling high-confidence predictions of alternative conformations.
+![alt text](af_claseq_demo.png)
 
-Rather than relying solely on MSA depth, AF-ClaSeq focuses on sequence purity to successfully sample alternative states. Our research has revealed that sequences encoding specific structural states are distributed across phylogenetic clades and superfamilies, not limited to specific lineages.
+AlphaFold2 (AF2) has transformed protein structure prediction by harnessing co-evolutionary constraints embedded in multiple sequence alignments (MSAs). MSAs not only encode static structural information, but also hold critical details about protein dynamics, which underpin biological functions. However, these subtle co-evolutionary signatures, which dictate conformational state preferences, are often obscured by noise within MSA data and thus remain challenging to decipher. Here, we introduce AF-ClaSeq, a systematic framework that isolates these co-evolutionary signals through sequence purification and iterative enrichment. By extracting sequence subsets that preferentially encode distinct structural states, AF-ClaSeq enables high-confidence predictions of alternative conformations. Our findings reveal that the successful sampling of alternative states depends not on MSA depth but on sequence purity. Intriguingly, purified sequences encoding specific structural states are distributed across phylogenetic clades and superfamilies, rather than confined to specific lineages. Expanding upon AF2's transformative capabilities, AF-ClaSeq provides a powerful approach for uncovering hidden structural plasticity, advancing allosteric protein and drug design, and facilitating dynamics-based protein function annotation.
 
 ## Features
 
