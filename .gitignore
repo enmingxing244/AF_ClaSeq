@@ -11,3 +11,6 @@ af_claseq.egg-info/
 TODO.md
 setup.py
 pipeline_test/
+af_cluster_compar_code/
+zenodo_upload
+xtc/

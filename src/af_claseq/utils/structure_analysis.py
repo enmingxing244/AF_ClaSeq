@@ -545,12 +545,16 @@ class StructureAnalyzer:
             
         if isinstance(indices_spec, list):
             result = []
-            for range_dict in indices_spec:
-                result.extend(range(range_dict['start'], range_dict['end']+1))
+            # Check if the list contains dictionaries with start/end or direct indices
+            if all(isinstance(item, dict) for item in indices_spec):
+                for range_dict in indices_spec:
+                    result.extend(range(range_dict['start'], range_dict['end']+1))
+            else:
+                # If it's a direct list of indices, just return it
+                return indices_spec
             return result
         else:
             return list(range(indices_spec['start'], indices_spec['end'] + 1))
-        
     def get_result_df(self, parent_dir: str | Path,
                      filter_criteria: Sequence[Dict[str, Any]],
                      basics: Dict[str, Any],

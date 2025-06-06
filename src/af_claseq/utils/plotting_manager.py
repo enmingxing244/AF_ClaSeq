@@ -359,19 +359,24 @@ def plot_1d_distribution(
     
     plt.xlabel(f'{metric_name}')
     plt.ylabel('Count')
+    plt.ylim(y_min, y_max)
+    plt.xlim(x_min, x_max)
+    plt.xticks(x_ticks)
     
     if log_scale:
         plt.yscale('log')
+        
+
     
-    # Set axis limits and ticks
-    set_axis_limits_and_ticks(
-        plt, 
-        x_min=x_min, 
-        x_max=x_max, 
-        y_min=y_min, 
-        y_max=y_max, 
-        x_ticks=x_ticks
-    )
+    # # Set axis limits and ticks
+    # set_axis_limits_and_ticks(
+    #     plt, 
+    #     x_min=x_min, 
+    #     x_max=x_max, 
+    #     y_min=y_min, 
+    #     y_max=y_max, 
+    #     x_ticks=x_ticks
+    # )
 
     # Save plot
     plot_path = os.path.join(output_dir, f'{metric_name}_1d_distribution.png')
