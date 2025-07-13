@@ -9,6 +9,7 @@ import yaml
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional, Any, Tuple, Union
 from af_claseq.utils.plotting_manager import COLORS
+from ..hit_expand.config import HitExpandConfig
 
 @dataclass
 class GeneralConfig:
@@ -46,34 +47,13 @@ class SlurmConfig:
 class PipelineControlConfig:
     """Pipeline control options"""
     stages: List[str] = field(default_factory=lambda: [
-        "01_ITER_SHUF_RUN", "01_ITER_SHUF_ANALYSIS", 
+        "01_HIT_EXPAND_RUN", "01_HIT_EXPAND_ANALYSIS", 
         "02_M_FOLD_SAMPLING_RUN", "02_M_FOLD_SAMPLING_PLOT", 
         "03_VOTING_RUN", "04_RECOMPILE_PREDICT_RUN", 
         "05_PURE_SEQ_PLOT_RUN"
     ])
     check_interval: int = 60
 
-
-@dataclass
-class IterativeShufflingConfig:
-    """Stage 01: Iterative Shuffling parameters"""
-    iter_shuf_input_a3m: str
-    num_iterations: int = 8
-    num_shuffles: int = 10
-    seq_num_per_shuffle: int = 16
-    plddt_threshold: int = 75
-    quantile: float = 0.2
-    resume_from_iter: Optional[int] = None
-    iter_shuf_plot_num_cols: int = 5
-    iter_shuf_plot_x_min: float = 0
-    iter_shuf_plot_x_max: float = 20
-    iter_shuf_plot_y_min: float = 0.8
-    iter_shuf_plot_y_max: float = 10000
-    iter_shuf_plot_xticks: Optional[List[float]] = None
-    iter_shuf_plot_bin_step: float = 0.2
-    iter_shuf_combine_threshold: float = 0.5
-    enrich_filter_criteria: Optional[List[str]] = None
-    iter_shuf_random_select: Optional[int] = None
 
 
 @dataclass
@@ -148,7 +128,7 @@ class PipelineConfig:
     general: GeneralConfig
     slurm: SlurmConfig
     pipeline_control: PipelineControlConfig
-    iterative_shuffling: IterativeShufflingConfig
+    hit_expand: HitExpandConfig
     m_fold_sampling: MFoldSamplingConfig
     sequence_voting: SequenceVotingConfig
     recompile_predict: RecompilePredictConfig
@@ -172,7 +152,7 @@ def load_pipeline_config(yaml_input: str) -> PipelineConfig:
     general_config = GeneralConfig(**yaml_config.get('general', {}))
     slurm_config = SlurmConfig(**yaml_config.get('slurm', {}))
     pipeline_control_config = PipelineControlConfig(**yaml_config.get('pipeline_control', {}))
-    iterative_shuffling_config = IterativeShufflingConfig(**yaml_config.get('iterative_shuffling', {}))
+    hit_expand_config = HitExpandConfig(**yaml_config.get('hit_expand', {}))
     m_fold_sampling_config = MFoldSamplingConfig(**yaml_config.get('m_fold_sampling', {}))
     sequence_voting_config = SequenceVotingConfig(**yaml_config.get('sequence_voting', {}))
     recompile_predict_config = RecompilePredictConfig(**yaml_config.get('recompile_predict', {}))
@@ -183,7 +163,7 @@ def load_pipeline_config(yaml_input: str) -> PipelineConfig:
         general=general_config,
         slurm=slurm_config,
         pipeline_control=pipeline_control_config,
-        iterative_shuffling=iterative_shuffling_config,
+        hit_expand=hit_expand_config,
         m_fold_sampling=m_fold_sampling_config,
         sequence_voting=sequence_voting_config,
         recompile_predict=recompile_predict_config,

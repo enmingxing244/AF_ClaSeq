@@ -10,7 +10,7 @@ Rather than relying solely on MSA depth, AF-ClaSeq focuses on sequence purity to
 
 ## Features
 
-- **Iterative Shuffling and Enrichment**: Systematically enriches sequences through multiple iterations based on structural metrics
+- **Hit Expansion**: Uses MMseqs2 clustering and BLOSUM62-based similarity search to systematically expand and optimize sequence sets
 - **M-fold Sampling**: Creates and analyzes multiple sequence groups to explore conformational landscapes
 - **Sequence Voting**: Identifies sequences that consistently contribute to specific conformational states
 - **Recompilation & Prediction**: Generates purified MSAs for targeted structure prediction
@@ -53,7 +53,7 @@ pip install -e .
 
 AF-ClaSeq consists of five main stages:
 
-1. **Iterative Shuffling** (`01_ITER_SHUF_RUN` & `01_ITER_SHUF_ANALYSIS`): Enriches sequences based on structural metrics through multiple iterations
+1. **Hit Expand** (`01_HIT_EXPAND_RUN` & `01_HIT_EXPAND_ANALYSIS`): Uses MMseqs2 clustering and similarity-based expansion to optimize sequence sets
 2. **M-fold Sampling** (`02_M_FOLD_SAMPLING_RUN` & `02_M_FOLD_SAMPLING_PLOT`): Performs multiple rounds of sequence sampling
 3. **Sequence Voting** (`03_VOTING_RUN`): Analyzes which sequences contribute to specific conformational states
 4. **Recompilation & Prediction** (`04_RECOMPILE_PREDICT_RUN`): Recompiles selected sequences and predicts structures
@@ -85,7 +85,7 @@ The YAML configuration file contains several sections:
 general:                   # Basic parameters and file paths
 slurm:                     # SLURM job submission parameters
 pipeline_control:          # Stages to execute and control parameters
-iterative_shuffling:       # Parameters for iterative shuffling stage
+hit_expand:                # Parameters for hit expansion stage
 m_fold_sampling:           # Parameters for M-fold sampling stage
 sequence_voting:           # Parameters for sequence voting stage
 recompile_predict:         # Parameters for recompilation and prediction stage
@@ -145,8 +145,8 @@ slurm:
 pipeline_control:
   # Pipeline stages to execute
   stages:
-    - "01_ITER_SHUF_RUN"       # Run iterative shuffling
-    - "01_ITER_SHUF_ANALYSIS"  # Analyze iterative shuffling results
+    - "01_HIT_EXPAND_RUN"      # Run hit expansion
+    - "01_HIT_EXPAND_ANALYSIS" # Analyze hit expansion results
     - "02_M_FOLD_SAMPLING_RUN" # Run M-fold sampling
     - "02_M_FOLD_SAMPLING_PLOT" # Plot M-fold sampling results
     - "03_VOTING_RUN"          # Run sequence voting
@@ -161,9 +161,9 @@ pipeline_control:
 Each pipeline stage has its own parameters section. For example:
 
 ```yaml
-iterative_shuffling:
+hit_expand:
   # Input MSA file
-  iter_shuf_input_a3m: "path/to/input.a3m"
+  input_a3m: "path/to/input.a3m"
   # Number of iterations
   num_iterations: 8
   # Number of shuffles per iteration
@@ -179,14 +179,14 @@ iterative_shuffling:
   # Resume from a specific iteration (null to start fresh)
   resume_from_iter: null
   # Plot parameters
-  iter_shuf_plot_num_cols: 4
-  iter_shuf_plot_x_min: 0.4
+  plot_num_cols: 4
+  plot_metric_min: 0.4
   # ... other plotting parameters
 ```
 
 #### JSON Filter Configuration Structure
 
-The JSON configuration file defines structural metrics and filters for comparing predicted structures. This is a critical component as it determines how you will be measuring the structural metrics, adn what metrics you will be using for iterative shuffling enrichment and voting.
+The JSON configuration file defines structural metrics and filters for comparing predicted structures. This is a critical component as it determines how you will be measuring the structural metrics, and what metrics you will be using for hit expansion optimization and voting.
 
 ```json
 {
@@ -437,7 +437,7 @@ After running the pipeline, results are organized in the base directory specifie
 
 ```
 run/
-├── 01_iterative_shuffling/      # Iterative shuffling results
+├── 01_hit_expand/               # Hit expansion results
 ├── 02_m_fold_sampling/          # M-fold sampling results
 ├── 03_voting/                   # Sequence voting results
 ├── 04_recompile/                # Recompiled sequences and predictions
@@ -447,7 +447,7 @@ run/
 
 ### Key Output Files
 
-- **TM-score Distribution Plots**: Found in `01_iterative_shuffling/analysis/plot/`
+- **TM-score Distribution Plots**: Found in `01_hit_expand/plots/`
 - **M-fold Sampling Plots**: Found in `02_m_fold_sampling/plot/`
 - **Sequence Vote Distributions**: Found in `03_voting/[metric_name]/`
 - **Predicted Structures**: Found in `04_recompile/[metric_name]/prediction/`
@@ -501,7 +501,7 @@ After the sequence voting stage, carefully select bins for final prediction:
 
 5. **Pipeline Stages Failing**
    - Check the log files in the `logs` directory for detailed error messages
-   - Use the `resume_from_iter` parameter to resume iterative shuffling from a specific point
+   - Hit expansion automatically manages job recovery and resumption
 
 6. **Analysis Metric Issues**
    - Ensure reference PDB files are properly formatted

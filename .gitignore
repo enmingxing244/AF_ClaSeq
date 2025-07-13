@@ -1,13 +1,15 @@
 # Byte-compiled / optimized / DLL files
 __pycache__/
+examples/
 results/
 test/
-af_cluster_compar/
+xtc/
+zenodo*
+af_cluster_compar*/
 pyrightconfig.json
-af_cluster_compar/
-af3_runs/
-pipeline_test/
+
+
 af_claseq.egg-info/
-TODO.md
+
 setup.py
 pipeline_test/

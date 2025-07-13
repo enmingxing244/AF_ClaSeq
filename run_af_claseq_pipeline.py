@@ -16,7 +16,7 @@ from typing import Dict, Any
 # Import modules from AF-ClaSeq
 from af_claseq.utils.slurm_utils import SlurmJobSubmitter
 from af_claseq.utils.structure_analysis import StructureAnalyzer
-from af_claseq.pipeline.iter_shuf_enrich import IterShufEnrichRunner, IterShufEnrichPlotter, IterShufEnrichCombiner
+from af_claseq.hit_expand import HitExpandRunner
 from af_claseq.pipeline.m_fold_sampling import MFoldSampler
 from af_claseq.pipeline.sequence_voting import SequenceVotingRunner, SequenceVotingPlotter
 from af_claseq.pipeline.sequence_recompile import SequenceRecompiler
@@ -94,7 +94,7 @@ class AFClaSeqPipeline:
         
         # Create stage directories
         stages = [
-            "01_iterative_shuffling",
+            "01_hit_expand",
             "02_m_fold_sampling",
             "03_voting",
             "04_recompile",
@@ -114,95 +114,174 @@ class AFClaSeqPipeline:
         print(f"Base directory: {self.config.general.base_dir}")
         print(f"Configuration file: {self.config.general.config_file}")
         print("="*80 + "\n")
-    def run_iterative_shuffling(self) -> bool:
+    
+    def run_hit_expand(self) -> bool:
         """
-        Stage 01_RUN: Run iterative shuffling of sequences
+        Stage 01_RUN: Run hit expand pipeline
         """
-        self.logger.info("=== STAGE 01_RUN: ITERATIVE SHUFFLING ===")
+        self.logger.info("=== STAGE 01_RUN: HIT EXPAND ===")
         
         try:
-            # Create runner instance with configuration
-            runner = IterShufEnrichRunner(
-                iter_shuf_input_a3m=self.config.iterative_shuffling.iter_shuf_input_a3m,
-                default_pdb=self.config.general.default_pdb,
-                iter_shuf_enrich_base_dir=Path(self.config.general.base_dir) / "01_iterative_shuffling",
-                config_file=self.config.general.config_file,
+            # Convert hit_expand config to appropriate format
+            from af_claseq.hit_expand.config import HitExpandConfig
+            
+            hit_expand_config = HitExpandConfig(
+                input_msa=self.config.hit_expand.input_msa,
+                mmseqs_bin=self.config.hit_expand.mmseqs_bin,
+                mmseqs_coverage=self.config.hit_expand.mmseqs_coverage,
+                mmseqs_min_seq_id=self.config.hit_expand.mmseqs_min_seq_id,
+                mmseqs_cov_mode=self.config.hit_expand.mmseqs_cov_mode,
+                mmseqs_cluster_mode=self.config.hit_expand.mmseqs_cluster_mode,
+                mmseqs_threads=self.config.hit_expand.mmseqs_threads,
+                mmseqs_tmp_dir=self.config.hit_expand.mmseqs_tmp_dir,
+                num_subsets=self.config.hit_expand.num_subsets,
+                num_random_sequences=self.config.hit_expand.num_random_sequences,
+                num_batches=self.config.hit_expand.num_batches,
+                batch_prefix=self.config.hit_expand.batch_prefix,
+                similarity_top_k=self.config.hit_expand.similarity_top_k,
+                similarity_threshold=self.config.hit_expand.similarity_threshold,
+                exclude_query_headers=self.config.hit_expand.exclude_query_headers,
+                plddt_threshold=self.config.hit_expand.plddt_threshold,
+                filter_criteria_threshold=self.config.hit_expand.filter_criteria_threshold,
+                filter_criteria=self.config.hit_expand.filter_criteria,
+                monitor_jobs=self.config.hit_expand.monitor_jobs,
+                job_check_interval=self.config.hit_expand.job_check_interval,
+                job_timeout=self.config.hit_expand.job_timeout,
+                check_existing_jobs=self.config.hit_expand.check_existing_jobs,
+                skip_structure_prediction=self.config.hit_expand.skip_structure_prediction,
+                skip_structure_analysis=self.config.hit_expand.skip_structure_analysis,
+                skip_hit_expansion=self.config.hit_expand.skip_hit_expansion,
+                skip_clustering=self.config.hit_expand.skip_clustering,
+                output_prefix=self.config.hit_expand.output_prefix,
+                plot_num_cols=self.config.hit_expand.plot_num_cols,
+                plot_x_min=self.config.hit_expand.plot_x_min,
+                plot_x_max=self.config.hit_expand.plot_x_max,
+                plot_y_min=self.config.hit_expand.plot_y_min,
+                plot_y_max=self.config.hit_expand.plot_y_max,
+                plot_xticks=self.config.hit_expand.plot_xticks,
+                plot_bin_step=self.config.hit_expand.plot_bin_step,
+                random_seed=self.config.hit_expand.random_seed,
+                max_workers=self.config.hit_expand.max_workers
+            )
+            
+            # Create runner instance
+            runner = HitExpandRunner(
+                config=hit_expand_config,
                 slurm_submitter=self.slurm_submitter,
-                seq_num_per_shuffle=self.config.iterative_shuffling.seq_num_per_shuffle,
-                num_shuffles=self.config.iterative_shuffling.num_shuffles,
-                coverage_threshold=self.config.general.coverage_threshold,
-                num_iterations=self.config.iterative_shuffling.num_iterations,
-                quantile=self.config.iterative_shuffling.quantile,
-                plddt_threshold=self.config.iterative_shuffling.plddt_threshold,
-                resume_from_iter=self.config.iterative_shuffling.resume_from_iter,
-                max_workers=self.config.slurm.max_workers,
-                check_interval=self.config.pipeline_control.check_interval,
-                random_seed=self.config.general.random_seed,
-                enrich_filter_criteria=self.config.iterative_shuffling.enrich_filter_criteria,
-                iter_shuf_random_select=self.config.iterative_shuffling.iter_shuf_random_select
+                base_dir=Path(self.config.general.base_dir) / "01_hit_expand",
+                config_file=self.config.general.config_file,
+                logger=self.logger
             )
             
             # Set up logging and log parameters
             runner.setup_logging()
             runner.log_parameters()
             
-            # Run the iterative shuffling process
-            final_a3m = runner.run()
+            # Run the hit expand process
+            final_msa = runner.run()
             
-            if final_a3m is None:
-                self.logger.error("Iterative shuffling failed to produce output")
+            if final_msa is None:
+                self.logger.error("Hit expand failed to produce output")
                 return False
                 
-            self.logger.info(f"Completed iterative shuffling successfully. Final output: {final_a3m}")
+            self.logger.info(f"Completed hit expand successfully. Final output: {final_msa}")
             return True
             
         except Exception as e:
-            self.logger.error(f"Error in iterative shuffling: {str(e)}", exc_info=True)
+            self.logger.error(f"Error in hit expand: {str(e)}", exc_info=True)
             return False
     
-    def analyze_iterative_shuffling(self) -> bool:
+    def analyze_hit_expand(self) -> bool:
         """
-        Stage 01_ANALYSIS: Analyze results of iterative shuffling
+        Stage 01_ANALYSIS: Analyze results of hit expand
         """
-        self.logger.info("=== STAGE 01_ANALYSIS: ITERATIVE SHUFFLING ANALYSIS ===")
+        self.logger.info("=== STAGE 01_ANALYSIS: HIT EXPAND ANALYSIS ===")
         try:
+            # Try to use enhanced plotter, fall back to basic if needed
+            try:
+                from af_claseq.hit_expand.plotting_enhanced import EnhancedHitExpandPlotter
+                use_enhanced = True
+                self.logger.info("Using enhanced plotting capabilities")
+            except ImportError:
+                from af_claseq.hit_expand.plotting import HitExpandPlotter
+                use_enhanced = False
+                self.logger.info("Using basic plotting capabilities")
+            
+            from af_claseq.hit_expand.config import HitExpandPlottingConfig
+            
             # Create plotter instance
-            plotter = IterShufEnrichPlotter(
-                iter_shuf_enrich_base_dir=Path(self.config.general.base_dir) / "01_iterative_shuffling",
-                config_path=self.config.general.config_file,
-                num_cols=self.config.iterative_shuffling.iter_shuf_plot_num_cols,
-                x_min=self.config.iterative_shuffling.iter_shuf_plot_x_min,
-                x_max=self.config.iterative_shuffling.iter_shuf_plot_x_max,
-                y_min=self.config.iterative_shuffling.iter_shuf_plot_y_min,
-                y_max=self.config.iterative_shuffling.iter_shuf_plot_y_max,
-                xticks=self.config.iterative_shuffling.iter_shuf_plot_xticks,
-                bin_step=self.config.iterative_shuffling.iter_shuf_plot_bin_step
+            if use_enhanced:
+                plotter = EnhancedHitExpandPlotter(
+                    base_dir=Path(self.config.general.base_dir) / "01_hit_expand",
+                    logger=self.logger
+                )
+            else:
+                plotter = HitExpandPlotter(
+                    base_dir=Path(self.config.general.base_dir) / "01_hit_expand",
+                    logger=self.logger
+                )
+            
+            # Create plotting configuration
+            plot_config = HitExpandPlottingConfig(
+                figsize=(self.config.hit_expand.plot_x_max, 7),
+                initial_color=self.config.general.plot_initial_color,
+                end_color=self.config.general.plot_end_color,
+                plddt_threshold=self.config.hit_expand.plddt_threshold,
+                filter_criteria_threshold=self.config.hit_expand.filter_criteria_threshold
             )
             
-            # Plot metric distributions across iterations
-            plotter.analyze_and_plot()
+            # Find final MSA output
+            hit_expand_dir = Path(self.config.general.base_dir) / "01_hit_expand"
+            final_msa = hit_expand_dir / "hit_expand_final_msa.a3m"
             
-            # Combine filtered sequences
-            combiner = IterShufEnrichCombiner(
-                iter_shuf_enrich_base_dir=Path(self.config.general.base_dir) / "01_iterative_shuffling",
-                config_path=self.config.general.config_file,
-                default_pdb=self.config.general.default_pdb,
-                combine_threshold=self.config.iterative_shuffling.iter_shuf_combine_threshold,
-                max_workers=self.config.slurm.max_workers
-            )
-            
-            combined_a3m = combiner.combine()
-            
-            if combined_a3m is None:
-                self.logger.error("Failed to combine sequences from iterative shuffling")
-                return False
+            if not final_msa.exists():
+                # Try alternative locations
+                alternative_locations = [
+                    hit_expand_dir / "01_msa_pipeline" / "final_optimized_msa.a3m",
+                    hit_expand_dir / "02_final_optimization" / "optimized.a3m",
+                    hit_expand_dir / "expanded_sequences.a3m"
+                ]
                 
-            self.logger.info(f"Completed iterative shuffling analysis successfully. Combined output: {combined_a3m}")
+                for alt_location in alternative_locations:
+                    if alt_location.exists():
+                        final_msa = alt_location
+                        break
+            
+            if final_msa.exists():
+                plots_dir = hit_expand_dir / "plots"
+                
+                # Create plots using appropriate method
+                if use_enhanced:
+                    saved_plots = plotter.create_comprehensive_analysis_plots(
+                        msa_output=final_msa,
+                        config_file=self.config.general.config_file,
+                        plots_dir=plots_dir,
+                        plot_config=plot_config
+                    )
+                else:
+                    saved_plots = plotter.create_hit_expand_plots(
+                        msa_output=final_msa,
+                        config_file=self.config.general.config_file,
+                        plots_dir=plots_dir,
+                        plot_config=plot_config
+                    )
+                
+                self.logger.info(f"Created {len(saved_plots)} hit expand analysis plots")
+                
+                # Log plot types created
+                if saved_plots:
+                    self.logger.info("Generated plots: " + ", ".join(saved_plots.keys()))
+            else:
+                self.logger.warning("No final MSA file found for analysis")
+                self.logger.info(f"Searched locations: {hit_expand_dir}")
+            
+            self.logger.info("Completed hit expand analysis successfully")
             return True
             
         except Exception as e:
-            self.logger.error(f"Error in iterative shuffling analysis: {str(e)}", exc_info=True)
+            self.logger.error(f"Error in hit expand analysis: {str(e)}", exc_info=True)
             return False
+    
     
     def run_m_fold_sampling(self) -> bool:
         """
@@ -214,11 +293,11 @@ class AFClaSeqPipeline:
             # Determine input A3M file
             input_a3m = self.config.m_fold_sampling.m_fold_samp_input_a3m
             if not Path(input_a3m).exists():
-                # Use output from iterative shuffling if available
-                iter_shuf_output = Path(self.config.general.base_dir) / "01_iterative_shuffling/gathered_seq_after_iter_shuffling.a3m"
-                if iter_shuf_output.exists():
-                    input_a3m = str(iter_shuf_output)
-                    self.logger.info(f"Using iterative shuffling output as input: {input_a3m}")
+                # First try hit_expand output
+                hit_expand_output = Path(self.config.general.base_dir) / "01_hit_expand/hit_expand_final_msa.a3m"
+                if hit_expand_output.exists():
+                    input_a3m = str(hit_expand_output)
+                    self.logger.info(f"Using hit expand output as input: {input_a3m}")
             
             # Get number of rounds from configuration
             num_rounds = self.config.m_fold_sampling.rounds
@@ -532,8 +611,9 @@ class AFClaSeqPipeline:
             
             # Determine input MSA
             source_msa = self.config.general.source_a3m
-            if (base_dir / "01_iterative_shuffling/gathered_seq_after_iter_shuffling.a3m").exists():
-                source_msa = str(base_dir / "01_iterative_shuffling/gathered_seq_after_iter_shuffling.a3m")
+            # First try hit_expand output
+            if (base_dir / "01_hit_expand/hit_expand_final_msa.a3m").exists():
+                source_msa = str(base_dir / "01_hit_expand/hit_expand_final_msa.a3m")
             
             all_successful = True
             
@@ -739,18 +819,19 @@ class AFClaSeqPipeline:
         pipeline_success = True
         
         try:
-            # Stage 01: Iterative Shuffling
-            if "01_ITER_SHUF_RUN" in stages_to_run:
-                if not self.run_iterative_shuffling():
-                    self.logger.error("Stopping pipeline due to failure in stage 01_ITER_SHUF_RUN")
+            # Stage 01: Hit Expand (replaces Iterative Shuffling)
+            if "01_HIT_EXPAND_RUN" in stages_to_run:
+                if not self.run_hit_expand():
+                    self.logger.error("Stopping pipeline due to failure in stage 01_HIT_EXPAND_RUN")
                     pipeline_success = False
                     return
             
-            if "01_ITER_SHUF_ANALYSIS" in stages_to_run:
-                if not self.analyze_iterative_shuffling():
-                    self.logger.error("Stopping pipeline due to failure in stage 01_ITER_SHUF_ANALYSIS")
+            if "01_HIT_EXPAND_ANALYSIS" in stages_to_run:
+                if not self.analyze_hit_expand():
+                    self.logger.error("Stopping pipeline due to failure in stage 01_HIT_EXPAND_ANALYSIS")
                     pipeline_success = False
                     return
+            
             
             # Stage 02: M-fold Sampling
             if "02_M_FOLD_SAMPLING_RUN" in stages_to_run:

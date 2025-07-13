@@ -2,11 +2,11 @@
 
 general:
   # Input MSA file for the pipeline
-  source_a3m: "default/2QKEE_colabfold-8128Seqs.a3m"
+  source_a3m: "/fs/ess/PAA0203/xing244/AF_ClaSeq/examples/default/2QKEE_colabfold-8128Seqs.a3m"
   # Reference PDB structure for analysis
-  default_pdb: "default/2QKEE_colabfold-8128Seqs_unrelaxed_rank_001_alphafold2_ptm_model_4_seed_000.pdb"
+  default_pdb: "/fs/ess/PAA0203/xing244/AF_ClaSeq/examples/default/2QKEE_colabfold-8128Seqs_unrelaxed_rank_001_alphafold2_ptm_model_4_seed_000.pdb"
   # Base directory for all pipeline outputs
-  base_dir: "run"
+  base_dir: "/fs/ess/PAA0203/xing244/AF_ClaSeq/examples/run"
   # JSON file containing filter criteria definitions
   config_file: "configs/config_2qke_5jyt_tmscore.json"
   # Name of the protein being analyzed
@@ -27,9 +27,9 @@ general:
 
 slurm:
   # Path to conda environment for SLURM jobs
-  conda_env_path: "/path/to/conda/env/"
+  conda_env_path: "/fs/ess/PAA0203/xing244/.conda/envs/colabfold"
   # SLURM account for job submission
-  slurm_account: "YOUR_SLURM_ACCOUNT"
+  slurm_account: "PAA0203"
   # File for SLURM standard output
   slurm_output: "/dev/null"
   # File for SLURM error output
@@ -43,64 +43,59 @@ slurm:
   # CPUs per task for SLURM jobs
   slurm_cpus_per_task: 4
   # Time limit for SLURM jobs
-  slurm_time: "04:00:00"
+  slurm_time: "01:00:00"
   # SLURM partition to use
-  slurm_partition: "YOUR_SLURM_PARTITION"
+  slurm_partition: "nextgen"
   # Maximum number of concurrent workers
   max_workers: 200
 
 pipeline_control:
   # Pipeline stages to execute in order
   stages:
-    - "01_ITER_SHUF_RUN"       # Run iterative shuffling
-    - "01_ITER_SHUF_ANALYSIS"  # Analyze iterative shuffling results
-    - "02_M_FOLD_SAMPLING_RUN" # Run M-fold sampling
-    - "02_M_FOLD_SAMPLING_PLOT" # Plot M-fold sampling results
-    - "03_VOTING_RUN"          # Run sequence voting
-    - "04_RECOMPILE_PREDICT_RUN" # Recompile and predict structures
-    - "05_PURE_SEQ_PLOT_RUN"   # Generate pure sequence plots
+    - "01_HIT_EXPAND_RUN"      # Run hit expand (replaces iterative shuffling)
+    - "01_HIT_EXPAND_ANALYSIS" # Analyze hit expand results
+    # - "02_M_FOLD_SAMPLING_RUN" # Run M-fold sampling
+    # - "02_M_FOLD_SAMPLING_PLOT" # Plot M-fold sampling results
+    # - "03_VOTING_RUN"          # Run sequence voting
+    # - "04_RECOMPILE_PREDICT_RUN" # Recompile and predict structures
+    # - "05_PURE_SEQ_PLOT_RUN"   # Generate pure sequence plots
   # Interval (seconds) to check job status
   check_interval: 60
 
-iterative_shuffling:
-  # Input MSA file for iterative shuffling
-  iter_shuf_input_a3m: "default/2QKEE_colabfold-8128Seqs.a3m"
-  # Number of iterations for shuffling
-  num_iterations: 8
-  # Number of shuffles per iteration
-  num_shuffles: 10
-  # Number of sequences per shuffle
-  seq_num_per_shuffle: 16
-  # Minimum pLDDT score threshold
+hit_expand:
+  # Input MSA file (matches HitExpandConfig.input_msa)
+  input_msa: "/fs/ess/PAA0203/xing244/AF_ClaSeq/examples/default/2QKEE_colabfold-8128Seqs.a3m"
+  
+  # MMseqs2 clustering parameters (matches HitExpandConfig)
+  mmseqs_coverage: 0.8
+  mmseqs_min_seq_id: 0.3
+  mmseqs_threads: 8
+  
+  # MSA pipeline parameters (matches HitExpandConfig) 
+  num_subsets: 1000
+  num_random_sequences: 8
+  num_batches: 80
+  
+  # Similarity search parameters (matches HitExpandConfig)
+  similarity_threshold: 0.3
+  similarity_top_k: 50
+  
+  # Structure analysis parameters (matches HitExpandConfig)
   plddt_threshold: 75
-  # Filter criteria for enrichment
-  enrich_filter_criteria: ["2qke_tmscore"]
-  # Quantile threshold for sequence selection
-  quantile: 0.2
-  # Resume from specific iteration (null to start fresh)
-  resume_from_iter: null
-  # Number of sequences to randomly select (null for no random selection)
-  iter_shuf_random_select: null
-  # Number of columns in plot layout
-  iter_shuf_plot_num_cols: 4
-  # Minimum x-axis value for plots
-  iter_shuf_plot_x_min: 0.4
-  # Maximum x-axis value for plots
-  iter_shuf_plot_x_max: 1.0
-  # Minimum y-axis value for plots
-  iter_shuf_plot_y_min: 0.8
-  # Maximum y-axis value for plots
-  iter_shuf_plot_y_max: 10000
-  # Custom x-axis tick positions
-  iter_shuf_plot_xticks: null
-  # Step size for histogram bins
-  iter_shuf_plot_bin_step: 1
-  # Threshold for combining sequences
-  iter_shuf_combine_threshold: 0.65
+  filter_criteria_threshold: 0.8
+  
+  # Plotting parameters (matches HitExpandConfig)
+  plot_x_min: 0.4
+  plot_x_max: 1.0
+  plot_y_min: 0.8
+  plot_y_max: 10000
+  plot_num_cols: 4
+  plot_xticks: null
+  plot_bin_step: 0.2
 
 m_fold_sampling:
-  # Input MSA file for M-fold sampling (output from iterative shuffling)
-  m_fold_samp_input_a3m: "run/01_iterative_shuffling/analysis/a3m_combine/gathered_seq_after_iter_shuffling.a3m"
+  # Input MSA file for M-fold sampling (output from hit expand)
+  m_fold_samp_input_a3m: "run/01_hit_expand/expanded_sequences.a3m"
   # Size of each group for M-fold sampling
   m_fold_group_size: 10
   # Number of sequences to randomly select (null for no random selection)
