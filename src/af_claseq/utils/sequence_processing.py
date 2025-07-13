@@ -1,5 +1,6 @@
 import os
 import random
+import re
 from Bio import SeqIO
 from Bio.PDB import PDBParser, PPBuilder
 from typing import List, Dict, Any, Tuple, Set, Optional
@@ -442,3 +443,314 @@ def count_sequences_in_a3m(a3m_file: str) -> int:
     except Exception as e:
         logger.error(f"Error counting sequences in A3M file: {e}")
         return 0
+
+
+# ===== Enhanced A3M Processing for Hit Expand =====
+
+# Constants for sequence validation
+A3M_EXTENSION = ".a3m"
+FASTA_EXTENSIONS = [".fasta", ".fa", ".fas"]
+MAX_SEQUENCE_LENGTH = 50000
+MIN_SEQUENCE_LENGTH = 10
+STANDARD_AMINO_ACIDS = set("ARNDCQEGHILKMFPSTWYV")
+
+
+class SequenceFormatError(Exception):
+    """Raised when sequence format is invalid."""
+    pass
+
+
+class A3MParser:
+    """Enhanced A3M file parser with validation and error handling."""
+    
+    def __init__(self, strict_validation: bool = True, filter_lowercase: bool = True):
+        """
+        Initialize A3M parser.
+        
+        Args:
+            strict_validation: If True, raises exceptions on validation errors.
+                             If False, logs warnings and attempts to continue.
+            filter_lowercase: If True, removes lowercase letters (insertions) during parsing.
+        """
+        self.strict_validation = strict_validation
+        self.filter_lowercase = filter_lowercase
+        # Pattern to match valid amino acid sequences
+        self._aa_pattern = re.compile(r'^[ARNDCQEGHILKMFPSTWYVXarndcqeghilkmfpstwyv\-\.]*$')
+    
+    def parse_file(self, file_path: Path) -> Dict[str, str]:
+        """
+        Parse A3M file and return sequences.
+        
+        Args:
+            file_path: Path to A3M file
+            
+        Returns:
+            Dictionary mapping headers to sequences
+            
+        Raises:
+            SequenceFormatError: If file format is invalid
+            FileNotFoundError: If file doesn't exist
+        """
+        file_path = Path(file_path)
+        if not file_path.exists():
+            raise FileNotFoundError(f"A3M file not found: {file_path}")
+        
+        if file_path.suffix.lower() != A3M_EXTENSION:
+            logger.warning(f"File does not have A3M extension: {file_path}")
+        
+        sequences = {}
+        current_header = None
+        current_sequence = ""
+        line_num = 0
+        
+        try:
+            with open(file_path, 'r', encoding='utf-8') as f:
+                for line_num, line in enumerate(f, 1):
+                    line = line.strip()
+                    
+                    if not line:  # Skip empty lines
+                        continue
+                    
+                    if line.startswith('>'):
+                        # Save previous sequence if exists
+                        if current_header is not None:
+                            processed_seq = self._process_sequence(current_sequence, current_header, line_num)
+                            if processed_seq:
+                                sequences[current_header] = processed_seq
+                        
+                        # Start new sequence
+                        current_header = line
+                        current_sequence = ""
+                    else:
+                        # Accumulate sequence lines
+                        current_sequence += line
+                
+                # Don't forget the last sequence
+                if current_header is not None:
+                    processed_seq = self._process_sequence(current_sequence, current_header, line_num)
+                    if processed_seq:
+                        sequences[current_header] = processed_seq
+        
+        except UnicodeDecodeError as e:
+            raise SequenceFormatError(f"File encoding error at line {line_num}: {e}")
+        except Exception as e:
+            raise SequenceFormatError(f"Parse error at line {line_num}: {e}")
+        
+        if not sequences:
+            raise SequenceFormatError(f"No valid sequences found in {file_path}")
+        
+        logger.info(f"Parsed {len(sequences)} sequences from {file_path}")
+        return sequences
+    
+    def _process_sequence(self, sequence: str, header: str, line_num: int) -> Optional[str]:
+        """
+        Process and validate a sequence.
+        
+        Args:
+            sequence: Raw sequence string
+            header: Sequence header
+            line_num: Current line number for error reporting
+            
+        Returns:
+            Processed sequence or None if invalid
+        """
+        if not sequence:
+            if self.strict_validation:
+                raise SequenceFormatError(f"Empty sequence for header {header} at line {line_num}")
+            else:
+                logger.warning(f"Empty sequence for header {header} at line {line_num}")
+                return None
+        
+        # Filter lowercase letters if requested (MSA insertions)
+        if self.filter_lowercase:
+            sequence = ''.join(char for char in sequence if not char.islower())
+        
+        # Validate sequence content
+        if not self._aa_pattern.match(sequence):
+            invalid_chars = set(sequence) - set("ARNDCQEGHILKMFPSTWYVXarndcqeghilkmfpstwyv-.")
+            if self.strict_validation:
+                raise SequenceFormatError(
+                    f"Invalid characters in sequence {header}: {invalid_chars}"
+                )
+            else:
+                logger.warning(
+                    f"Invalid characters in sequence {header}: {invalid_chars}"
+                )
+                return None
+        
+        # Validate sequence length
+        if len(sequence) < MIN_SEQUENCE_LENGTH:
+            if self.strict_validation:
+                raise SequenceFormatError(
+                    f"Sequence {header} too short: {len(sequence)} < {MIN_SEQUENCE_LENGTH}"
+                )
+            else:
+                logger.warning(
+                    f"Sequence {header} too short: {len(sequence)} < {MIN_SEQUENCE_LENGTH}"
+                )
+                return None
+        
+        if len(sequence) > MAX_SEQUENCE_LENGTH:
+            if self.strict_validation:
+                raise SequenceFormatError(
+                    f"Sequence {header} too long: {len(sequence)} > {MAX_SEQUENCE_LENGTH}"
+                )
+            else:
+                logger.warning(
+                    f"Sequence {header} too long: {len(sequence)} > {MAX_SEQUENCE_LENGTH}"
+                )
+                return None
+        
+        return sequence
+    
+    def write_sequences(self, sequences: Dict[str, str], output_path: Path, 
+                       ensure_query_first: bool = True) -> None:
+        """
+        Write sequences to A3M file.
+        
+        Args:
+            sequences: Dictionary mapping headers to sequences
+            output_path: Output file path
+            ensure_query_first: If True, ensures first sequence (query) comes first
+        """
+        output_path = Path(output_path)
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        
+        # Sort sequences, optionally putting query first
+        sequence_items = list(sequences.items())
+        if ensure_query_first and sequence_items:
+            # Assume first sequence is query, move it to front if not already
+            query_header, query_seq = sequence_items[0]
+            other_sequences = sequence_items[1:]
+            sequence_items = [(query_header, query_seq)] + other_sequences
+        
+        try:
+            with open(output_path, 'w', encoding='utf-8') as f:
+                for header, sequence in sequence_items:
+                    f.write(f"{header}\n{sequence}\n")
+            
+            logger.info(f"Wrote {len(sequences)} sequences to {output_path}")
+        
+        except Exception as e:
+            raise SequenceFormatError(f"Error writing sequences to {output_path}: {e}")
+    
+    def get_query_sequence(self, sequences: Dict[str, str]) -> Tuple[str, str]:
+        """
+        Get the query sequence (assumed to be first).
+        
+        Args:
+            sequences: Dictionary of sequences
+            
+        Returns:
+            Tuple of (header, sequence) for query
+            
+        Raises:
+            SequenceFormatError: If no sequences found
+        """
+        if not sequences:
+            raise SequenceFormatError("No sequences available")
+        
+        # First sequence is assumed to be query
+        query_header = list(sequences.keys())[0]
+        query_sequence = sequences[query_header]
+        
+        return query_header, query_sequence
+
+
+def validate_a3m_file(file_path: Path, strict: bool = True) -> bool:
+    """
+    Validate A3M file format and content.
+    
+    Args:
+        file_path: Path to A3M file
+        strict: If True, raise exceptions on errors
+        
+    Returns:
+        True if valid, False otherwise
+        
+    Raises:
+        SequenceFormatError: If strict=True and validation fails
+    """
+    try:
+        parser = A3MParser(strict_validation=strict)
+        sequences = parser.parse_file(file_path)
+        return len(sequences) > 0
+    except Exception as e:
+        if strict:
+            raise
+        else:
+            logger.error(f"A3M validation failed for {file_path}: {e}")
+            return False
+
+
+def filter_sequences_by_coverage(sequences: Dict[str, str], 
+                                query_sequence: str,
+                                min_coverage: float = 0.7) -> Dict[str, str]:
+    """
+    Filter sequences by coverage relative to query.
+    
+    Args:
+        sequences: Dictionary of sequences
+        query_sequence: Reference query sequence
+        min_coverage: Minimum coverage threshold (0.0-1.0)
+        
+    Returns:
+        Filtered sequences dictionary
+    """
+    if not (0.0 <= min_coverage <= 1.0):
+        raise ValueError("Coverage threshold must be between 0.0 and 1.0")
+    
+    query_length = len(query_sequence.replace('-', ''))
+    filtered_sequences = {}
+    
+    for header, sequence in sequences.items():
+        # Calculate coverage (non-gap positions)
+        non_gap_length = len(sequence.replace('-', ''))
+        coverage = non_gap_length / query_length if query_length > 0 else 0.0
+        
+        if coverage >= min_coverage:
+            filtered_sequences[header] = sequence
+        else:
+            logger.debug(f"Filtered out {header}: coverage {coverage:.3f} < {min_coverage}")
+    
+    logger.info(f"Filtered {len(filtered_sequences)}/{len(sequences)} sequences by coverage >= {min_coverage}")
+    return filtered_sequences
+
+
+def split_sequences_by_similarity(sequences: Dict[str, str],
+                                 query_sequence: str,
+                                 similarity_threshold: float = 0.7) -> Tuple[Dict[str, str], Dict[str, str]]:
+    """
+    Split sequences into similar and dissimilar groups based on query.
+    
+    Args:
+        sequences: Dictionary of sequences
+        query_sequence: Reference query sequence
+        similarity_threshold: Similarity threshold (0.0-1.0)
+        
+    Returns:
+        Tuple of (similar_sequences, dissimilar_sequences)
+    """
+    if not (0.0 <= similarity_threshold <= 1.0):
+        raise ValueError("Similarity threshold must be between 0.0 and 1.0")
+    
+    similar_sequences = {}
+    dissimilar_sequences = {}
+    
+    for header, sequence in sequences.items():
+        # Simple similarity calculation (identity percentage)
+        if len(sequence) == len(query_sequence):
+            matches = sum(1 for a, b in zip(sequence, query_sequence) if a == b and a != '-')
+            total_positions = len(query_sequence.replace('-', ''))
+            similarity = matches / total_positions if total_positions > 0 else 0.0
+        else:
+            # For different lengths, use a more complex alignment (simplified here)
+            similarity = 0.0
+        
+        if similarity >= similarity_threshold:
+            similar_sequences[header] = sequence
+        else:
+            dissimilar_sequences[header] = sequence
+    
+    logger.info(f"Split sequences: {len(similar_sequences)} similar, {len(dissimilar_sequences)} dissimilar")
+    return similar_sequences, dissimilar_sequences

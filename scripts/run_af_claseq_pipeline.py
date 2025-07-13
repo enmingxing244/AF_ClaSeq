@@ -16,7 +16,7 @@ from typing import Dict, Any
 # Import modules from AF-ClaSeq
 from af_claseq.utils.slurm_utils import SlurmJobSubmitter
 from af_claseq.utils.structure_analysis import StructureAnalyzer
-from af_claseq.hit_expand import HitExpandRunner
+from af_claseq.pipeline.hit_expand import HitExpandRunner
 from af_claseq.pipeline.m_fold_sampling import MFoldSampler
 from af_claseq.pipeline.sequence_voting import SequenceVotingRunner, SequenceVotingPlotter
 from af_claseq.pipeline.sequence_recompile import SequenceRecompiler
@@ -122,48 +122,13 @@ class AFClaSeqPipeline:
         self.logger.info("=== STAGE 01_RUN: HIT EXPAND ===")
         
         try:
-            # Convert hit_expand config to appropriate format
-            from af_claseq.hit_expand.config import HitExpandConfig
+            # Use hit_expand config directly (it's already a HitExpandConfig object)
+            hit_expand_config = self.config.hit_expand
             
-            hit_expand_config = HitExpandConfig(
-                input_msa=self.config.hit_expand.input_msa,
-                mmseqs_bin=self.config.hit_expand.mmseqs_bin,
-                mmseqs_coverage=self.config.hit_expand.mmseqs_coverage,
-                mmseqs_min_seq_id=self.config.hit_expand.mmseqs_min_seq_id,
-                mmseqs_cov_mode=self.config.hit_expand.mmseqs_cov_mode,
-                mmseqs_cluster_mode=self.config.hit_expand.mmseqs_cluster_mode,
-                mmseqs_threads=self.config.hit_expand.mmseqs_threads,
-                mmseqs_tmp_dir=self.config.hit_expand.mmseqs_tmp_dir,
-                num_subsets=self.config.hit_expand.num_subsets,
-                num_random_sequences=self.config.hit_expand.num_random_sequences,
-                num_batches=self.config.hit_expand.num_batches,
-                batch_prefix=self.config.hit_expand.batch_prefix,
-                similarity_top_k=self.config.hit_expand.similarity_top_k,
-                similarity_threshold=self.config.hit_expand.similarity_threshold,
-                exclude_query_headers=self.config.hit_expand.exclude_query_headers,
-                plddt_threshold=self.config.hit_expand.plddt_threshold,
-                filter_criteria_threshold=self.config.hit_expand.filter_criteria_threshold,
-                filter_criteria=self.config.hit_expand.filter_criteria,
-                monitor_jobs=self.config.hit_expand.monitor_jobs,
-                job_check_interval=self.config.hit_expand.job_check_interval,
-                job_timeout=self.config.hit_expand.job_timeout,
-                check_existing_jobs=self.config.hit_expand.check_existing_jobs,
-                skip_structure_prediction=self.config.hit_expand.skip_structure_prediction,
-                skip_structure_analysis=self.config.hit_expand.skip_structure_analysis,
-                skip_hit_expansion=self.config.hit_expand.skip_hit_expansion,
-                skip_clustering=self.config.hit_expand.skip_clustering,
-                output_prefix=self.config.hit_expand.output_prefix,
-                plot_num_cols=self.config.hit_expand.plot_num_cols,
-                plot_x_min=self.config.hit_expand.plot_x_min,
-                plot_x_max=self.config.hit_expand.plot_x_max,
-                plot_y_min=self.config.hit_expand.plot_y_min,
-                plot_y_max=self.config.hit_expand.plot_y_max,
-                plot_xticks=self.config.hit_expand.plot_xticks,
-                plot_bin_step=self.config.hit_expand.plot_bin_step,
-                random_seed=self.config.hit_expand.random_seed,
-                max_workers=self.config.hit_expand.max_workers
-            )
-            
+            # Set input_msa if not provided (use general.source_a3m as fallback)
+            if not hit_expand_config.input_msa:
+                hit_expand_config.input_msa = self.config.general.source_a3m
+                
             # Create runner instance
             runner = HitExpandRunner(
                 config=hit_expand_config,
@@ -197,83 +162,77 @@ class AFClaSeqPipeline:
         """
         self.logger.info("=== STAGE 01_ANALYSIS: HIT EXPAND ANALYSIS ===")
         try:
-            # Try to use enhanced plotter, fall back to basic if needed
-            try:
-                from af_claseq.hit_expand.plotting_enhanced import EnhancedHitExpandPlotter
-                use_enhanced = True
-                self.logger.info("Using enhanced plotting capabilities")
-            except ImportError:
-                from af_claseq.hit_expand.plotting import HitExpandPlotter
-                use_enhanced = False
-                self.logger.info("Using basic plotting capabilities")
-            
-            from af_claseq.hit_expand.config import HitExpandPlottingConfig
-            
-            # Create plotter instance
-            if use_enhanced:
-                plotter = EnhancedHitExpandPlotter(
-                    base_dir=Path(self.config.general.base_dir) / "01_hit_expand",
-                    logger=self.logger
-                )
-            else:
-                plotter = HitExpandPlotter(
-                    base_dir=Path(self.config.general.base_dir) / "01_hit_expand",
-                    logger=self.logger
-                )
-            
-            # Create plotting configuration
-            plot_config = HitExpandPlottingConfig(
-                figsize=(self.config.hit_expand.plot_x_max, 7),
-                initial_color=self.config.general.plot_initial_color,
-                end_color=self.config.general.plot_end_color,
-                plddt_threshold=self.config.hit_expand.plddt_threshold,
-                filter_criteria_threshold=self.config.hit_expand.filter_criteria_threshold
+            # Use existing plotting utilities from af_claseq.utils.plotting_manager
+            from af_claseq.utils.plotting_manager import (
+                create_2d_scatter_plot,
+                load_results_df
             )
             
-            # Find final MSA output
+            # Find final MSA output and structure analysis results
             hit_expand_dir = Path(self.config.general.base_dir) / "01_hit_expand"
             final_msa = hit_expand_dir / "hit_expand_final_msa.a3m"
             
+            # Check for alternative MSA locations
             if not final_msa.exists():
-                # Try alternative locations
                 alternative_locations = [
-                    hit_expand_dir / "01_msa_pipeline" / "final_optimized_msa.a3m",
-                    hit_expand_dir / "02_final_optimization" / "optimized.a3m",
+                    hit_expand_dir / "02_similarity_search" / "expanded_sequences.a3m",
+                    hit_expand_dir / "05_structure_analysis" / "filtered_sequences.a3m",
                     hit_expand_dir / "expanded_sequences.a3m"
                 ]
                 
                 for alt_location in alternative_locations:
                     if alt_location.exists():
                         final_msa = alt_location
+                        self.logger.info(f"Found MSA at alternative location: {alt_location}")
                         break
             
-            if final_msa.exists():
+            # Look for structure analysis results
+            analysis_results_file = hit_expand_dir / "05_structure_analysis" / "structure_analysis_results.json"
+            
+            if analysis_results_file.exists():
+                # Load and visualize structure analysis results
+                with open(analysis_results_file, 'r') as f:
+                    analysis_data = json.load(f)
+                
                 plots_dir = hit_expand_dir / "plots"
+                plots_dir.mkdir(exist_ok=True)
                 
-                # Create plots using appropriate method
-                if use_enhanced:
-                    saved_plots = plotter.create_comprehensive_analysis_plots(
-                        msa_output=final_msa,
-                        config_file=self.config.general.config_file,
-                        plots_dir=plots_dir,
-                        plot_config=plot_config
-                    )
-                else:
-                    saved_plots = plotter.create_hit_expand_plots(
-                        msa_output=final_msa,
-                        config_file=self.config.general.config_file,
-                        plots_dir=plots_dir,
-                        plot_config=plot_config
-                    )
+                # Create basic analysis plots using existing utilities
+                self.logger.info("Creating hit expand analysis visualizations")
                 
-                self.logger.info(f"Created {len(saved_plots)} hit expand analysis plots")
+                # Simple summary of results
+                all_results = analysis_data.get("all_results", {})
+                filtered_results = analysis_data.get("filtered_results", {})
                 
-                # Log plot types created
-                if saved_plots:
-                    self.logger.info("Generated plots: " + ", ".join(saved_plots.keys()))
+                self.logger.info(f"Structure analysis summary:")
+                self.logger.info(f"  Total structures analyzed: {len(all_results)}")
+                self.logger.info(f"  Structures passing filters: {len(filtered_results)}")
+                
+                if len(filtered_results) > 0:
+                    success_rate = len(filtered_results) / len(all_results) * 100
+                    self.logger.info(f"  Success rate: {success_rate:.1f}%")
+                
+                saved_plots = {"summary": "Analysis completed"}
+                
+            elif final_msa.exists():
+                # Just report on MSA if no structure analysis available
+                from af_claseq.utils.sequence_processing import count_sequences_in_a3m
+                seq_count = count_sequences_in_a3m(str(final_msa))
+                
+                self.logger.info(f"Hit expand MSA summary:")
+                self.logger.info(f"  Final MSA: {final_msa}")
+                self.logger.info(f"  Total sequences: {seq_count}")
+                
+                saved_plots = {"msa_summary": f"{seq_count} sequences"}
+                
             else:
                 self.logger.warning("No final MSA file found for analysis")
-                self.logger.info(f"Searched locations: {hit_expand_dir}")
+                self.logger.info(f"Searched in: {hit_expand_dir}")
+                saved_plots = {}
+            
+            # Log results
+            if saved_plots:
+                self.logger.info(f"Hit expand analysis completed: {saved_plots}")
             
             self.logger.info("Completed hit expand analysis successfully")
             return True

@@ -9,7 +9,7 @@ import yaml
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional, Any, Tuple, Union
 from af_claseq.utils.plotting_manager import COLORS
-from ..hit_expand.config import HitExpandConfig
+# HitExpandConfig now defined in this file
 
 @dataclass
 class GeneralConfig:
@@ -121,6 +121,78 @@ class PureSequencePlottingConfig:
     figsize: Tuple[int, int] = (15, 7)  # Updated to match PureSequencePlottingConfig
     dpi: int = 300  # Updated to match PureSequencePlottingConfig
     max_workers: int = 8
+
+
+@dataclass
+class HitExpandConfig:
+    """Configuration for hit expand pipeline step."""
+    
+    # Input MSA file (source A3M) - can reference general.source_a3m
+    input_msa: str = ""
+    
+    # MMseqs2 clustering configuration
+    mmseqs_bin: str = "/fs/ess/PAA0203/xing244/packages/mmseqs/bin/mmseqs"
+    mmseqs_coverage: float = 0.8
+    mmseqs_min_seq_id: float = 0.7
+    mmseqs_cov_mode: int = 0
+    mmseqs_cluster_mode: int = 0
+    mmseqs_threads: int = 8
+    mmseqs_tmp_dir: str = "/tmp"
+    
+    # Subset generation configuration
+    num_subsets: int = 2000
+    num_random_sequences: int = 8
+    num_batches: int = 80
+    batch_prefix: str = "batch"
+    
+    # Similarity search configuration  
+    similarity_top_k: int = 50
+    similarity_threshold: float = 0.7
+    exclude_query_headers: bool = True
+    
+    # Structure analysis configuration
+    plddt_threshold: float = 75.0
+    filter_criteria_threshold: float = 0.8
+    filter_criteria: str = "default"
+    
+    # Job monitoring
+    monitor_jobs: bool = True
+    job_check_interval: float = 60.0
+    job_timeout: Optional[float] = None
+    check_existing_jobs: bool = True
+    
+    # Processing control
+    skip_structure_prediction: bool = False
+    skip_structure_analysis: bool = False
+    skip_hit_expansion: bool = False
+    skip_clustering: bool = False
+    
+    # Output configuration
+    output_prefix: str = "subset"
+    
+    # Plotting configuration
+    plot_num_cols: int = 5
+    plot_x_min: float = 0
+    plot_x_max: float = 20
+    plot_y_min: float = 0.8
+    plot_y_max: float = 10000
+    plot_xticks: Optional[List[float]] = None
+    plot_bin_step: float = 0.2
+    
+    # Integration parameters
+    random_seed: int = 42
+    max_workers: int = 96
+    
+    def __post_init__(self):
+        """Validate configuration after initialization."""
+        if self.mmseqs_coverage < 0 or self.mmseqs_coverage > 1:
+            raise ValueError("mmseqs_coverage must be between 0 and 1")
+        if self.mmseqs_min_seq_id < 0 or self.mmseqs_min_seq_id > 1:
+            raise ValueError("mmseqs_min_seq_id must be between 0 and 1")
+        if self.similarity_threshold < 0 or self.similarity_threshold > 1:
+            raise ValueError("similarity_threshold must be between 0 and 1")
+        if self.plddt_threshold < 0 or self.plddt_threshold > 100:
+            raise ValueError("plddt_threshold must be between 0 and 100")
 
 @dataclass
 class PipelineConfig:
