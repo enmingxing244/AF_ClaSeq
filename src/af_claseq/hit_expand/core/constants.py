@@ -1,0 +1,45 @@
+#!/usr/bin/env python3
+"""
+Constants used throughout the MSA pipeline.
+Centralizes magic numbers and configuration values.
+"""
+
+# Quality thresholds
+DEFAULT_PLDDT_THRESHOLD = 75.0
+DEFAULT_RMSD_THRESHOLD = 6.0
+MIN_SIMILARITY_THRESHOLD = 0.0
+MAX_SIMILARITY_THRESHOLD = 1.0
+
+# Subset generation defaults
+DEFAULT_NUM_SUBSETS = 2000
+DEFAULT_NUM_RANDOM_SEQUENCES = 8
+MIN_SEQUENCES_PER_SUBSET = 1
+
+# Batch processing defaults
+DEFAULT_NUM_BATCHES = 50
+MIN_BATCH_SIZE = 1
+
+# SLURM defaults
+DEFAULT_TIME_LIMIT = "02:00:00"
+DEFAULT_MEMORY = "32G"
+DEFAULT_CPUS_PER_TASK = "8"
+DEFAULT_DELAY_BETWEEN_JOBS = 1.0
+
+# File patterns
+COLABFOLD_OUTPUT_PATTERN = "*unrelaxed_rank_001_alphafold2_ptm_model_1_seed_000.pdb"
+A3M_EXTENSION = ".a3m"
+PDB_EXTENSION = ".pdb"
+FASTA_EXTENSIONS = {".fasta", ".fa", ".fas"}
+
+# Sequence processing
+MAX_SEQUENCE_LENGTH = 10000
+MIN_SEQUENCE_LENGTH = 10
+STANDARD_AMINO_ACIDS = set("ACDEFGHIKLMNPQRSTVWY")
+
+# Logging
+DEFAULT_LOG_LEVEL = "INFO"
+MAX_LOG_FILE_SIZE = 100 * 1024 * 1024  # 100MB
+
+# Performance
+DEFAULT_MAX_CORES = 64
+SIMILARITY_SEARCH_CHUNK_SIZE = 1000
