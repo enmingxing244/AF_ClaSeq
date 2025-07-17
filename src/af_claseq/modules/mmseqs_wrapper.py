@@ -85,14 +85,14 @@ class MMseqsWrapper:
         logger.info("MMseqs2 wrapper initialized successfully")
     
     def cluster_sequences(self, 
-                         input_fasta: Path,
+                         input_file: Path,
                          output_dir: Path,
                          prefix: str = "cluster") -> Dict[str, Any]:
         """
-        Cluster sequences using MMseqs2.
+        Cluster sequences using MMseqs2 easy-cluster.
         
         Args:
-            input_fasta: Path to input FASTA file
+            input_file: Path to input A3M or FASTA file
             output_dir: Output directory for results
             prefix: Prefix for output files
             
@@ -102,12 +102,12 @@ class MMseqsWrapper:
         Raises:
             MMseqsError: If clustering fails
         """
-        input_fasta = Path(input_fasta)
+        input_file = Path(input_file)
         output_dir = Path(output_dir)
         
         # Validate inputs
-        if not input_fasta.exists():
-            raise MMseqsError(f"Input FASTA file not found: {input_fasta}")
+        if not input_file.exists():
+            raise MMseqsError(f"Input file not found: {input_file}")
         
         # Create output directory
         output_dir.mkdir(parents=True, exist_ok=True)
@@ -119,7 +119,7 @@ class MMseqsWrapper:
             try:
                 # Run clustering workflow
                 result = self._run_clustering_workflow(
-                    input_fasta=input_fasta,
+                    input_fasta=input_file,  # Can handle A3M files directly
                     output_dir=output_dir,
                     tmp_dir=tmp_path,
                     prefix=prefix
@@ -138,10 +138,10 @@ class MMseqsWrapper:
                                 tmp_dir: Path,
                                 prefix: str) -> Dict[str, Any]:
         """
-        Run the complete MMseqs2 clustering workflow.
+        Run MMseqs2 easy-cluster workflow.
         
         Args:
-            input_fasta: Input FASTA file
+            input_fasta: Input A3M/FASTA file
             output_dir: Output directory
             tmp_dir: Temporary directory
             prefix: Output prefix
@@ -149,41 +149,32 @@ class MMseqsWrapper:
         Returns:
             Dictionary with results and statistics
         """
-        # Define file paths
-        db_path = tmp_dir / f"{prefix}_db"
-        cluster_db_path = tmp_dir / f"{prefix}_cluster"
-        rep_seq_path = output_dir / f"{prefix}_representatives.fasta"
-        cluster_tsv_path = output_dir / f"{prefix}_clusters.tsv"
+        # Define output paths (MMseqs2 easy-cluster creates these automatically)
+        result_prefix = output_dir / prefix
+        rep_seq_path = output_dir / f"{prefix}_rep_seq.fasta"
+        cluster_tsv_path = output_dir / f"{prefix}_cluster.tsv"
         
-        # Step 1: Create sequence database
-        logger.info("Creating MMseqs2 database...")
-        self._run_mmseqs_command([
-            "createdb", str(input_fasta), str(db_path)
-        ])
-        
-        # Step 2: Cluster sequences
-        logger.info("Clustering sequences...")
+        # Run MMseqs2 easy-cluster: mmseqs easy-cluster INPUT.a3m RESULT_PREFIX TMP
+        logger.info("Running MMseqs2 easy-cluster...")
         cluster_cmd = [
-            "cluster", str(db_path), str(cluster_db_path), str(tmp_dir),
+            "easy-cluster", 
+            str(input_fasta),           # Input A3M file
+            str(result_prefix),         # Result prefix
+            str(tmp_dir),               # Temporary directory
             "--cov-mode", str(self.config.cov_mode),
             "--cluster-mode", str(self.config.cluster_mode),
             "-c", str(self.config.coverage),
             "--min-seq-id", str(self.config.min_seq_id),
             "--threads", str(self.config.threads)
         ]
+        
         self._run_mmseqs_command(cluster_cmd)
         
-        # Step 3: Extract representative sequences
-        logger.info("Extracting representative sequences...")
-        self._run_mmseqs_command([
-            "result2repseq", str(db_path), str(cluster_db_path), str(rep_seq_path)
-        ])
-        
-        # Step 4: Create cluster TSV file
-        logger.info("Creating cluster membership file...")
-        self._run_mmseqs_command([
-            "createtsv", str(db_path), str(db_path), str(cluster_db_path), str(cluster_tsv_path)
-        ])
+        # Verify output files exist
+        if not rep_seq_path.exists():
+            raise MMseqsError(f"Expected representative sequences file not found: {rep_seq_path}")
+        if not cluster_tsv_path.exists():
+            raise MMseqsError(f"Expected cluster TSV file not found: {cluster_tsv_path}")
         
         # Parse results and generate statistics
         stats = self._parse_clustering_results(

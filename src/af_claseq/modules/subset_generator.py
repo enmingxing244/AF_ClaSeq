@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import Dict, List, Tuple, Optional, Set
 from dataclasses import dataclass
 import json
+from tqdm import tqdm
 
 from af_claseq.utils.logging_utils import get_logger
 from af_claseq.utils.sequence_processing import A3MParser, SequenceFormatError
@@ -160,6 +161,99 @@ class SubsetGenerator:
         except Exception as e:
             logger.error(f"Subset generation failed: {e}")
             raise SubsetGeneratorError(f"Subset generation failed: {e}")
+
+    def generate_subsets_with_query(self,
+                                   expanded_msa: Path,
+                                   query_header: str,
+                                   query_sequence: str,
+                                   output_dir: Path) -> Dict[str, any]:
+        """
+        Generate random subsets with a specific query sequence always included first.
+        
+        Args:
+            expanded_msa: Path to expanded MSA file
+            query_header: Query sequence header
+            query_sequence: Query sequence content
+            output_dir: Output directory for subsets
+            
+        Returns:
+            Dictionary with generation results and statistics
+            
+        Raises:
+            SubsetGeneratorError: If generation fails
+        """
+        try:
+            # Parse expanded MSA
+            logger.info(f"Loading expanded MSA from {expanded_msa}")
+            parser = A3MParser(strict_validation=False)
+            sequences = parser.parse_file(expanded_msa)
+            
+            if len(sequences) == 0:
+                raise SubsetGeneratorError("No sequences found in expanded MSA")
+            
+            logger.info(f"Using provided query sequence: {query_header}")
+            
+            # Use all sequences as potential sampling pool (representative sequences)
+            sampling_sequences = sequences
+            
+            if len(sampling_sequences) < self.config.num_random_sequences:
+                logger.warning(f"Only {len(sampling_sequences)} sequences available, "
+                             f"but {self.config.num_random_sequences} requested per subset")
+                # Adjust to available sequences
+                actual_num_seqs = len(sampling_sequences)
+            else:
+                actual_num_seqs = self.config.num_random_sequences
+            
+            # Create output directory
+            output_dir = Path(output_dir)
+            output_dir.mkdir(parents=True, exist_ok=True)
+            
+            # Generate subsets with the specific query sequence
+            subset_paths = self._generate_random_subsets(
+                query_header=query_header,
+                query_sequence=query_sequence,
+                non_query_sequences=sampling_sequences,  # Use all representative sequences for sampling
+                output_dir=output_dir,
+                num_sequences_per_subset=actual_num_seqs
+            )
+            
+            # Organize subsets into batches
+            batch_info = self._organize_into_batches(subset_paths, output_dir)
+            
+            # Generate statistics
+            stats = {
+                "total_sequences": len(sequences),
+                "query_sequence": query_header,
+                "sampling_sequences": len(sampling_sequences),
+                "subsets_generated": len(subset_paths),
+                "sequences_per_subset": actual_num_seqs + 1,  # +1 for query sequence
+                "batches_created": len(batch_info),
+                "subsets_per_batch": [len(batch) for batch in batch_info.values()],
+                "config": {
+                    "num_subsets": self.config.num_subsets,
+                    "num_random_sequences": self.config.num_random_sequences,
+                    "num_batches": self.config.num_batches,
+                    "random_seed": self.config.random_seed
+                }
+            }
+            
+            # Save generation metadata
+            metadata_file = output_dir / "subset_generation_metadata.json"
+            with open(metadata_file, 'w') as f:
+                json.dump(stats, f, indent=2)
+            
+            logger.info(f"Generated {len(subset_paths)} subsets with query sequence in {len(batch_info)} batches")
+            
+            return {
+                "subset_paths": subset_paths,
+                "batch_info": batch_info,
+                "statistics": stats,
+                "metadata_file": str(metadata_file)
+            }
+            
+        except Exception as e:
+            logger.error(f"Subset generation with query failed: {e}")
+            raise SubsetGeneratorError(f"Subset generation with query failed: {e}")
     
     def _generate_random_subsets(self,
                                 query_header: str,
@@ -185,9 +279,20 @@ class SubsetGenerator:
         
         logger.info(f"Generating {self.config.num_subsets} subsets with {num_sequences_per_subset} sequences each")
         
-        for i in range(self.config.num_subsets):
+        # Temporarily suppress INFO logging from sequence_processing module
+        seq_processing_logger = logging.getLogger('af_claseq.sequence_processing')
+        original_level = seq_processing_logger.level
+        seq_processing_logger.setLevel(logging.WARNING)
+        
+        # Create progress bar
+        pbar = tqdm(range(self.config.num_subsets), desc="Generating subsets", unit="subset")
+        
+        for i in pbar:
             subset_id = f"{self.config.output_prefix}_{i+1:06d}"
             subset_file = output_dir / f"{subset_id}.a3m"
+            
+            # Update progress bar description
+            pbar.set_postfix({"current": subset_id})
             
             # Sample random sequences
             if len(non_query_list) >= num_sequences_per_subset:
@@ -212,9 +317,12 @@ class SubsetGenerator:
             parser.write_sequences(subset_sequences, subset_file, ensure_query_first=True)
             
             subset_paths.append(subset_file)
-            
-            if (i + 1) % 100 == 0:
-                logger.debug(f"Generated {i + 1}/{self.config.num_subsets} subsets")
+        
+        # Close progress bar
+        pbar.close()
+        
+        # Restore original logging level
+        seq_processing_logger.setLevel(original_level)
         
         logger.info(f"Generated {len(subset_paths)} subset files")
         return subset_paths
@@ -242,6 +350,8 @@ class SubsetGenerator:
         logger.info(f"Base subsets per batch: {subsets_per_batch}, remainder: {remainder}")
         
         start_idx = 0
+        moved_files = []  # Track files that have been moved
+        
         for batch_num in range(self.config.num_batches):
             batch_name = f"{self.config.batch_prefix}_{batch_num+1:03d}"
             
@@ -251,92 +361,43 @@ class SubsetGenerator:
             
             # Get subsets for this batch
             batch_subsets = subset_paths[start_idx:end_idx]
-            batch_info[batch_name] = batch_subsets
             
-            # Create batch directory and copy/link subsets
+            # Create batch directory and move subsets
             batch_dir = output_dir / batch_name
             batch_dir.mkdir(exist_ok=True)
             
-            # Create symbolic links to subset files in batch directory
+            # Move subset files to batch directory
+            batch_moved_paths = []
             for subset_path in batch_subsets:
-                link_path = batch_dir / subset_path.name
-                if not link_path.exists():
+                dest_path = batch_dir / subset_path.name
+                if not dest_path.exists():
                     try:
-                        link_path.symlink_to(subset_path.resolve())
-                    except OSError:
-                        # Fallback to copying if symbolic links not supported
+                        # Move file to batch directory
                         import shutil
-                        shutil.copy2(subset_path, link_path)
+                        shutil.move(str(subset_path), str(dest_path))
+                        batch_moved_paths.append(dest_path)
+                        moved_files.append(subset_path)
+                        logger.debug(f"Moved {subset_path.name} to {batch_name}")
+                    except Exception as e:
+                        logger.warning(f"Failed to move {subset_path}: {e}")
+                        # Fallback to copying if move fails
+                        shutil.copy2(subset_path, dest_path)
+                        batch_moved_paths.append(dest_path)
+                else:
+                    batch_moved_paths.append(dest_path)
+            
+            # Update batch info with new paths
+            batch_info[batch_name] = batch_moved_paths
             
             start_idx = end_idx
-            logger.debug(f"Batch {batch_name}: {len(batch_subsets)} subsets")
+            logger.debug(f"Batch {batch_name}: {len(batch_moved_paths)} subsets")
         
         logger.info(f"Created {len(batch_info)} batches")
+        logger.info(f"Moved {len(moved_files)} subset files into batch directories")
+        logger.info("A3M files outside batch folders have been cleaned up for neater file structure")
+        
         return batch_info
     
-    def create_structure_prediction_jobs(self,
-                                       batch_info: Dict[str, List[Path]],
-                                       base_output_dir: Path) -> List[Dict[str, any]]:
-        """
-        Create job specifications for structure prediction.
-        
-        Args:
-            batch_info: Batch information from organize_into_batches()
-            base_output_dir: Base output directory
-            
-        Returns:
-            List of job specifications for SLURM submission
-        """
-        job_specs = []
-        
-        for batch_name, subset_paths in batch_info.items():
-            batch_dir = base_output_dir / batch_name
-            
-            # Create job specification for this batch
-            job_spec = {
-                "name": f"hit_expand_{batch_name}",
-                "command": self._build_colabfold_command(batch_dir),
-                "task_dir": str(batch_dir),
-                "memory": "32G",
-                "gres": "gpu:1",
-                "num_subsets": len(subset_paths),
-                "subset_files": [str(p) for p in subset_paths]
-            }
-            
-            job_specs.append(job_spec)
-        
-        logger.info(f"Created {len(job_specs)} structure prediction job specifications")
-        return job_specs
-    
-    def _build_colabfold_command(self, batch_dir: Path) -> str:
-        """
-        Build ColabFold command for a batch directory.
-        
-        Args:
-            batch_dir: Batch directory containing subsets
-            
-        Returns:
-            ColabFold command string
-        """
-        # Build environment setup
-        env_setup = (
-            "module reset && module load cuda/12.4.1 miniconda3/24.1.2-py310 && "
-            "conda init && conda activate colabfold"
-        )
-        
-        # Build ColabFold command for all A3M files in the directory
-        colabfold_cmd = (
-            f"cd {batch_dir} && "
-            "for a3m_file in *.a3m; do "
-            "if [ -f \"$a3m_file\" ]; then "
-            "echo \"Processing $a3m_file\"; "
-            "colabfold_batch --num-recycle 3 --num-models 1 --num-seeds 1 "
-            "\"$a3m_file\" \"${a3m_file%.*}\"; "
-            "fi; "
-            "done"
-        )
-        
-        return f"{env_setup} && {colabfold_cmd}"
     
     def validate_subsets(self, subset_paths: List[Path]) -> Dict[str, any]:
         """

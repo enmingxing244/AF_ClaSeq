@@ -156,7 +156,7 @@ class SlurmJobSubmitter:
 
         # Build environment setup
         env_setup = (
-            "module reset && module load  cuda/12.4.1 miniconda3/24.1.2-py310 && "
+            "module reset && module load cuda/12.4.1 miniconda3/24.1.2-py310 && "
             f"conda init && conda activate {self.conda_env_path}"
         )
 
@@ -174,6 +174,7 @@ class SlurmJobSubmitter:
             f"--cpus-per-task={self.slurm_cpus_per_task}",
             f"--time={self.slurm_time}",
             f"--partition={self.slurm_partition}",
+            f"--gres=gpu:{self.slurm_gpus_per_task}",
             "--wrap", f"{env_setup} && {colabfold_cmd}"
         ]
 

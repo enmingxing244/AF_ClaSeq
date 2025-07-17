@@ -124,6 +124,49 @@ class PureSequencePlottingConfig:
 
 
 @dataclass
+class InitBootstrappingConfig:
+    """Configuration for initialization bootstrapping step."""
+    
+    # Subset generation parameters (reduced for quick preview)
+    init_num_subsets: int = 200
+    init_num_random_sequences: int = 8
+    init_num_batches: int = 10
+    init_batch_prefix: str = "init_batch"
+    init_output_prefix: str = "init_subset"
+    
+    # Structure analysis parameters
+    init_plddt_threshold: float = 75.0
+    init_plot_all_structures: bool = True
+    
+    # Plotting configuration
+    init_plot_metric1_min: float = 0.0
+    init_plot_metric1_max: float = 1.0
+    init_plot_metric2_min: float = 0.0
+    init_plot_metric2_max: float = 1.0
+    init_plot_metric1_ticks: Optional[List[float]] = field(default_factory=lambda: [0.0, 0.2, 0.4, 0.6, 0.8, 1.0])
+    init_plot_metric2_ticks: Optional[List[float]] = field(default_factory=lambda: [0.0, 0.2, 0.4, 0.6, 0.8, 1.0])
+    init_plot_figsize: Tuple[int, int] = (10, 8)
+    
+    # Control flags
+    skip_if_exists: bool = True
+    random_seed: int = 42
+    ensure_query_first: bool = True
+    
+    # Job monitoring (reuse from hit_expand)
+    monitor_jobs: bool = True
+    job_check_interval: float = 60.0
+    max_job_wait_time: float = 14400.0  # 4 hours
+    
+    # Integration with filter config
+    filter_config_path: str = ""  # Will be set from general.config_file
+    
+    def __post_init__(self):
+        """Post-initialization processing."""
+        # This will be set later when the full config is loaded
+        pass
+
+
+@dataclass
 class HitExpandConfig:
     """Configuration for hit expand pipeline step."""
     
@@ -179,6 +222,23 @@ class HitExpandConfig:
     plot_xticks: Optional[List[float]] = None
     plot_bin_step: float = 0.2
     
+    # Scatter plot configuration (for structure analysis plots)
+    scatter_plot_metric1_min: float = 0.0
+    scatter_plot_metric1_max: float = 1.0
+    scatter_plot_metric2_min: float = 0.0
+    scatter_plot_metric2_max: float = 1.0
+    scatter_plot_metric1_ticks: Optional[List[float]] = field(default_factory=lambda: [0.0, 0.2, 0.4, 0.6, 0.8, 1.0])
+    scatter_plot_metric2_ticks: Optional[List[float]] = field(default_factory=lambda: [0.0, 0.2, 0.4, 0.6, 0.8, 1.0])
+    
+    # pLDDT plot configuration
+    plddt_plot_min: int = 0
+    plddt_plot_max: int = 100
+    plddt_plot_ticks: Optional[List[int]] = field(default_factory=lambda: [0, 20, 40, 60, 80, 100])
+    
+    # Multi-round configuration
+    rounds: int = 1                         # Number of iterative expansion rounds
+    cumulative_expansion: bool = True       # Accumulate sequences across rounds
+    
     # Integration parameters
     random_seed: int = 42
     max_workers: int = 96
@@ -200,6 +260,7 @@ class PipelineConfig:
     general: GeneralConfig
     slurm: SlurmConfig
     pipeline_control: PipelineControlConfig
+    init_bootstrapping: InitBootstrappingConfig
     hit_expand: HitExpandConfig
     m_fold_sampling: MFoldSamplingConfig
     sequence_voting: SequenceVotingConfig
@@ -224,6 +285,12 @@ def load_pipeline_config(yaml_input: str) -> PipelineConfig:
     general_config = GeneralConfig(**yaml_config.get('general', {}))
     slurm_config = SlurmConfig(**yaml_config.get('slurm', {}))
     pipeline_control_config = PipelineControlConfig(**yaml_config.get('pipeline_control', {}))
+    
+    # Create init_bootstrapping config with filter_config_path from general config
+    init_bootstrapping_dict = yaml_config.get('init_bootstrapping', {})
+    init_bootstrapping_dict['filter_config_path'] = general_config.config_file
+    init_bootstrapping_config = InitBootstrappingConfig(**init_bootstrapping_dict)
+    
     hit_expand_config = HitExpandConfig(**yaml_config.get('hit_expand', {}))
     m_fold_sampling_config = MFoldSamplingConfig(**yaml_config.get('m_fold_sampling', {}))
     sequence_voting_config = SequenceVotingConfig(**yaml_config.get('sequence_voting', {}))
@@ -235,6 +302,7 @@ def load_pipeline_config(yaml_input: str) -> PipelineConfig:
         general=general_config,
         slurm=slurm_config,
         pipeline_control=pipeline_control_config,
+        init_bootstrapping=init_bootstrapping_config,
         hit_expand=hit_expand_config,
         m_fold_sampling=m_fold_sampling_config,
         sequence_voting=sequence_voting_config,

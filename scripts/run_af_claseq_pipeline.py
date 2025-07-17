@@ -16,6 +16,7 @@ from typing import Dict, Any
 # Import modules from AF-ClaSeq
 from af_claseq.utils.slurm_utils import SlurmJobSubmitter
 from af_claseq.utils.structure_analysis import StructureAnalyzer
+from af_claseq.pipeline.init_bootstrapping import InitBootstrappingRunner
 from af_claseq.pipeline.hit_expand import HitExpandRunner
 from af_claseq.pipeline.m_fold_sampling import MFoldSampler
 from af_claseq.pipeline.sequence_voting import SequenceVotingRunner, SequenceVotingPlotter
@@ -94,6 +95,7 @@ class AFClaSeqPipeline:
         
         # Create stage directories
         stages = [
+            "00_init_bootstrapping",
             "01_hit_expand",
             "02_m_fold_sampling",
             "03_voting",
@@ -114,6 +116,46 @@ class AFClaSeqPipeline:
         print(f"Base directory: {self.config.general.base_dir}")
         print(f"Configuration file: {self.config.general.config_file}")
         print("="*80 + "\n")
+    
+    def run_init_bootstrapping(self) -> bool:
+        """
+        Stage 00: Run init bootstrapping for quick preview
+        """
+        self.logger.info("=== STAGE 00: INIT BOOTSTRAPPING ===")
+        
+        try:
+            # Use init_bootstrapping config
+            init_config = self.config.init_bootstrapping
+            
+            # Determine input MSA (use general.source_a3m)
+            input_msa = Path(self.config.general.source_a3m)
+            if not input_msa.exists():
+                self.logger.error(f"Input MSA not found: {input_msa}")
+                return False
+            
+            # Create runner instance
+            runner = InitBootstrappingRunner(
+                config=init_config,
+                slurm_submitter=self.slurm_submitter,
+                base_dir=Path(self.config.general.base_dir) / "00_init_bootstrapping",
+                input_msa=input_msa,
+                logger=self.logger
+            )
+            
+            # Run the init bootstrapping process
+            success = runner.run()
+            
+            if success:
+                self.logger.info("Completed init bootstrapping successfully")
+                self.logger.info("Review results before running full pipeline")
+                return True
+            else:
+                self.logger.error("Init bootstrapping failed")
+                return False
+                
+        except Exception as e:
+            self.logger.error(f"Error in init bootstrapping: {str(e)}", exc_info=True)
+            return False
     
     def run_hit_expand(self) -> bool:
         """
@@ -778,6 +820,13 @@ class AFClaSeqPipeline:
         pipeline_success = True
         
         try:
+            # Stage 00: Init Bootstrapping (optional quick preview)
+            if "00_INIT_BOOTSTRAPPING" in stages_to_run:
+                if not self.run_init_bootstrapping():
+                    self.logger.error("Stopping pipeline due to failure in stage 00_INIT_BOOTSTRAPPING")
+                    pipeline_success = False
+                    return
+            
             # Stage 01: Hit Expand (replaces Iterative Shuffling)
             if "01_HIT_EXPAND_RUN" in stages_to_run:
                 if not self.run_hit_expand():

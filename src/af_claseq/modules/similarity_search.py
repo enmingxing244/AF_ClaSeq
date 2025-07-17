@@ -8,7 +8,7 @@ scoring matrix to find similar sequences for structure prediction.
 
 import logging
 import numpy as np
-from typing import Dict, List, Tuple, Optional, Set
+from typing import Dict, List, Tuple, Optional, Set, Any
 from pathlib import Path
 from dataclasses import dataclass
 from collections import defaultdict
