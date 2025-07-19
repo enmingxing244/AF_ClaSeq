@@ -551,6 +551,49 @@ class StructureAnalyzer:
         else:
             return list(range(indices_spec['start'], indices_spec['end'] + 1))
         
+    def process_pdbs_parallel(self, 
+                             pdb_files: List[str | Path],
+                             filter_criteria: List[Dict[str, Any]],
+                             basics: Dict[str, Any],
+                             plddt_threshold: float = 0,
+                             n_jobs: int = -1) -> Dict[str, Any]:
+        """
+        Process multiple PDB files in parallel using joblib.
+        
+        Args:
+            pdb_files: List of PDB file paths to process
+            filter_criteria: List of criteria for filtering and calculation
+            basics: Basic information required for calculations
+            plddt_threshold: Minimum pLDDT score threshold
+            n_jobs: Number of parallel jobs (-1 for all available cores)
+            
+        Returns:
+            Dictionary mapping PDB file paths to their analysis results
+        """
+        logger.info(f'Processing {len(pdb_files)} PDB files in parallel with {n_jobs} jobs')
+        
+        # Create a fresh analyzer instance for each parallel job
+        def process_single_with_fresh_analyzer(pdb_path):
+            analyzer = StructureAnalyzer()
+            return str(pdb_path), analyzer.process_single_pdb(
+                str(pdb_path), filter_criteria, basics, plddt_threshold
+            )
+        
+        # Process PDB files in parallel
+        parallel_results = Parallel(n_jobs=n_jobs)(
+            delayed(process_single_with_fresh_analyzer)(pdb_file)
+            for pdb_file in tqdm(pdb_files, desc="Analyzing structures", unit="structure")
+        )
+        
+        # Convert to dictionary, filtering out None results
+        analysis_results = {}
+        for pdb_path, result in parallel_results:
+            if result is not None and "error" not in result:
+                analysis_results[pdb_path] = result
+        
+        logger.info(f'Successfully analyzed {len(analysis_results)} structures in parallel')
+        return analysis_results
+
     def get_result_df(self, parent_dir: str | Path,
                      filter_criteria: Sequence[Dict[str, Any]],
                      basics: Dict[str, Any],
@@ -577,18 +620,13 @@ class StructureAnalyzer:
         ]
         logger.info(f'Found {len(pdb_files)} PDB files')
 
-        analyzer = StructureAnalyzer()
-
-        # Process PDB files in parallel
-        results = Parallel(n_jobs=-1)(
-            delayed(analyzer.process_single_pdb)(
-                pdb, filter_criteria, basics, plddt_threshold
-            ) for pdb in tqdm(pdb_files, desc="Processing PDB files")
+        # Use the new parallel processing method
+        analysis_results = self.process_pdbs_parallel(
+            pdb_files, filter_criteria, basics, plddt_threshold
         )
 
-        # Filter out None results
-        results = [r for r in results if r is not None]
-
+        # Convert to DataFrame format
+        results = [result for result in analysis_results.values()]
         return pd.DataFrame(results)
 
 

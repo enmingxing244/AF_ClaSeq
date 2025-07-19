@@ -72,14 +72,16 @@ class SubsetGenerator:
         logger.info("Subset generator initialized")
     
     def generate_subsets(self,
-                        expanded_msa: Path,
-                        output_dir: Path) -> Dict[str, any]:
+                        expanded_msa=None,
+                        output_dir=None,
+                        sequences=None) -> Dict[str, any]:
         """
-        Generate random subsets from expanded MSA.
+        Generate random subsets from expanded MSA or sequences.
         
         Args:
-            expanded_msa: Path to expanded MSA file
+            expanded_msa: Path to expanded MSA file (optional if sequences provided)
             output_dir: Output directory for subsets
+            sequences: Dictionary of sequences (optional if expanded_msa provided)
             
         Returns:
             Dictionary with generation results and statistics
@@ -88,10 +90,17 @@ class SubsetGenerator:
             SubsetGeneratorError: If generation fails
         """
         try:
-            # Parse expanded MSA
-            logger.info(f"Loading expanded MSA from {expanded_msa}")
+            # Load sequences from file or use provided sequences
             parser = A3MParser(strict_validation=False)
-            sequences = parser.parse_file(expanded_msa)
+            if sequences is not None:
+                logger.info(f"Using provided sequences: {len(sequences)} sequences")
+                # Use provided sequences directly
+                pass
+            elif expanded_msa is not None:
+                logger.info(f"Loading expanded MSA from {expanded_msa}")
+                sequences = parser.parse_file(expanded_msa)
+            else:
+                raise SubsetGeneratorError("Must provide either expanded_msa or sequences")
             
             if len(sequences) == 0:
                 raise SubsetGeneratorError("No sequences found in expanded MSA")
@@ -162,99 +171,6 @@ class SubsetGenerator:
             logger.error(f"Subset generation failed: {e}")
             raise SubsetGeneratorError(f"Subset generation failed: {e}")
 
-    def generate_subsets_with_query(self,
-                                   expanded_msa: Path,
-                                   query_header: str,
-                                   query_sequence: str,
-                                   output_dir: Path) -> Dict[str, any]:
-        """
-        Generate random subsets with a specific query sequence always included first.
-        
-        Args:
-            expanded_msa: Path to expanded MSA file
-            query_header: Query sequence header
-            query_sequence: Query sequence content
-            output_dir: Output directory for subsets
-            
-        Returns:
-            Dictionary with generation results and statistics
-            
-        Raises:
-            SubsetGeneratorError: If generation fails
-        """
-        try:
-            # Parse expanded MSA
-            logger.info(f"Loading expanded MSA from {expanded_msa}")
-            parser = A3MParser(strict_validation=False)
-            sequences = parser.parse_file(expanded_msa)
-            
-            if len(sequences) == 0:
-                raise SubsetGeneratorError("No sequences found in expanded MSA")
-            
-            logger.info(f"Using provided query sequence: {query_header}")
-            
-            # Use all sequences as potential sampling pool (representative sequences)
-            sampling_sequences = sequences
-            
-            if len(sampling_sequences) < self.config.num_random_sequences:
-                logger.warning(f"Only {len(sampling_sequences)} sequences available, "
-                             f"but {self.config.num_random_sequences} requested per subset")
-                # Adjust to available sequences
-                actual_num_seqs = len(sampling_sequences)
-            else:
-                actual_num_seqs = self.config.num_random_sequences
-            
-            # Create output directory
-            output_dir = Path(output_dir)
-            output_dir.mkdir(parents=True, exist_ok=True)
-            
-            # Generate subsets with the specific query sequence
-            subset_paths = self._generate_random_subsets(
-                query_header=query_header,
-                query_sequence=query_sequence,
-                non_query_sequences=sampling_sequences,  # Use all representative sequences for sampling
-                output_dir=output_dir,
-                num_sequences_per_subset=actual_num_seqs
-            )
-            
-            # Organize subsets into batches
-            batch_info = self._organize_into_batches(subset_paths, output_dir)
-            
-            # Generate statistics
-            stats = {
-                "total_sequences": len(sequences),
-                "query_sequence": query_header,
-                "sampling_sequences": len(sampling_sequences),
-                "subsets_generated": len(subset_paths),
-                "sequences_per_subset": actual_num_seqs + 1,  # +1 for query sequence
-                "batches_created": len(batch_info),
-                "subsets_per_batch": [len(batch) for batch in batch_info.values()],
-                "config": {
-                    "num_subsets": self.config.num_subsets,
-                    "num_random_sequences": self.config.num_random_sequences,
-                    "num_batches": self.config.num_batches,
-                    "random_seed": self.config.random_seed
-                }
-            }
-            
-            # Save generation metadata
-            metadata_file = output_dir / "subset_generation_metadata.json"
-            with open(metadata_file, 'w') as f:
-                json.dump(stats, f, indent=2)
-            
-            logger.info(f"Generated {len(subset_paths)} subsets with query sequence in {len(batch_info)} batches")
-            
-            return {
-                "subset_paths": subset_paths,
-                "batch_info": batch_info,
-                "statistics": stats,
-                "metadata_file": str(metadata_file)
-            }
-            
-        except Exception as e:
-            logger.error(f"Subset generation with query failed: {e}")
-            raise SubsetGeneratorError(f"Subset generation with query failed: {e}")
-    
     def _generate_random_subsets(self,
                                 query_header: str,
                                 query_sequence: str,

@@ -128,6 +128,10 @@ class HitExpandRunner:
         # Structure analyzer
         self.structure_analyzer = StructureAnalyzer()
         
+        # A3M parser for sequence processing
+        from af_claseq.utils.sequence_processing import A3MParser
+        self.parser = A3MParser(strict_validation=False)
+        
         self.logger.info("All pipeline components initialized")
     
     def run(self) -> Optional[Path]:
@@ -173,16 +177,19 @@ class HitExpandRunner:
                     round_input_sequences = representative_sequences
                     round_input_type = "clustered"
                 else:
-                    # Round 2+: Use previous round's expanded subsets
+                    # Round 2+: Use previous round's final MSA
                     prev_round_dir = self.base_dir / f"round_{round_num - 1}"
-                    expanded_subsets_dir = prev_round_dir / "06_expanded_subsets"
+                    prev_final_msa = prev_round_dir / f"hit_expand_final_msa_round_{round_num - 1}.a3m"
                     
-                    if not expanded_subsets_dir.exists():
-                        self.logger.warning(f"No expanded subsets found from round {round_num - 1}. Ending at round {round_num - 1}")
+                    if not prev_final_msa.exists():
+                        self.logger.warning(f"No final MSA found from round {round_num - 1}: {prev_final_msa}. Ending at round {round_num - 1}")
                         break
                     
-                    round_input_sequences = self._load_expanded_subsets(expanded_subsets_dir)
-                    round_input_type = "expanded"
+                    # Load sequences from previous round's final MSA
+                    from af_claseq.utils.sequence_processing import A3MParser
+                    parser = A3MParser(strict_validation=False)
+                    round_input_sequences = parser.parse_file(prev_final_msa)
+                    round_input_type = "final_msa"
                 
                 # Run the round
                 round_msa = self._run_single_round(
@@ -267,7 +274,7 @@ class HitExpandRunner:
         )
         
         # Copy to final location
-        final_msa_path = self.base_dir / "hit_expand_final_msa.a3m"
+        final_msa_path = self.base_dir / "hit_expand_final_msa_round_1.a3m"
         shutil.copy2(expanded_msa, final_msa_path)
         
         self.workflow_state["similarity_search_completed"] = True
@@ -309,10 +316,8 @@ class HitExpandRunner:
         query_header, query_sequence = parser.get_query_sequence(expanded_sequences)
         
         # Generate subsets using the same configuration as original subsets
-        subset_results = self.subset_generator.generate_subsets_with_query(
+        subset_results = self.subset_generator.generate_subsets(
             expanded_msa=final_msa,
-            query_header=query_header,
-            query_sequence=query_sequence,
             output_dir=expanded_subsets_dir
         )
         
@@ -422,50 +427,6 @@ class HitExpandRunner:
         self.logger.info(f"Saved expanded subset analysis to: {csv_file}")
         self.logger.info(f"Created {len(plot_files)} plots in {plots_dir}")
     
-    def _run_subset_generation_stage(self, representative_sequences: Dict[str, str]) -> Dict[str, Any]:
-        """Run subset generation stage using representative sequences."""
-        self.logger.info("=== STAGE 2: SUBSET GENERATION ===")
-        
-        subsets_dir = self.base_dir / "02_subsets"
-        subsets_dir.mkdir(exist_ok=True)
-        
-        # Get query sequence from original source MSA
-        input_msa = Path(self.config.input_msa)
-        parser = A3MParser(strict_validation=False)
-        source_sequences = parser.parse_file(input_msa)
-        query_header, query_sequence = parser.get_query_sequence(source_sequences)
-        
-        self.logger.info(f"Source query sequence: {query_header}")
-        
-        # Save representative sequences as temporary MSA for subset generation
-        temp_msa = subsets_dir / "representative_sequences.a3m"
-        parser.write_sequences(representative_sequences, temp_msa)
-        
-        # Generate subsets with query sequence included
-        subset_results = self.subset_generator.generate_subsets_with_query(
-            expanded_msa=temp_msa,
-            query_header=query_header,
-            query_sequence=query_sequence,
-            output_dir=subsets_dir
-        )
-        
-        # Validate subsets
-        validation_results = self.subset_generator.validate_subsets(
-            subset_results["subset_paths"]
-        )
-        
-        subset_results["validation"] = validation_results
-        subset_results["representative_sequences"] = representative_sequences
-        subset_results["query_header"] = query_header
-        subset_results["query_sequence"] = query_sequence
-        
-        self.workflow_state["subset_generation_completed"] = True
-        self.logger.info(f"Subset generation completed: {len(subset_results['subset_paths'])} subsets")
-        
-        # Create DONE file to mark completion
-        self._create_done_file(subsets_dir, "02_subsets")
-        
-        return subset_results
     
     def _run_generic_structure_prediction(self, 
                                          subset_results: Dict[str, Any],
@@ -567,205 +528,7 @@ class HitExpandRunner:
         
         return submitted_jobs
     
-    def _run_structure_prediction_stage(self, subset_results: Dict[str, Any]) -> Dict[str, Any]:
-        """Run structure prediction stage."""
-        self.logger.info("=== STAGE 3: STRUCTURE PREDICTION ===")
-        
-        # Use the subset directories directly (no separate prediction directory)
-        subsets_dir = self.base_dir / "02_subsets"
-        
-        # Reuse the generic structure prediction logic
-        prediction_results = self._run_generic_structure_prediction(
-            subset_results=subset_results,
-            base_dir=subsets_dir,
-            job_prefix="hit_expand",
-            stage_name="structure prediction"
-        )
-        
-        self.workflow_state["structure_prediction_completed"] = True
-        
-        # Create DONE file to mark completion
-        self._create_done_file(subsets_dir, "03_structure_prediction")
-        
-        return prediction_results
     
-    def _run_structure_analysis_stage(self, prediction_results: Dict[str, Any]) -> Dict[str, Any]:
-        """Run structure analysis stage."""
-        self.logger.info("=== STAGE 4: STRUCTURE ANALYSIS ===")
-        
-        analysis_dir = self.base_dir / "04_structure_analysis"
-        analysis_dir.mkdir(exist_ok=True)
-        
-        # Collect all PDB files from prediction results
-        prediction_dir = prediction_results["prediction_dir"]
-        pdb_files = list(prediction_dir.rglob("*.pdb"))
-        
-        if not pdb_files:
-            self.logger.warning("No PDB files found for structure analysis")
-            return {"pdb_files": [], "analysis_results": {}}
-        
-        self.logger.info(f"Found {len(pdb_files)} PDB files for analysis")
-        
-        # Load filter configuration from hit_expand config and JSON file
-        with open(self.config_file, 'r') as f:
-            filter_config = json.load(f)
-        
-        # Get hit_expand specific configuration
-        hit_expand_plddt_threshold = getattr(self.config, 'plddt_threshold', 75.0)
-        filter_criteria_name = getattr(self.config, 'filter_criteria', None)
-        
-        # Get filter criteria from JSON - the JSON contains filter_criteria as a list
-        all_filter_criteria = filter_config.get("filter_criteria", [])
-        
-        # For ANALYSIS: Calculate ALL metrics from JSON config
-        analysis_filter_criteria = all_filter_criteria
-        
-        # For FILTERING: Use only the specified criteria name (e.g., "2qke_tmscore")
-        selected_filter_criteria = []
-        if filter_criteria_name:
-            # Find criteria matching the specified name
-            for criterion in all_filter_criteria:
-                if criterion.get("name") == filter_criteria_name:
-                    selected_filter_criteria.append(criterion)
-            
-            if selected_filter_criteria:
-                self.logger.info(f"Found {len(selected_filter_criteria)} criteria matching '{filter_criteria_name}' for filtering")
-            else:
-                self.logger.warning(f"Filter criteria '{filter_criteria_name}' not found in config file!")
-                available_names = [c.get("name") for c in all_filter_criteria]
-                self.logger.warning(f"Available criteria names: {available_names}")
-                self.logger.warning("NO STRUCTURE FILTERING WILL BE APPLIED - ALL STRUCTURES WILL PASS!")
-        else:
-            # Use all available criteria if no specific name specified
-            selected_filter_criteria = all_filter_criteria
-            self.logger.info(f"Using all {len(selected_filter_criteria)} available filter criteria for filtering")
-        
-        self.logger.info(f"Will calculate ALL {len(analysis_filter_criteria)} metrics from JSON config: {[c.get('name') for c in analysis_filter_criteria]}")
-        self.logger.info(f"Will use {len(selected_filter_criteria)} criteria for filtering: {[c.get('name') for c in selected_filter_criteria]}")
-        
-        self.logger.info(f"Using pLDDT threshold: {hit_expand_plddt_threshold}")
-        self.logger.info(f"Using filter criteria: {filter_criteria_name}")
-        
-        # Debug: Print the actual filter criteria configuration and resolve reference PDB paths
-        # Do this for ALL criteria that will be calculated
-        if analysis_filter_criteria:
-            config_dir = Path(self.config_file).parent  # Directory containing the JSON config file
-            self.logger.info("=== ALL METRICS TO BE CALCULATED ===")
-            for i, criterion in enumerate(analysis_filter_criteria):
-                ref_pdb = criterion.get('ref_pdb', 'N/A')
-                
-                # Resolve relative paths relative to config file directory
-                if ref_pdb != 'N/A' and not Path(ref_pdb).is_absolute():
-                    resolved_ref_pdb = config_dir / ref_pdb
-                    criterion['ref_pdb'] = str(resolved_ref_pdb)  # Update the criterion with absolute path
-                    self.logger.info(f"  Metric {i+1}: {criterion.get('name')} ({criterion.get('type')}) method={criterion.get('method', 'below')} ref_pdb={resolved_ref_pdb}")
-                    
-                    # Check if reference PDB file exists
-                    if not resolved_ref_pdb.exists():
-                        self.logger.error(f"Reference PDB file not found: {resolved_ref_pdb}")
-                        self.logger.error("TM-score calculation will fail!")
-                    else:
-                        self.logger.info(f"Reference PDB file found: {resolved_ref_pdb}")
-                else:
-                    self.logger.info(f"  Metric {i+1}: {criterion.get('name')} ({criterion.get('type')}) method={criterion.get('method', 'below')} ref_pdb={ref_pdb}")
-        else:
-            self.logger.warning("No filter criteria loaded - structures will only be filtered by pLDDT!")
-        
-        # Analyze structures using existing StructureAnalyzer methods with progress bar
-        analysis_results = {}
-        
-        # Temporarily suppress INFO logging from sequence_processing module
-        seq_processing_logger = logging.getLogger('af_claseq.sequence_processing')
-        original_level = seq_processing_logger.level
-        seq_processing_logger.setLevel(logging.WARNING)
-        
-        # Set up progress bar
-        pbar = tqdm(pdb_files, desc="Analyzing structures", unit="structure")
-        
-        for pdb_file in pbar:
-            try:
-                # Update progress bar with current structure name
-                pbar.set_postfix({"current": Path(pdb_file).name[:30] + "..."})
-                
-                # Use the existing process_single_pdb method with ALL criteria for calculation
-                metrics = self.structure_analyzer.process_single_pdb(
-                    pdb_path=str(pdb_file),
-                    filter_criteria=analysis_filter_criteria,  # Calculate ALL metrics
-                    basics=filter_config.get("basics", {}),
-                    plddt_threshold=hit_expand_plddt_threshold
-                )
-                
-                if metrics:
-                    analysis_results[str(pdb_file)] = metrics
-                    # Debug: Show what metrics were actually calculated
-                    metric_names = [k for k in metrics.keys() if k not in ['PDB', 'seq_count']]
-                    self.logger.debug(f"Structure {pdb_file}: calculated metrics {metric_names}")
-                    
-                    # Specifically check for TM-score metrics (but only log to debug level)
-                    tmscore_metrics = [k for k in metric_names if 'tmscore' in k.lower()]
-                    if tmscore_metrics:
-                        for tm_metric in tmscore_metrics:
-                            tm_value = metrics.get(tm_metric)
-                            self.logger.debug(f"Structure {Path(pdb_file).name}: {tm_metric} = {tm_value}")
-                    else:
-                        self.logger.debug(f"Structure {Path(pdb_file).name}: NO TM-score metrics calculated!")
-                else:
-                    self.logger.debug(f"Structure {pdb_file} did not meet basic criteria (pLDDT threshold)")
-                
-            except Exception as e:
-                self.logger.warning(f"Structure analysis failed for {pdb_file}: {e}")
-                analysis_results[str(pdb_file)] = {"error": str(e)}
-        
-        # Close progress bar
-        pbar.close()
-        
-        # Restore original logging level for sequence_processing module
-        seq_processing_logger.setLevel(original_level)
-        
-        # Debug: Check what metrics were actually calculated across all structures
-        all_metrics = set()
-        successful_structures = 0
-        for pdb_path, metrics in analysis_results.items():
-            if "error" not in metrics:
-                all_metrics.update(metrics.keys())
-                successful_structures += 1
-        
-        self.logger.info(f"Successfully analyzed {successful_structures} structures out of {len(pdb_files)}")
-        self.logger.info(f"Available metrics: {sorted(all_metrics)}")
-        
-        # Check specifically for the metrics defined in ALL filter criteria
-        expected_metrics = [criterion.get('name') for criterion in analysis_filter_criteria if criterion.get('name')]
-        missing_metrics = [m for m in expected_metrics if m not in all_metrics]
-        if missing_metrics:
-            self.logger.warning(f"Missing expected metrics: {missing_metrics}")
-        else:
-            self.logger.info(f"All expected metrics found: {expected_metrics} - plots should be created")
-        
-        # Filter structures based on criteria
-        filtered_results = self._filter_structures(analysis_results, filter_config)
-        
-        # Save results as CSV and create plots
-        # Use ALL filter criteria from JSON config for plotting, not just the selected ones for filtering
-        all_filter_criteria = filter_config.get("filter_criteria", [])
-        csv_file, plot_files = self._save_results_and_create_plots(
-            analysis_results, 
-            filtered_results, 
-            analysis_dir, 
-            all_filter_criteria  # Use all criteria for plotting
-        )
-        
-        self.workflow_state["structure_analysis_completed"] = True
-        self.logger.info(f"Structure analysis completed: {len(filtered_results)} structures passed filters")
-        
-        # Create DONE file to mark completion
-        self._create_done_file(analysis_dir, "04_structure_analysis")
-        
-        return {
-            "analysis_results": analysis_results,
-            "filtered_results": filtered_results,
-            "csv_file": csv_file,
-            "plot_files": plot_files
-        }
     
     def _extract_good_sequences(self, 
                                analysis_results: Dict[str, Any], 
@@ -1194,11 +957,11 @@ class HitExpandRunner:
                 if subset_results["subset_paths"]:
                     parser = A3MParser(strict_validation=False)
                     fallback_sequences = parser.parse_file(subset_results["subset_paths"][0])
-                    final_msa = self.base_dir / "hit_expand_final_msa.a3m"
+                    final_msa = self.base_dir / "hit_expand_final_msa_round_1.a3m"
                     parser.write_sequences(fallback_sequences, final_msa)
                 else:
                     # Create empty result if no subsets available
-                    final_msa = self.base_dir / "hit_expand_final_msa.a3m"
+                    final_msa = self.base_dir / "hit_expand_final_msa_round_1.a3m"
                     parser = A3MParser(strict_validation=False)
                     parser.write_sequences({}, final_msa)
                 
@@ -1223,12 +986,12 @@ class HitExpandRunner:
                 final_msa = self._run_similarity_search_stage(good_sequences, input_msa)
             else:
                 self.logger.warning(f"Input MSA not found: {input_msa}, saving good sequences directly")
-                final_msa = self.base_dir / "hit_expand_final_msa.a3m"
+                final_msa = self.base_dir / "hit_expand_final_msa_round_1.a3m"
                 parser = A3MParser(strict_validation=False)
                 parser.write_sequences(good_sequences, final_msa)
         else:
             self.logger.info("Skipping hit expansion stage")
-            final_msa = self.base_dir / "hit_expand_final_msa.a3m"
+            final_msa = self.base_dir / "hit_expand_final_msa_round_1.a3m"
             parser = A3MParser(strict_validation=False)
             parser.write_sequences(good_sequences, final_msa)
         
@@ -1345,7 +1108,9 @@ class HitExpandRunner:
         
         with tqdm(total=len(a3m_files), desc="Loading expanded subsets") as pbar:
             for a3m_file in a3m_files:
-                sequences = self.parser.parse_file(a3m_file)
+                from af_claseq.utils.sequence_processing import A3MParser
+                parser = A3MParser(strict_validation=False)
+                sequences = parser.parse_file(a3m_file)
                 all_sequences.update(sequences)
                 pbar.update(1)
         
@@ -1379,7 +1144,7 @@ class HitExpandRunner:
                             "prediction_dir": prediction_dir
                         }
                     else:
-                        prediction_results = self._run_structure_prediction_stage(subset_results)
+                        prediction_results = self._run_structure_prediction_stage_for_round(subset_results, prediction_dir)
                 else:
                     self.logger.info("Skipping structure prediction stage")
                     prediction_results = None
@@ -1399,21 +1164,55 @@ class HitExpandRunner:
                     good_sequences = input_sequences
                 
             else:
-                # ROUND 2+: Reuse existing predictions
-                # Directly analyze structures from previous round's 06_expanded_subsets
+                # ROUND 2+: Full pipeline using previous round's final MSA
+                # Define previous round directories for stage 6
                 prev_round_dir = self.base_dir / f"round_{round_num - 1}"
                 prev_expanded_dir = prev_round_dir / "06_expanded_subsets"
                 
-                # Stage 4: Analyze existing structures (no prediction needed)
-                analysis_dir = round_dir / "04_structure_analysis"
-                if self._check_done_file(analysis_dir, "04_structure_analysis"):
-                    self.logger.info("=== STAGE 4: STRUCTURE ANALYSIS ALREADY COMPLETED - SKIPPING ===")
-                    analysis_results = {"analysis_results": {}, "filtered_results": {}}
-                    good_sequences = input_sequences
+                # Stage 2: Generate subsets from previous round's final MSA
+                subsets_dir = round_dir / "02_subsets"
+                if self._check_done_file(subsets_dir, "02_subsets"):
+                    self.logger.info("=== STAGE 2: SUBSET GENERATION ALREADY COMPLETED - SKIPPING ===")
+                    subset_results = self._load_existing_subset_results(subsets_dir)
                 else:
-                    analysis_results, good_sequences = self._analyze_existing_expanded_structures(
-                        prev_expanded_dir, analysis_dir
-                    )
+                    subset_results = self._run_subset_generation_stage_for_round(input_sequences, subsets_dir)
+                
+                # Stage 3: Structure prediction
+                prediction_dir = subsets_dir  # Using subsets directory directly
+                if not self.config.skip_structure_prediction:
+                    if self._check_done_file(prediction_dir, "03_structure_prediction"):
+                        self.logger.info("=== STAGE 3: STRUCTURE PREDICTION ALREADY COMPLETED - SKIPPING ===")
+                        prediction_results = {
+                            "job_specs": [],
+                            "submitted_jobs": [],
+                            "prediction_dir": prediction_dir
+                        }
+                    else:
+                        # Run structure prediction using generic function
+                        prediction_results = self._run_generic_structure_prediction(
+                            subset_results=subset_results,
+                            base_dir=prediction_dir,
+                            job_prefix="hit_expand",
+                            stage_name="structure prediction"
+                        )
+                        self._create_done_file(prediction_dir, "03_structure_prediction")
+                else:
+                    self.logger.info("Skipping structure prediction stage")
+                    prediction_results = None
+                
+                # Stage 4: Structure analysis
+                analysis_dir = round_dir / "04_structure_analysis"
+                if not self.config.skip_structure_analysis and prediction_results:
+                    if self._check_done_file(analysis_dir, "04_structure_analysis"):
+                        self.logger.info("=== STAGE 4: STRUCTURE ANALYSIS ALREADY COMPLETED - SKIPPING ===")
+                        analysis_results = {"analysis_results": {}, "filtered_results": {}}
+                        good_sequences = subset_results.get("representative_sequences", {})
+                    else:
+                        analysis_results = self._run_structure_analysis_stage_for_round(prediction_results, analysis_dir)
+                        good_sequences = self._extract_good_sequences(analysis_results, subset_results)
+                else:
+                    self.logger.info("Skipping structure analysis stage")
+                    good_sequences = input_sequences
             
             # Check if any structures passed filtering
             filtered_results = analysis_results.get("filtered_results", {})
@@ -1422,8 +1221,10 @@ class HitExpandRunner:
                 if round_num == 1:
                     self.logger.warning("Aborting similarity search - no good sequences to expand")
                     self.logger.info("Saving representative sequences as final result")
-                    final_msa = round_dir / "hit_expand_final_msa.a3m"
-                    self.parser.write_sequences(input_sequences, final_msa)
+                    final_msa = round_dir / f"hit_expand_final_msa_round_{round_num}.a3m"
+                    from af_claseq.utils.sequence_processing import A3MParser
+                    parser = A3MParser(strict_validation=False)
+                    parser.write_sequences(input_sequences, final_msa)
                     return final_msa
                 else:
                     self.logger.info("No new hits found in this round")
@@ -1463,7 +1264,7 @@ class HitExpandRunner:
                     )
                 
                 # Create final MSA for this round
-                final_msa_name = f"hit_expand_final_msa{'_round_' + str(round_num) if round_num > 1 else ''}.a3m"
+                final_msa_name = f"hit_expand_final_msa_round_{round_num}.a3m"
                 final_msa = round_dir / final_msa_name
                 
                 # Combine sequences for final MSA
@@ -1473,15 +1274,19 @@ class HitExpandRunner:
                 else:
                     final_sequences = {**good_sequences, **newly_found_sequences}
                 
-                self.parser.write_sequences(final_sequences, final_msa)
+                from af_claseq.utils.sequence_processing import A3MParser
+                parser = A3MParser(strict_validation=False)
+                parser.write_sequences(final_sequences, final_msa)
                 self.logger.info(f"Round {round_num} completed with {len(newly_found_sequences)} new sequences")
                 
                 return final_msa
             
             else:
                 self.logger.info("Skipping hit expansion stage")
-                final_msa = round_dir / f"hit_expand_final_msa{'_round_' + str(round_num) if round_num > 1 else ''}.a3m"
-                self.parser.write_sequences(good_sequences, final_msa)
+                final_msa = round_dir / f"hit_expand_final_msa_round_{round_num}.a3m"
+                from af_claseq.utils.sequence_processing import A3MParser
+                parser = A3MParser(strict_validation=False)
+                parser.write_sequences(good_sequences, final_msa)
                 return final_msa
         
         except Exception as e:
@@ -1535,7 +1340,9 @@ class HitExpandRunner:
                                 filtered_results[subset_name] = result
                                 
                                 # Extract sequences from A3M
-                                sequences = self.parser.parse_file(a3m_file)
+                                from af_claseq.utils.sequence_processing import A3MParser
+                                parser = A3MParser(strict_validation=False)
+                                sequences = parser.parse_file(a3m_file)
                                 good_sequences.update(sequences)
                     
                     pbar.update(1)
@@ -1565,7 +1372,9 @@ class HitExpandRunner:
                 if search_dir.exists():
                     for a3m_file in search_dir.glob("*.a3m"):
                         try:
-                            sequences = self.parser.parse_file(a3m_file)
+                            from af_claseq.utils.sequence_processing import A3MParser
+                            parser = A3MParser(strict_validation=False)
+                            sequences = parser.parse_file(a3m_file)
                             all_sequences.update(sequences.keys())
                         except Exception as e:
                             self.logger.debug(f"Failed to parse {a3m_file}: {e}")
@@ -1638,7 +1447,9 @@ class HitExpandRunner:
         total_sequences = 0
         for a3m_file in a3m_files:
             try:
-                sequences = self.parser.parse_file(a3m_file)
+                from af_claseq.utils.sequence_processing import A3MParser
+                parser = A3MParser(strict_validation=False)
+                sequences = parser.parse_file(a3m_file)
                 total_sequences += len(sequences)
             except Exception as e:
                 self.logger.debug(f"Failed to parse {a3m_file}: {e}")
@@ -1654,12 +1465,14 @@ class HitExpandRunner:
         # Add sequences from all previous rounds
         for round_num in range(1, current_round):
             round_dir = self.base_dir / f"round_{round_num}"
-            final_msa_name = f"hit_expand_final_msa{'_round_' + str(round_num) if round_num > 1 else ''}.a3m"
+            final_msa_name = f"hit_expand_final_msa_round_{round_num}.a3m"
             final_msa = round_dir / final_msa_name
             
             if final_msa.exists():
                 try:
-                    sequences = self.parser.parse_file(final_msa)
+                    from af_claseq.utils.sequence_processing import A3MParser
+                    parser = A3MParser(strict_validation=False)
+                    sequences = parser.parse_file(final_msa)
                     all_sequences.update(sequences)
                 except Exception as e:
                     self.logger.debug(f"Failed to parse {final_msa}: {e}")
@@ -1673,40 +1486,172 @@ class HitExpandRunner:
     
     def _run_subset_generation_stage_for_round(self, sequences: Dict[str, str], subsets_dir: Path) -> Dict[str, Any]:
         """Run subset generation for a specific round."""
-        return self._run_subset_generation_stage(sequences, subsets_dir)
+        self.logger.info("=== STAGE 2: SUBSET GENERATION ===")
+        
+        # Use the provided subsets_dir instead of hardcoded root level
+        subsets_dir.mkdir(parents=True, exist_ok=True)
+        
+        # Get query sequence from original source MSA
+        input_msa = Path(self.config.input_msa)
+        parser = A3MParser(strict_validation=False)
+        source_sequences = parser.parse_file(input_msa)
+        query_header, query_sequence = parser.get_query_sequence(source_sequences)
+        
+        self.logger.info(f"Source query sequence: {query_header}")
+        
+        # Prepare sequences with query first for subset generation
+        sequences_with_query = {query_header: query_sequence}
+        sequences_with_query.update(sequences)
+        
+        # Generate subsets directly from sequences
+        subset_results = self.subset_generator.generate_subsets(
+            sequences=sequences_with_query,
+            output_dir=subsets_dir
+        )
+        
+        # Validate subsets
+        validation_results = self.subset_generator.validate_subsets(
+            subset_results["subset_paths"]
+        )
+        
+        subset_results["validation"] = validation_results
+        subset_results["representative_sequences"] = sequences
+        subset_results["query_header"] = query_header
+        subset_results["query_sequence"] = query_sequence
+        
+        # Create DONE file
+        self._create_done_file(subsets_dir, "02_subsets")
+        
+        self.logger.info(f"Subset generation complete: {len(subset_results['subset_paths'])} subsets created")
+        
+        return subset_results
+    
+    def _run_structure_prediction_stage_for_round(self, subset_results: Dict[str, Any], prediction_dir: Path) -> Dict[str, Any]:
+        """Run structure prediction for a specific round."""
+        self.logger.info("=== STAGE 3: STRUCTURE PREDICTION ===")
+        
+        batch_info = subset_results["batch_info"]
+        
+        # Generate job specifications for each batch
+        job_specs = []
+        for batch_name, subset_paths in batch_info.items():
+            batch_dir = prediction_dir / batch_name
+            if not batch_dir.exists():
+                self.logger.error(f"Batch directory not found: {batch_dir}")
+                continue
+                
+            job_spec = {
+                "name": f"hit_expand_{batch_name}",
+                "task_dir": str(batch_dir),
+                "gres": "gpu:1",
+                "num_subsets": len(subset_paths)
+            }
+            job_specs.append(job_spec)
+        
+        self.logger.info(f"Created {len(job_specs)} structure prediction job specifications")
+        
+        # Submit and monitor jobs
+        submitted_jobs = self._submit_and_monitor_structure_jobs(
+            job_specs,
+            job_prefix="hit_expand",
+            stage_name="structure prediction"
+        )
+        
+        # Create DONE file
+        self._create_done_file(prediction_dir, "03_structure_prediction")
+        
+        return {
+            "job_specs": job_specs,
+            "submitted_jobs": submitted_jobs,
+            "prediction_dir": prediction_dir
+        }
     
     def _run_structure_analysis_stage_for_round(self, prediction_results: Dict[str, Any], analysis_dir: Path) -> Dict[str, Any]:
         """Run structure analysis for a specific round."""
-        return self._run_structure_analysis_stage(prediction_results, analysis_dir)
+        self.logger.info("=== STAGE 4: STRUCTURE ANALYSIS ===")
+        
+        # Use the provided analysis_dir instead of hardcoded root level
+        analysis_dir.mkdir(parents=True, exist_ok=True)
+        
+        # Collect all PDB files from prediction results
+        prediction_dir = prediction_results["prediction_dir"]
+        pdb_files = list(prediction_dir.rglob("*.pdb"))
+        
+        if not pdb_files:
+            self.logger.warning("No PDB files found for structure analysis")
+            return {"pdb_files": [], "analysis_results": {}}
+        
+        self.logger.info(f"Found {len(pdb_files)} PDB files for analysis")
+        
+        # Load filter configuration from hit_expand config and JSON file
+        with open(self.config_file, 'r') as f:
+            filter_config = json.load(f)
+        
+        # Get hit_expand specific configuration
+        hit_expand_plddt_threshold = getattr(self.config, 'plddt_threshold', 75.0)
+        all_filter_criteria = filter_config.get("filter_criteria", [])
+        
+        # Analyze structures using StructureAnalyzer in parallel
+        analysis_results = self.structure_analyzer.process_pdbs_parallel(
+            pdb_files=pdb_files,
+            filter_criteria=all_filter_criteria,
+            basics=filter_config.get("basics", {}),
+            plddt_threshold=hit_expand_plddt_threshold
+        )
+        
+        # Apply filtering (pass only structures that meet criteria)
+        filtered_results = self._filter_structures(analysis_results, filter_config)
+        
+        # Save results and create plots
+        csv_file, plot_files = self._save_results_and_create_plots(
+            analysis_results, filtered_results, analysis_dir, all_filter_criteria
+        )
+        
+        # Create DONE file
+        self._create_done_file(analysis_dir, "04_structure_analysis")
+        
+        self.logger.info(f"Analysis complete. {len(filtered_results)} structures passed filtering")
+        
+        return {
+            "pdb_files": pdb_files,
+            "analysis_results": analysis_results,
+            "filtered_results": filtered_results,
+            "csv_file": csv_file,
+            "plot_files": plot_files
+        }
     
     def _run_similarity_search_stage_for_round(self, good_sequences: Dict[str, str], 
                                              search_dir: Path, round_num: int,
                                              exclude_sequences: set) -> Dict[str, str]:
         """Search for NEW sequences not found in previous rounds."""
-        from af_claseq.modules.similarity_search import SimilaritySearcher
+        from af_claseq.modules.similarity_search import BLOSUM62SimilaritySearch, SimilaritySearchConfig
         
         # Initialize similarity searcher
-        searcher = SimilaritySearcher(
-            source_msa_path=Path(self.config.input_msa),  # Always search original!
+        config = SimilaritySearchConfig(
             top_k=self.config.similarity_top_k,
-            threshold=self.config.similarity_threshold,
-            exclude_query_headers=self.config.exclude_query_headers,
-            logger=self.logger
+            similarity_threshold=self.config.similarity_threshold,
+            exclude_query_headers=self.config.exclude_query_headers
         )
+        searcher = BLOSUM62SimilaritySearch(config)
         
         # Search for similar sequences
-        search_results = searcher.search_and_expand(
-            query_sequences=good_sequences,
+        expanded_msa_path = searcher.search_and_expand(
+            representative_sequences=good_sequences,
+            source_msa=Path(self.config.input_msa),
             output_dir=search_dir
         )
         
-        # Filter out sequences already found in previous rounds
+        # Load the expanded MSA and filter out sequences already found in previous rounds
+        from af_claseq.utils.sequence_processing import A3MParser
+        parser = A3MParser(strict_validation=False)
+        expanded_sequences = parser.parse_file(expanded_msa_path)
+        
         newly_found = {}
-        for header, seq in search_results.items():
+        for header, seq in expanded_sequences.items():
             if header not in exclude_sequences:
                 newly_found[header] = seq
         
-        excluded_count = len(search_results) - len(newly_found)
+        excluded_count = len(expanded_sequences) - len(newly_found)
         self.logger.info(f"Round {round_num}: Found {len(newly_found)} NEW sequences "
                         f"(excluded {excluded_count} duplicates from previous rounds)")
         
@@ -1720,42 +1665,61 @@ class HitExpandRunner:
         temp_a3m = expanded_subsets_dir / "temp_new_sequences.a3m"
         temp_a3m.parent.mkdir(parents=True, exist_ok=True)
         
-        self.parser.write_sequences(sequences, temp_a3m)
+        # Get query sequence from original source MSA
+        input_msa = Path(self.config.input_msa)
+        parser = A3MParser(strict_validation=False)
+        source_sequences = parser.parse_file(input_msa)
+        query_header, query_sequence = parser.get_query_sequence(source_sequences)
         
-        # Generate subsets with custom starting index
-        subset_generator = SubsetGenerator(
-            num_random_sequences=self.config.num_random_sequences,
-            coverage_threshold=0.8,
-            ensure_query_first=True,
-            random_seed=self.config.random_seed,
-            logger=self.logger
-        )
+        # Prepare sequences with query first for subset generation
+        sequences_with_query = {query_header: query_sequence}
+        sequences_with_query.update(sequences)
         
-        # Generate subsets
-        subset_paths = subset_generator.generate_multiple_subsets(
-            a3m_file=temp_a3m,
+        # Create subset configuration for expanded sequences
+        expanded_subset_config = SubsetConfig(
             num_subsets=len(sequences) // self.config.num_random_sequences + 1,
-            output_dir=expanded_subsets_dir,
-            output_prefix="subset",
-            start_index=start_index
+            num_random_sequences=self.config.num_random_sequences,
+            num_batches=self.config.num_batches,
+            batch_prefix="expanded_batch",
+            output_prefix="expanded_subset",
+            random_seed=self.config.random_seed
         )
         
-        # Organize into batches
-        batch_info = subset_generator._organize_into_batches(
-            subset_paths=subset_paths,
-            output_dir=expanded_subsets_dir,
-            num_batches=min(self.config.num_batches, len(subset_paths)),
-            batch_prefix=self.config.batch_prefix
+        # Generate subsets directly from sequences
+        subset_generator = SubsetGenerator(expanded_subset_config)
+        subset_results = subset_generator.generate_subsets(
+            sequences=sequences_with_query,
+            output_dir=expanded_subsets_dir
         )
+        
+        # Extract results
+        subset_paths = subset_results["subset_paths"]
+        batch_info = subset_results["batch_info"]
+        
+        # Create job specifications for the new subsets
+        job_specs = []
+        for batch_name, subset_paths_in_batch in batch_info.items():
+            if subset_paths_in_batch:
+                batch_dir = Path(subset_paths_in_batch[0]).parent
+                job_spec = {
+                    "name": f"expanded_{batch_name}",
+                    "task_dir": str(batch_dir),
+                    "job_id": batch_name,
+                    "gres": "gpu:1",
+                    "num_subsets": len(subset_paths_in_batch)
+                }
+                job_specs.append(job_spec)
         
         # Submit ColabFold jobs for the new subsets
-        self._submit_jobs_with_existing_check(batch_info)
+        if job_specs:
+            self._submit_and_monitor_structure_jobs(
+                job_specs=job_specs,
+                job_prefix="expanded",
+                stage_name="expanded subset structure prediction"
+            )
         
-        # Clean up temporary file
-        temp_a3m.unlink()
-        
-        # Write DONE file
-        self._write_done_file(expanded_subsets_dir, "06_expanded_subsets")
+        # Create DONE file
+        self._create_done_file(expanded_subsets_dir, "06_expanded_subsets")
         
         return {
             "subset_paths": subset_paths,

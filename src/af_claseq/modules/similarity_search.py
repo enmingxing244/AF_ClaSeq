@@ -246,7 +246,9 @@ class BLOSUM62SimilaritySearch:
             # Calculate similarity
             similarity_score = self._calculate_similarity(clean_query, sequence)
             
-            if similarity_score >= self.config.similarity_threshold:
+            # Include sequences that meet threshold but exclude perfect matches (duplicates)
+            if (similarity_score >= self.config.similarity_threshold and 
+                similarity_score < 1.0):  # Exclude perfect matches to avoid duplicates
                 similarities.append((header, sequence, similarity_score))
         
         # Sort by similarity score (descending) and take top-k
@@ -412,6 +414,7 @@ class BLOSUM62SimilaritySearch:
         """
         try:
             logger.info("Starting hit expansion with similarity search")
+            logger.info("Note: Perfect matches (similarity = 1.0) are excluded to avoid duplicates")
             
             # Find similar sequences for all representatives
             similarity_results = self.find_similar_sequences(
