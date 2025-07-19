@@ -378,7 +378,7 @@ class HitExpandRunner:
         analysis_results = {}
         
         # Get analysis parameters (same as main structure analysis)
-        hit_expand_plddt_threshold = getattr(self.config, 'plddt_threshold', 75.0)
+        hit_expand_plddt_threshold = self.config.plddt_threshold
         all_filter_criteria = filter_config.get("filter_criteria", [])
         
         # Temporarily suppress INFO logging from sequence_processing module
@@ -614,8 +614,12 @@ class HitExpandRunner:
             all_data = []
             for pdb_path, metrics in analysis_results.items():
                 if "error" not in metrics:
-                    row = {"PDB": Path(pdb_path).name}
-                    row.update(metrics)
+                    # Keep full path in PDB column for easier filtering
+                    row = {"PDB": pdb_path}
+                    # Add metrics but skip the duplicate PDB field
+                    for key, value in metrics.items():
+                        if key != "PDB":  # Skip duplicate PDB field from metrics
+                            row[key] = value
                     all_data.append(row)
             
             if not all_data:
@@ -650,15 +654,15 @@ class HitExpandRunner:
             
             # Extract plotting configuration from config
             plotting_config = {
-                'scatter_plot_metric1_min': getattr(self.config, 'scatter_plot_metric1_min', 0.0),
-                'scatter_plot_metric1_max': getattr(self.config, 'scatter_plot_metric1_max', 1.0),
-                'scatter_plot_metric2_min': getattr(self.config, 'scatter_plot_metric2_min', 0.0),
-                'scatter_plot_metric2_max': getattr(self.config, 'scatter_plot_metric2_max', 1.0),
-                'scatter_plot_metric1_ticks': getattr(self.config, 'scatter_plot_metric1_ticks', [0.0, 0.2, 0.4, 0.6, 0.8, 1.0]),
-                'scatter_plot_metric2_ticks': getattr(self.config, 'scatter_plot_metric2_ticks', [0.0, 0.2, 0.4, 0.6, 0.8, 1.0]),
-                'plddt_plot_min': getattr(self.config, 'plddt_plot_min', 0),
-                'plddt_plot_max': getattr(self.config, 'plddt_plot_max', 100),
-                'plddt_plot_ticks': getattr(self.config, 'plddt_plot_ticks', [0, 20, 40, 60, 80, 100])
+                'scatter_plot_metric1_min': self.config.scatter_plot_metric1_min,
+                'scatter_plot_metric1_max': self.config.scatter_plot_metric1_max,
+                'scatter_plot_metric2_min': self.config.scatter_plot_metric2_min,
+                'scatter_plot_metric2_max': self.config.scatter_plot_metric2_max,
+                'scatter_plot_metric1_ticks': self.config.scatter_plot_metric1_ticks,
+                'scatter_plot_metric2_ticks': self.config.scatter_plot_metric2_ticks,
+                'plddt_plot_min': self.config.plddt_plot_min,
+                'plddt_plot_max': self.config.plddt_plot_max,
+                'plddt_plot_ticks': self.config.plddt_plot_ticks
             }
             
             # Use available metrics instead of expected metrics
@@ -782,10 +786,24 @@ class HitExpandRunner:
             
             # Add filtered results summary
             if filtered_results:
-                filtered_df = df[df['PDB'].isin([Path(p).name for p in filtered_results.keys()])]
-                filtered_csv = output_dir / "filtered_structures.csv"
-                filtered_df.to_csv(filtered_csv, index=False)
-                self.logger.info(f"Saved filtered structures to CSV: {filtered_csv}")
+                print(filtered_results)
+                # breakpoint()
+                # Extract PDB filenames from filtered_results keys (which are full paths)
+                filtered_pdb_names = [pdb_path for pdb_path in filtered_results.keys()]
+                self.logger.debug(f"Looking for PDB names: {filtered_pdb_names}")
+                self.logger.debug(f"Available PDB names in df: {df['PDB'].tolist()}")
+                
+                filtered_df = df[df['PDB'].isin(filtered_pdb_names)]
+                self.logger.info(f"Filtered DataFrame contains {len(filtered_df)} structures")
+                
+                if len(filtered_df) > 0:
+                    print(filtered_df)
+                    # breakpoint()
+                    filtered_csv = output_dir / "filtered_structures.csv"
+                    filtered_df.to_csv(filtered_csv, index=False)
+                    self.logger.info(f"Saved {len(filtered_df)} filtered structures to CSV: {filtered_csv}")
+                else:
+                    self.logger.warning("No structures found in filtered DataFrame - check PDB name matching")
             
             self.logger.info(f"Created {len(plot_files)} plots in {plots_dir}")
             
@@ -801,10 +819,10 @@ class HitExpandRunner:
         """Filter structures based on analysis criteria using hit_expand configuration."""
         filtered_results = {}
         
-        # Get hit_expand specific thresholds
-        hit_expand_plddt_threshold = getattr(self.config, 'plddt_threshold', 75.0)
-        filter_criteria_threshold = getattr(self.config, 'filter_criteria_threshold', 0.8)
-        filter_criteria_name = getattr(self.config, 'filter_criteria', None)
+        # Get hit_expand specific thresholds from loaded configuration
+        hit_expand_plddt_threshold = self.config.plddt_threshold
+        filter_criteria_threshold = self.config.filter_criteria_threshold
+        filter_criteria_name = self.config.filter_criteria
         
         self.logger.info(f"Filtering with pLDDT >= {hit_expand_plddt_threshold}")
         self.logger.info(f"Filtering with {filter_criteria_name} threshold: {filter_criteria_threshold}")
@@ -873,6 +891,38 @@ class HitExpandRunner:
         
         self.logger.info(f"Structures passed filtering: {len(filtered_results)}/{len(analysis_results)}")
         return filtered_results
+    
+    def _passes_filter_criteria(self, metrics: Dict[str, Any]) -> bool:
+        """
+        Check if a structure passes the filter criteria.
+        
+        This method uses the same logic as _filter_structures but for individual structures.
+        
+        Args:
+            metrics: Structure analysis metrics
+            
+        Returns:
+            True if structure passes all criteria, False otherwise
+        """
+        # Check pLDDT threshold
+        plddt_score = metrics.get("plddt", 0.0)
+        if plddt_score < self.config.plddt_threshold:
+            return False
+        
+        # Check filter criteria threshold
+        if self.config.filter_criteria != "default":
+            criterion_value = metrics.get(self.config.filter_criteria)
+            if criterion_value is None:
+                # Missing criterion - by default, structure passes (matches main filtering logic)
+                self.logger.debug(f"Missing criterion '{self.config.filter_criteria}' - structure passes by default")
+                return True
+            
+            # Apply threshold based on criterion type
+            # For RMSD (method="below"), lower values are better
+            if criterion_value > self.config.filter_criteria_threshold:
+                return False
+        
+        return True
     
     
     def _load_existing_subset_results(self, subsets_dir: Path) -> Dict[str, Any]:
@@ -1588,7 +1638,7 @@ class HitExpandRunner:
             filter_config = json.load(f)
         
         # Get hit_expand specific configuration
-        hit_expand_plddt_threshold = getattr(self.config, 'plddt_threshold', 75.0)
+        hit_expand_plddt_threshold = self.config.plddt_threshold
         all_filter_criteria = filter_config.get("filter_criteria", [])
         
         # Analyze structures using StructureAnalyzer in parallel
