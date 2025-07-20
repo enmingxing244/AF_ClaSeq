@@ -398,6 +398,8 @@ def create_2d_scatter_plot(
     x_ticks: Optional[List[float]] = None, 
     y_ticks: Optional[List[float]] = None,
     title: Optional[str] = None,
+    threshold_x: Optional[float] = None,
+    threshold_y: Optional[float] = None,
     logger: Optional[Any] = None
 ) -> str:
     """
@@ -417,6 +419,8 @@ def create_2d_scatter_plot(
         x_ticks: Custom x-axis tick values
         y_ticks: Custom y-axis tick values
         title: Optional title for the plot
+        threshold_x: Optional x-axis threshold for vertical dashed line
+        threshold_y: Optional y-axis threshold for horizontal dashed line
         logger: Optional logger to use
         
     Returns:
@@ -453,6 +457,13 @@ def create_2d_scatter_plot(
     
     if title:
         plt.title(title)
+
+    # Add threshold lines if specified
+    if threshold_x is not None:
+        plt.axvline(x=threshold_x, color='grey', linestyle='--', alpha=0.7, linewidth=1.5)
+    
+    if threshold_y is not None:
+        plt.axhline(y=threshold_y, color='grey', linestyle='--', alpha=0.7, linewidth=1.5)
 
     set_axis_limits_and_ticks(
         plt, 

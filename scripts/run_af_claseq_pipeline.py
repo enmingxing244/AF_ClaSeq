@@ -16,6 +16,7 @@ from typing import Dict, Any
 # Import modules from AF-ClaSeq
 from af_claseq.utils.slurm_utils import SlurmJobSubmitter
 from af_claseq.utils.structure_analysis import StructureAnalyzer
+from af_claseq.utils.sequence_processing import A3MParser, filter_a3m_by_coverage, write_a3m
 from af_claseq.pipeline.init_bootstrapping import InitBootstrappingRunner
 from af_claseq.pipeline.hit_expand import HitExpandRunner
 from af_claseq.pipeline.m_fold_sampling import MFoldSampler

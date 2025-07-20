@@ -15,8 +15,8 @@ from dataclasses import asdict
 from tqdm import tqdm
 
 from af_claseq.pipeline.config import InitBootstrappingConfig
-from af_claseq.modules.subset_generator import SubsetGenerator
-from af_claseq.utils.sequence_processing import A3MParser, validate_a3m_file
+from af_claseq.modules.subset_generator import SubsetGenerator, SubsetConfig
+from af_claseq.utils.sequence_processing import A3MParser, validate_a3m_file, filter_a3m_by_coverage
 from af_claseq.utils.slurm_utils import SlurmJobSubmitter
 from af_claseq.utils.logging_utils import get_logger
 
@@ -96,31 +96,38 @@ class InitBootstrappingRunner:
         self.logger.info(f"Loaded {len(input_sequences)} sequences from input MSA")
         
         # Initialize subset generator
-        subset_generator = SubsetGenerator(
+        subset_config = SubsetConfig(
+            num_subsets=self.config.init_num_subsets,
             num_random_sequences=self.config.init_num_random_sequences,
-            coverage_threshold=0.8,  # Use default coverage threshold
+            num_batches=self.config.init_num_batches,
             ensure_query_first=self.config.ensure_query_first,
-            random_seed=self.config.random_seed,
-            logger=self.logger
+            random_seed=self.config.random_seed
         )
+        subset_generator = SubsetGenerator(subset_config)
         
         # Generate subsets with progress bar
         self.logger.info(f"Generating {self.config.init_num_subsets} subsets...")
-        subset_paths = subset_generator.generate_multiple_subsets(
-            a3m_file=input_msa,
-            num_subsets=self.config.init_num_subsets,
+        subset_paths = subset_generator.generate_subsets(
+            expanded_msa=input_msa,
             output_dir=self.subsets_dir,
-            output_prefix=self.config.init_output_prefix
+            sequences=input_sequences
         )
         
-        # Organize into batches
-        self.logger.info(f"Organizing {len(subset_paths)} subsets into {self.config.init_num_batches} batches...")
-        batch_info = subset_generator._organize_into_batches(
-            subset_paths=subset_paths,
-            output_dir=self.subsets_dir,
-            num_batches=self.config.init_num_batches,
-            batch_prefix=self.config.init_batch_prefix
-        )
+        # Subsets are already organized into batches by generate_subsets
+        self.logger.info(f"Generated {len(subset_paths)} subsets organized in batches")
+        
+        # Create batch_info structure expected by downstream code
+        batch_dirs = {}
+        batch_paths = list(self.subsets_dir.glob("batch_*"))
+        for batch_path in sorted(batch_paths):
+            batch_name = batch_path.name
+            batch_dirs[batch_name] = str(batch_path)
+        
+        batch_info = {
+            "batch_dirs": batch_dirs,
+            "num_batches": len(batch_dirs),
+            "batches_per_group": len(batch_dirs)
+        }
         
         # Save subset generation summary
         summary_file = self.subsets_dir / "subset_generation_summary.json"
@@ -129,6 +136,7 @@ class InitBootstrappingRunner:
             "num_subsets": self.config.init_num_subsets,
             "num_random_sequences": self.config.init_num_random_sequences,
             "num_batches": self.config.init_num_batches,
+            "subset_paths": [str(p) for p in subset_paths],
             "batch_info": batch_info
         }
         with open(summary_file, 'w') as f:
@@ -181,23 +189,18 @@ class InitBootstrappingRunner:
                 }
                 job_specs.append(job_spec)
                 
-                # Submit job
+                # Submit job using the same method as hit_expand
                 try:
-                    job_id = self.slurm_submitter.submit_colabfold_batch(
-                        batch_dir=batch_path,
-                        job_name=job_spec["job_name"],
-                        num_models=1,
-                        use_gpu=True,
-                        num_recycle=3
+                    batch_id = batch_name.replace("batch_", "")
+                    job_id = self.slurm_submitter.submit_job(
+                        task_dir=str(batch_path),
+                        job_id=batch_id
                     )
                     
                     if job_id:
-                        submitted_jobs.append({
-                            "job_id": job_id,
-                            "batch_name": batch_name,
-                            "batch_dir": str(batch_path)
-                        })
-                        self.logger.info(f"Submitted job {job_id} for {batch_name}")
+                        submitted_jobs.append(job_id)
+                    else:
+                        self.logger.error(f"Failed to submit job for {batch_name}")
                     
                 except Exception as e:
                     self.logger.error(f"Failed to submit job for {batch_name}: {e}")
@@ -217,15 +220,19 @@ class InitBootstrappingRunner:
         self.logger.info(f"Submitted {len(submitted_jobs)} jobs for structure prediction")
         
         # Monitor jobs if configured
-        if self.config.monitor_jobs and submitted_jobs:
+        monitor_jobs = getattr(self.config, 'monitor_jobs', True)
+        if monitor_jobs and submitted_jobs:
             self.logger.info("Monitoring job progress...")
-            job_ids = [job["job_id"] for job in submitted_jobs]
-            completed_jobs = self.slurm_submitter.monitor_jobs(
-                job_ids=job_ids,
-                check_interval=self.config.job_check_interval,
-                max_wait_time=self.config.max_job_wait_time
+            # submitted_jobs is already a list of job IDs (strings)
+            job_states = self.slurm_submitter.monitor_jobs(
+                job_ids=submitted_jobs,
+                check_interval=getattr(self.config, 'job_check_interval', 60.0),
+                timeout=getattr(self.config, 'max_job_wait_time', 14400.0)
             )
-            self.logger.info(f"Completed {len(completed_jobs)} out of {len(job_ids)} jobs")
+            
+            # Log job completion statistics like hit_expand does
+            completed_jobs = sum(1 for state in job_states.values() if state.value == "COMPLETED")
+            self.logger.info(f"Init bootstrapping completed: {completed_jobs}/{len(submitted_jobs)} jobs successful")
         
         # Write DONE file
         self._write_done_file(self.subsets_dir, "02_init_structure_prediction")
@@ -248,7 +255,11 @@ class InitBootstrappingRunner:
         
         # Import required modules
         from af_claseq.utils.structure_analysis import StructureAnalyzer
-        from af_claseq.utils.plotting_manager import PlottingManager
+        from af_claseq.utils.plotting_manager import (
+            plot_1d_distribution, 
+            create_2d_scatter_plot,
+            create_joint_plot
+        )
         
         # Initialize analyzer
         filter_config_path = Path(self.config.filter_config_path)
@@ -256,15 +267,20 @@ class InitBootstrappingRunner:
             self.logger.error(f"Filter config not found: {filter_config_path}")
             return
         
-        analyzer = StructureAnalyzer(
-            filter_config_path=filter_config_path,
-            plddt_threshold=self.config.init_plddt_threshold,
-            logger=self.logger
-        )
+        # Initialize analyzer like hit_expand does
+        analyzer = StructureAnalyzer()
         
-        # Find all predicted structures
+        # Load filter config like hit_expand does
+        with open(filter_config_path, 'r') as f:
+            filter_config = json.load(f)
+        
+        # Extract filter criteria and basics from config
+        all_filter_criteria = filter_config.get("filter_criteria", {})
+        basics = filter_config.get("basics", {})
+        
+        # Find all predicted structures (use same pattern as hit_expand)
         prediction_dir = Path(prediction_results["prediction_dir"])
-        pdb_files = list(prediction_dir.glob("**/init_subset_*_unrelaxed_rank_001_*.pdb"))
+        pdb_files = list(prediction_dir.rglob("*.pdb"))
         
         self.logger.info(f"Found {len(pdb_files)} predicted structures")
         
@@ -272,33 +288,27 @@ class InitBootstrappingRunner:
             self.logger.warning("No structures found for analysis")
             return
         
-        # Analyze structures with progress bar
+        # Analyze structures using parallel processing for better performance
+        self.logger.info("Starting parallel structure analysis...")
+        
+        # Use parallel processing for much faster analysis
+        raw_analysis_results = analyzer.process_pdbs_parallel(
+            pdb_files=pdb_files,
+            filter_criteria=all_filter_criteria,
+            basics=basics,
+            plddt_threshold=0,  # Don't filter by pLDDT here, just analyze
+            n_jobs=-1  # Use all available CPU cores
+        )
+        
+        # Convert results to the expected format (subset_name -> result)
         analysis_results = {}
-        with tqdm(total=len(pdb_files), desc="Analyzing structures") as pbar:
-            for pdb_file in pdb_files:
-                try:
-                    # Temporarily suppress logging
-                    original_level = logging.getLogger('af_claseq.utils.sequence_processing').level
-                    logging.getLogger('af_claseq.utils.sequence_processing').setLevel(logging.WARNING)
-                    
-                    result = analyzer.process_single_pdb(str(pdb_file))
-                    
-                    # Restore logging
-                    logging.getLogger('af_claseq.utils.sequence_processing').setLevel(original_level)
-                    
-                    if result:
-                        subset_name = pdb_file.parent.name
-                        analysis_results[subset_name] = result
-                except Exception as e:
-                    self.logger.debug(f"Failed to analyze {pdb_file}: {e}")
-                pbar.update(1)
+        for pdb_path_str, result in raw_analysis_results.items():
+            if result:
+                pdb_path = Path(pdb_path_str)
+                # subset_name = pdb_path.parent.name
+                analysis_results[pdb_path] = result
         
         self.logger.info(f"Successfully analyzed {len(analysis_results)} structures")
-        
-        # Save analysis results
-        results_file = self.analysis_dir / "init_structure_analysis_results.json"
-        with open(results_file, 'w') as f:
-            json.dump(analysis_results, f, indent=2)
         
         # Create CSV file
         if analysis_results:
@@ -326,7 +336,7 @@ class InitBootstrappingRunner:
             plots_dir = self.analysis_dir / "plots"
             plots_dir.mkdir(exist_ok=True)
             
-            plotting_manager = PlottingManager(logger=self.logger)
+            # Use plotting functions directly like hit_expand does
             
             # Get metric names from filter config
             with open(filter_config_path, 'r') as f:
@@ -339,16 +349,12 @@ class InitBootstrappingRunner:
                 
                 # Create 2D scatter plot
                 self.logger.info(f"Creating 2D scatter plot for {metric1_name} vs {metric2_name}")
-                plotting_manager.create_2d_scatter_plot(
-                    df=df,
-                    metric1_col=metric1_name,
-                    metric2_col=metric2_name,
-                    color_col='plddt',
-                    output_path=plots_dir / f"init_{metric1_name}_vs_{metric2_name}_scatter.png",
-                    xlabel=metric1_name.replace('_', ' ').title(),
-                    ylabel=metric2_name.replace('_', ' ').title(),
-                    title=f"Init Bootstrapping: {metric1_name} vs {metric2_name}",
-                    figsize=self.config.init_plot_figsize,
+                create_2d_scatter_plot(
+                    results_df=df,
+                    metric_name1=metric1_name,
+                    metric_name2=metric2_name,
+                    output_dir=str(plots_dir),
+                    color_metric='plddt',
                     x_min=self.config.init_plot_metric1_min,
                     x_max=self.config.init_plot_metric1_max,
                     y_min=self.config.init_plot_metric2_min,
@@ -473,18 +479,17 @@ class InitBootstrappingRunner:
                     f.write(f"  Jobs submitted: {job_data.get('num_jobs_submitted', 'N/A')}\n\n")
             
             # Analysis summary
-            analysis_file = self.analysis_dir / "init_structure_analysis_results.json"
-            if analysis_file.exists():
-                with open(analysis_file, 'r') as af:
-                    analysis_data = json.load(af)
-                    f.write("STRUCTURE ANALYSIS RESULTS:\n")
-                    f.write(f"  Structures analyzed: {len(analysis_data)}\n")
-                    
-                    # Calculate average metrics
-                    if analysis_data:
-                        plddt_values = [v.get('plddt', 0) for v in analysis_data.values()]
-                        avg_plddt = sum(plddt_values) / len(plddt_values)
-                        f.write(f"  Average pLDDT: {avg_plddt:.2f}\n")
+            csv_file = self.analysis_dir / "init_structure_analysis_results.csv"
+            if csv_file.exists():
+                import pandas as pd
+                df = pd.read_csv(csv_file)
+                f.write("STRUCTURE ANALYSIS RESULTS:\n")
+                f.write(f"  Structures analyzed: {len(df)}\n")
+                
+                # Calculate average metrics
+                if len(df) > 0 and 'plddt' in df.columns:
+                    avg_plddt = df['plddt'].mean()
+                    f.write(f"  Average pLDDT: {avg_plddt:.2f}\n")
             
             f.write("\n" + "=" * 60 + "\n")
             f.write("Init bootstrapping completed. Review results before running full pipeline.\n")

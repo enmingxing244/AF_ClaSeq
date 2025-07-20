@@ -318,7 +318,7 @@ class HitExpandRunner:
         analysis_results = {}
         
         # Get analysis parameters (same as main structure analysis)
-        hit_expand_plddt_threshold = self.config.plddt_threshold
+       
         all_filter_criteria = filter_config.get("filter_criteria", [])
         
         # Temporarily suppress INFO logging from sequence_processing module
@@ -338,7 +338,7 @@ class HitExpandRunner:
                     pdb_path=str(pdb_file),
                     filter_criteria=all_filter_criteria,
                     basics=filter_config.get("basics", {}),
-                    plddt_threshold=hit_expand_plddt_threshold
+                    plddt_threshold=0.0 # plddt threshold will not be applied in the plotting steps
                 )
                 
                 if metrics and "error" not in metrics:
@@ -676,7 +676,7 @@ class HitExpandRunner:
                         metric_name2=metric_names[1],
                         output_dir=str(plots_dir),
                         color_metric='plddt',
-                        title=f'{metric_names[0]} vs {metric_names[1]}',
+                        title=None,
                         x_min=plotting_config['scatter_plot_metric1_min'],
                         x_max=plotting_config['scatter_plot_metric1_max'],
                         y_min=plotting_config['scatter_plot_metric2_min'],
@@ -714,7 +714,7 @@ class HitExpandRunner:
                             metric_name2=metric_names[1],
                             output_dir=str(plots_dir),
                             color_metric='local_plddt',
-                            title=f'{metric_names[0]} vs {metric_names[1]} (Local pLDDT)',
+                            title=None,
                             x_min=plotting_config['scatter_plot_metric1_min'],
                             x_max=plotting_config['scatter_plot_metric1_max'],
                             y_min=plotting_config['scatter_plot_metric2_min'],
@@ -748,7 +748,7 @@ class HitExpandRunner:
                         metric_name2=metric_names[0],
                         output_dir=str(plots_dir),
                         color_metric='plddt',
-                        title=f'pLDDT vs {metric_names[0]}',
+                        title=None,
                         x_min=plotting_config['plddt_plot_min'],
                         x_max=plotting_config['plddt_plot_max'],
                         y_min=plotting_config['scatter_plot_metric1_min'],
@@ -1300,8 +1300,7 @@ class HitExpandRunner:
         with open(self.config_file, 'r') as f:
             filter_config = json.load(f)
         
-        # Get analysis parameters
-        hit_expand_plddt_threshold = self.config.plddt_threshold
+        
         all_filter_criteria = filter_config.get("filter_criteria", [])
         
         # Analyze structures in parallel
@@ -1309,7 +1308,7 @@ class HitExpandRunner:
             pdb_files=pdb_files,
             filter_criteria=all_filter_criteria,
             basics=filter_config.get("basics", {}),
-            plddt_threshold=hit_expand_plddt_threshold
+            plddt_threshold=0.0 # in the structure analysis steps, all structure will considered and will not apply threshold
         )
         
         # Apply filtering if requested
