@@ -396,6 +396,11 @@ class AFClaSeqPipeline:
                 # Only one criterion - use 1D plots
                 self.logger.info("One filter criterion detected - generating 1D plots")
                 metric_name = filter_criteria[0].get('name', 'criterion_0')
+                
+                # Create metric colors dictionary
+                metric_colors = {
+                    metric_name: self.config.general.metric1_color
+                }
 
                 plot_m_fold_sampling_1d(
                     results_dir=all_results_dirs,  # Pass list of all round directories
@@ -403,21 +408,22 @@ class AFClaSeqPipeline:
                     output_dir=output_dir,
                     csv_dir=csv_dir,
                     config_file=self.config.general.config_file,
-                    initial_color=self.config.general.plot_initial_color,
-                    end_color=self.config.general.plot_end_color,
+                    initial_color=self.config.general.metric1_color[0],
+                    end_color=self.config.general.metric1_color[1],
                     x_min=self.config.m_fold_sampling.m_fold_metric1_min,
                     x_max=self.config.m_fold_sampling.m_fold_metric1_max,
                     y_min=self.config.m_fold_sampling.m_fold_count_min,
                     y_max=self.config.m_fold_sampling.m_fold_count_max,
                     x_ticks=self.config.m_fold_sampling.m_fold_metric1_ticks,
                     log_scale=self.config.m_fold_sampling.m_fold_log_scale,
-                    n_plot_bins=self.config.m_fold_sampling.m_fold_n_plot_bins,
+                    n_plot_bins=self.config.general.num_bins,
                     gradient_ascending=self.config.m_fold_sampling.m_fold_gradient_ascending,
                     linear_gradient=self.config.m_fold_sampling.m_fold_linear_gradient,
                     plddt_threshold=self.config.m_fold_sampling.m_fold_plddt_threshold,
                     figsize=self.config.m_fold_sampling.m_fold_figsize,
                     show_bin_lines=self.config.m_fold_sampling.m_fold_show_bin_lines,
-                    logger=self.logger
+                    logger=self.logger,
+                    metric_colors=metric_colors
                 )
 
             elif num_criteria == 2:
@@ -426,6 +432,12 @@ class AFClaSeqPipeline:
 
                 # Get metric names
                 metric_names = [criterion.get('name', f'criterion_{i}') for i, criterion in enumerate(filter_criteria)]
+                
+                # Create metric colors dictionary mapping metric names to their colors
+                metric_colors = {
+                    metric_names[0]: self.config.general.metric1_color,
+                    metric_names[1]: self.config.general.metric2_color
+                }
 
                 # Generate 1D plots for each criterion
                 for i, metric_name in enumerate(metric_names):
@@ -435,10 +447,12 @@ class AFClaSeqPipeline:
                         metric_min = self.config.m_fold_sampling.m_fold_metric1_min
                         metric_max = self.config.m_fold_sampling.m_fold_metric1_max
                         metric_ticks = self.config.m_fold_sampling.m_fold_metric1_ticks
+                        colors = self.config.general.metric1_color
                     else:
                         metric_min = self.config.m_fold_sampling.m_fold_metric2_min
                         metric_max = self.config.m_fold_sampling.m_fold_metric2_max
                         metric_ticks = self.config.m_fold_sampling.m_fold_metric2_ticks
+                        colors = self.config.general.metric2_color
 
                     plot_m_fold_sampling_1d(
                         results_dir=all_results_dirs,  # Pass list of all round directories
@@ -446,21 +460,22 @@ class AFClaSeqPipeline:
                         output_dir=output_dir,
                         csv_dir=csv_dir,
                         config_file=self.config.general.config_file,
-                        initial_color=self.config.general.plot_initial_color,
-                        end_color=self.config.general.plot_end_color,
+                        initial_color=colors[0],
+                        end_color=colors[1],
                         x_min=metric_min,
                         x_max=metric_max,
                         y_min=self.config.m_fold_sampling.m_fold_count_min,
                         y_max=self.config.m_fold_sampling.m_fold_count_max,
                         x_ticks=metric_ticks,
                         log_scale=self.config.m_fold_sampling.m_fold_log_scale,
-                        n_plot_bins=self.config.m_fold_sampling.m_fold_n_plot_bins,
+                        n_plot_bins=self.config.general.num_bins,
                         gradient_ascending=self.config.m_fold_sampling.m_fold_gradient_ascending,
                         linear_gradient=self.config.m_fold_sampling.m_fold_linear_gradient,
                         plddt_threshold=self.config.m_fold_sampling.m_fold_plddt_threshold,
                         figsize=self.config.m_fold_sampling.m_fold_figsize,
                         show_bin_lines=self.config.m_fold_sampling.m_fold_show_bin_lines,
-                        logger=self.logger
+                        logger=self.logger,
+                        metric_colors=metric_colors
                     )
 
                 # Generate 2D plot
@@ -526,7 +541,7 @@ class AFClaSeqPipeline:
             results_files = []
 
             # Process each filter criterion separately
-            for criterion in filter_criteria:
+            for i, criterion in enumerate(filter_criteria):
                 criterion_name = criterion.get('name')
                 if not criterion_name:
                     self.logger.warning("Filter criterion without name found, skipping")
@@ -562,11 +577,14 @@ class AFClaSeqPipeline:
                     results_files.append((criterion_name, results_file))
 
                     # Create plotter for visualization
+                    # Determine which metric colors to use based on criterion index
+                    colors = self.config.general.metric1_color if i == 0 else self.config.general.metric2_color
+                    
                     plotter = SequenceVotingPlotter(
                         results_file=results_file,
                         output_dir=criterion_output_dir,
-                        initial_color=self.config.general.plot_initial_color,
-                        end_color=self.config.general.plot_end_color if hasattr(self.config.general, 'plot_end_color') else None,
+                        initial_color=colors[0],
+                        end_color=colors[1],
                         figsize=self.config.sequence_voting.vote_figsize,
                         y_min=self.config.sequence_voting.vote_y_min,
                         y_max=self.config.sequence_voting.vote_y_max,
@@ -620,7 +638,7 @@ class AFClaSeqPipeline:
             all_successful = True
             
             # Process each filter criterion separately
-            for criterion in filter_criteria:
+            for i, criterion in enumerate(filter_criteria):
                 criterion_name = criterion.get('name')
                 if not criterion_name:
                     self.logger.warning("Filter criterion without name found, skipping")
@@ -663,6 +681,9 @@ class AFClaSeqPipeline:
                     continue
                 
                 # Create sequence recompiler for this criterion
+                # Determine which metric colors to use based on criterion index
+                colors = self.config.general.metric1_color if i == 0 else self.config.general.metric2_color
+                
                 recompiler = SequenceRecompiler(
                     output_dir=criterion_output_dir,
                     source_msa=source_msa,
@@ -670,7 +691,7 @@ class AFClaSeqPipeline:
                     voting_results=voting_results,
                     bin_numbers=bin_numbers,
                     num_total_bins=self.config.general.num_bins,
-                    initial_color=self.config.general.plot_initial_color,
+                    initial_color=colors[0],
                     combine_bins=self.config.recompile_predict.combine_bins,
                     raw_votes_json=raw_votes_json if raw_votes_json.exists() else None,
                     logger=self.logger
@@ -748,7 +769,7 @@ class AFClaSeqPipeline:
             all_successful = True
             
             # Process each filter criterion separately
-            for criterion in filter_criteria:
+            for i, criterion in enumerate(filter_criteria):
                 criterion_name = criterion.get('name')
                 if not criterion_name:
                     self.logger.warning("Filter criterion without name found, skipping")
@@ -769,12 +790,13 @@ class AFClaSeqPipeline:
                     continue
                 
                 # Create plotting configuration
+                # Use metric1_color for prediction and metric2_color for control (or vice versa based on design)
                 plot_config = {
                     'base_dir': recompile_dir,
                     'output_dir': criterion_output_dir,
                     'config_file': self.config.general.config_file,
-                    'color_prediction': self.config.general.plot_initial_color,
-                    'color_control': self.config.general.plot_end_color if hasattr(self.config.general, 'plot_end_color') else None,
+                    'color_prediction': self.config.general.metric1_color[0] if i == 0 else self.config.general.metric2_color[0],
+                    'color_control': self.config.general.metric1_color[1] if i == 0 else self.config.general.metric2_color[1],
                     'metric1_min': self.config.pure_sequence_plotting.metric1_min,
                     'metric1_max': self.config.pure_sequence_plotting.metric1_max,
                     'metric2_min': self.config.pure_sequence_plotting.metric2_min,

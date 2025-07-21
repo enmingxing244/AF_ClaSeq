@@ -1,0 +1,213 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Color Preview Tool</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        
+        .container {
+            display: flex;
+            gap: 20px;
+            flex-wrap: wrap;
+        }
+        
+        .color-box {
+            width: 180px;
+            height: 180px;
+            border: 2px solid #ccc;
+            display: flex;
+            align-items: flex-end;
+            position: relative;
+            border-radius: 8px;
+            transition: background-color 0.3s ease;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        
+        .color-label {
+            font-size: 22px;
+            width: 100%;
+            text-align: center;
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            padding: 8px 0;
+            font-weight: bold;
+            transition: all 0.3s ease;
+        }
+        
+        .color-input {
+            position: absolute;
+            top: 15px;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 130px;
+            height: 40px;
+            font-size: 20px;
+            text-align: center;
+            border-radius: 8px;
+            border: 1.5px solid #888;
+            background: white;
+            font-family: monospace;
+        }
+        
+        .color-input:focus {
+            outline: none;
+            border-color: #4CAF50;
+            box-shadow: 0 0 5px rgba(76, 175, 80, 0.3);
+        }
+        
+        .info {
+            margin-top: 20px;
+            padding: 10px;
+            background: #e8e8e8;
+            border-radius: 5px;
+            font-size: 14px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="color-box" id="colorBox1" style="background-color: #AFD2D0;">
+            <span class="color-label" id="label1">#AFD2D0</span>
+            <input type="text" 
+                   value="#AFD2D0" 
+                   maxlength="7" 
+                   class="color-input" 
+                   id="inputColor1"
+                   placeholder="#RRGGBB">
+        </div>
+        
+        <div class="color-box" id="colorBox2" style="background-color: #468F8B;">
+            <span class="color-label" id="label2">#468F8B</span>
+            <input type="text" 
+                   value="#468F8B" 
+                   maxlength="7" 
+                   class="color-input" 
+                   id="inputColor2"
+                   placeholder="#RRGGBB">
+        </div>
+    </div>
+    
+    <div class="info">
+        <p>💡 Tips: Enter hex colors in #RRGGBB or #RGB format. Try: #FF5733, #3498DB, #F0F, #000</p>
+    </div>
+
+    <script>
+        // Function to determine if a color is light or dark
+        function isLightColor(hex) {
+            // Convert hex to RGB
+            let r, g, b;
+            
+            if (hex.length === 4) {
+                r = parseInt(hex[1] + hex[1], 16);
+                g = parseInt(hex[2] + hex[2], 16);
+                b = parseInt(hex[3] + hex[3], 16);
+            } else {
+                r = parseInt(hex.substr(1, 2), 16);
+                g = parseInt(hex.substr(3, 2), 16);
+                b = parseInt(hex.substr(5, 2), 16);
+            }
+            
+            // Calculate relative luminance
+            const luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
+            return luminance > 0.5;
+        }
+        
+        // Function to normalize hex color (convert #RGB to #RRGGBB)
+        function normalizeHex(hex) {
+            if (hex.length === 4) {
+                return '#' + hex[1] + hex[1] + hex[2] + hex[2] + hex[3] + hex[3];
+            }
+            return hex;
+        }
+        
+        // Function to update color
+        function updateColor(boxId, labelId, inputId) {
+            const input = document.getElementById(inputId);
+            const box = document.getElementById(boxId);
+            const label = document.getElementById(labelId);
+            let hex = input.value.trim().toUpperCase();
+            
+            // Add # if missing
+            if (hex && !hex.startsWith('#')) {
+                hex = '#' + hex;
+            }
+            
+            // Validate hex format (3 or 6 characters)
+            if (/^#([0-9A-F]{3}|[0-9A-F]{6})$/i.test(hex)) {
+                // Update background color
+                box.style.backgroundColor = hex;
+                
+                // Normalize and display the color
+                const normalizedHex = normalizeHex(hex);
+                label.textContent = normalizedHex;
+                input.value = normalizedHex;
+                
+                // Adjust label contrast based on background
+                if (isLightColor(normalizedHex)) {
+                    label.style.color = '#333';
+                    label.style.backgroundColor = 'rgba(255, 255, 255, 0.8)';
+                } else {
+                    label.style.color = '#fff';
+                    label.style.backgroundColor = 'rgba(0, 0, 0, 0.4)';
+                }
+                
+                // Update input border to indicate valid color
+                input.style.borderColor = '#4CAF50';
+            } else {
+                // Invalid format - red border
+                input.style.borderColor = '#f44336';
+            }
+        }
+        
+        // Set up event listeners for real-time updates
+        function setupColorInput(inputId, boxId, labelId) {
+            const input = document.getElementById(inputId);
+            
+            // Update on any input (typing, pasting, etc.)
+            input.addEventListener('input', function() {
+                updateColor(boxId, labelId, inputId);
+            });
+            
+            // Update on blur to handle edge cases
+            input.addEventListener('blur', function() {
+                updateColor(boxId, labelId, inputId);
+            });
+            
+            // Handle Enter key
+            input.addEventListener('keypress', function(e) {
+                if (e.key === 'Enter') {
+                    updateColor(boxId, labelId, inputId);
+                    this.blur();
+                }
+            });
+            
+            // Initial update
+            updateColor(boxId, labelId, inputId);
+        }
+        
+        // Initialize both color inputs
+        setupColorInput('inputColor1', 'colorBox1', 'label1');
+        setupColorInput('inputColor2', 'colorBox2', 'label2');
+        
+        // Additional: Allow clicking on color box to focus input
+        document.getElementById('colorBox1').addEventListener('click', function(e) {
+            if (e.target.tagName !== 'INPUT') {
+                document.getElementById('inputColor1').focus();
+            }
+        });
+        
+        document.getElementById('colorBox2').addEventListener('click', function(e) {
+            if (e.target.tagName !== 'INPUT') {
+                document.getElementById('inputColor2').focus();
+            }
+        });
+    </script>
+</body>
+</html>

@@ -23,8 +23,8 @@ class GeneralConfig:
     num_models: int = 1
     random_seed: int = 42
     num_bins: int = 30
-    plot_initial_color: str = "#87CEEB"
-    plot_end_color: str = "#FFFFFF"
+    metric1_color: List[str] = field(default_factory=lambda: ["#87CEEB", "#FFFFFF"])  # [start, end] color gradient for metric 1
+    metric2_color: List[str] = field(default_factory=lambda: ["#FFB6C1", "#8B0000"])  # [start, end] color gradient for metric 2
 
 
 @dataclass
@@ -63,10 +63,7 @@ class MFoldSamplingConfig:
     m_fold_group_size: int = 10
     m_fold_random_select: Optional[int] = None
     m_fold_plddt_threshold: float = 75
-    m_fold_initial_color: str = "#87CEEB"
-    m_fold_end_color: str = "#FFFFFF"
     m_fold_log_scale: bool = False
-    m_fold_n_plot_bins: int = 50
     m_fold_gradient_ascending: bool = False
     m_fold_linear_gradient: bool = False
     m_fold_figsize: Tuple[float, float] = (10, 5)
@@ -93,7 +90,6 @@ class SequenceVotingConfig:
     vote_y_min: Optional[float] = None
     vote_y_max: Optional[float] = None
     vote_x_ticks: Optional[List[int]] = None
-    vote_hierarchical_sampling: bool = False
     use_focused_bins: bool = False
     
 

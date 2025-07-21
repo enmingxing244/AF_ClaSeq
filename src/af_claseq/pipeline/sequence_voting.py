@@ -56,7 +56,6 @@ class VotingAnalyzer:
             basics: Basic configuration parameters
             precomputed_metrics_file: Optional path to precomputed metrics CSV/directory
             plddt_threshold: Minimum pLDDT score threshold
-            hierarchical: Whether to process hierarchical sampling directories
             
         Returns:
             Dictionary mapping PDB paths to their metric values
@@ -407,8 +406,7 @@ class VotingAnalyzer:
                          pdb_bins: Dict[str, Union[int, Tuple]],
                          is_2d: bool = False,
                          is_3d: bool = False,
-                         vote_threshold: float = 0.0,
-                         hierarchical: bool = False) -> Tuple[Dict, Dict]:
+                         vote_threshold: float = 0.0) -> Tuple[Dict, Dict]:
         """Get votes for each sequence based on metric bins."""
         if not os.path.exists(source_msa):
             raise FileNotFoundError(f"Source MSA file not found: {source_msa}")
@@ -420,7 +418,7 @@ class VotingAnalyzer:
             raise ValueError("No headers found in source MSA file")
         
         # Collect all A3M files and their corresponding PDB files
-        a3m_files = self._collect_a3m_files(sampling_base_dir, hierarchical)
+        a3m_files = self._collect_a3m_files(sampling_base_dir)
 
         if not a3m_files:
             raise ValueError("No valid A3M/PDB file pairs found")
@@ -451,7 +449,7 @@ class VotingAnalyzer:
 
         return sequence_votes, dict(all_votes)
     
-    def _collect_a3m_files(self, sampling_base_dir: str, hierarchical: bool) -> List[Tuple[str, str]]:
+    def _collect_a3m_files(self, sampling_base_dir: str) -> List[Tuple[str, str]]:
         """Collect A3M files and their corresponding PDB files from single or multi-round sampling."""
         a3m_files = []
         

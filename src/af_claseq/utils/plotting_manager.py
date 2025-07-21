@@ -241,10 +241,45 @@ def set_axis_limits_and_ticks(
     # Set y-axis limits
     if y_min is not None and y_max is not None:
         plt_obj.ylim(y_min, y_max)
-        if y_ticks is not None:
-            plt_obj.yticks(y_ticks)
+        
+        # Check if y-axis is log scale
+        if plt_obj.gca().get_yscale() == 'log':
+            # For log scale, use nice powers of 10 with superscript notation
+            from matplotlib.ticker import LogLocator, FuncFormatter
+            import numpy as np
+            
+            ax = plt_obj.gca()
+            ax.yaxis.set_major_locator(LogLocator(base=10.0, numticks=15))
+            
+            # Custom formatter to show 10^n notation
+            def log_formatter(x, pos):
+                """Format log scale labels as 10^n"""
+                if x == 0:
+                    return '0'
+                exponent = int(np.log10(x))
+                # Use superscript for the exponent
+                if x == 10**exponent:
+                    if exponent == 0:
+                        return r'$10^{0}$'
+                    elif exponent == 1:
+                        return r'$10^{1}$'
+                    else:
+                        return r'$10^{' + str(exponent) + r'}$'
+                else:
+                    return ''  # Don't label minor ticks
+                    
+            ax.yaxis.set_major_formatter(FuncFormatter(log_formatter))
+            
+            # Only use custom ticks if provided, otherwise let LogLocator handle it
+            if y_ticks is not None:
+                plt_obj.yticks(y_ticks)
         else:
-            plt_obj.yticks(np.arange(y_min, y_max + 1, 5))
+            # For linear scale, use provided ticks or default
+            if y_ticks is not None:
+                plt_obj.yticks(y_ticks)
+            else:
+                plt_obj.yticks(np.arange(y_min, y_max + 1, 5))
+        
         # Move y-axis ticks away from axis    
         plt_obj.tick_params(axis='y', which='major', pad=10)
 
@@ -589,7 +624,8 @@ def plot_m_fold_sampling_1d(
     plddt_threshold: float = 0,
     figsize: Tuple[float, float] = (10, 5),
     show_bin_lines: bool = False,
-    logger: Optional[Any] = None
+    logger: Optional[Any] = None,
+    metric_colors: Optional[Dict[str, List[str]]] = None  # New parameter for metric-specific colors
 ) -> List[str]:
     """
     Plot 1D sampling distribution for M-fold sampling metrics.
@@ -630,6 +666,14 @@ def plot_m_fold_sampling_1d(
         plddt_threshold=plddt_threshold,
         logger=log
     )
+    
+    # Check if metric-specific colors are provided
+    if metric_colors and metric_name in metric_colors:
+        colors = metric_colors[metric_name]
+        if isinstance(colors, list) and len(colors) >= 2:
+            initial_color = colors[0]
+            end_color = colors[1]
+            log.info(f"Using metric-specific colors for {metric_name}: {initial_color} -> {end_color}")
     
     # Generate the plot
     plot_path = plot_1d_distribution(
