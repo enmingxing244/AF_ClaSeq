@@ -32,6 +32,7 @@ from af_claseq.utils.plotting_manager import (
 
 from af_claseq.modules.mmseqs_wrapper import MMseqsWrapper, MMseqsConfig
 from af_claseq.modules.similarity_search import BLOSUM62SimilaritySearch, SimilaritySearchConfig
+from af_claseq.modules.cluster_based_expansion import ClusterBasedExpansion, ClusterExpansionError
 from af_claseq.modules.subset_generator import SubsetGenerator, SubsetConfig
 
 from af_claseq.pipeline.config import HitExpandConfig
@@ -1346,9 +1347,7 @@ class HitExpandRunner:
                               exclude_sequences: Optional[set] = None,
                               return_expanded_msa: bool = True) -> Union[Path, Dict[str, str]]:
         """
-        Unified similarity search function that replaces:
-        - _run_similarity_search_stage
-        - _run_similarity_search_stage_for_round
+        Unified expansion function supporting both BLOSUM62 and MMseqs2 cluster-based methods.
         
         Args:
             good_sequences: Sequences to search for similar ones
@@ -1363,44 +1362,134 @@ class HitExpandRunner:
         Returns:
             Either Path to expanded MSA or Dict of newly found sequences
         """
-        # Run similarity search to expand good sequences
-        expanded_msa = self.similarity_search.search_and_expand(
-            representative_sequences=good_sequences,
-            source_msa=source_msa,
-            output_dir=output_dir
-        )
+        self.logger.info(f"Running expansion using method: {self.config.expansion_method}")
         
-        # If we need to filter out already found sequences (round 2+)
-        if exclude_sequences and not return_expanded_msa:
-            # Load the expanded MSA and filter
-            parser = A3MParser(strict_validation=False)
-            expanded_sequences = parser.parse_file(expanded_msa)
+        expanded_sequences = {}
+        
+        # Choose expansion method based on configuration
+        if self.config.expansion_method == "mmseqs_result":
+            # Use MMseqs2 cluster-based expansion
+            cluster_file = self.base_dir / "01_clustering" / "clustered_cluster.tsv"
             
+            if not cluster_file.exists():
+                self.logger.warning(f"Cluster file not found: {cluster_file}")
+                self.logger.warning("Falling back to BLOSUM62 similarity search")
+                # Fallback to BLOSUM62
+                expanded_msa_path = self._run_blosum62_expansion(
+                    good_sequences, output_dir, source_msa
+                )
+                expanded_sequences = self._load_sequences_from_msa(expanded_msa_path)
+            else:
+                try:
+                    expander = ClusterBasedExpansion(cluster_file, source_msa)
+                    expanded_sequences = expander.expand_by_clusters(
+                        good_sequences, 
+                        exclude_sequences=exclude_sequences,
+                        output_dir=output_dir
+                    )
+                    
+                    # Get statistics and log them
+                    stats = expander.get_expansion_statistics()
+                    self.logger.info(f"Cluster expansion stats: {stats}")
+                    
+                except ClusterExpansionError as e:
+                    self.logger.error(f"Cluster expansion failed: {e}")
+                    self.logger.info("Falling back to BLOSUM62 similarity search")
+                    # Fallback to BLOSUM62
+                    expanded_msa_path = self._run_blosum62_expansion(
+                        good_sequences, output_dir, source_msa
+                    )
+                    expanded_sequences = self._load_sequences_from_msa(expanded_msa_path)
+                    
+        elif self.config.expansion_method == "BLOSUM62":
+            # Use existing BLOSUM62 similarity search
+            expanded_msa_path = self._run_blosum62_expansion(
+                good_sequences, output_dir, source_msa
+            )
+            expanded_sequences = self._load_sequences_from_msa(expanded_msa_path)
+            
+        else:
+            raise ValueError(f"Unknown expansion method: {self.config.expansion_method}")
+        
+        # Handle exclusions for multi-round expansion
+        if exclude_sequences and not return_expanded_msa:
+            # Filter out previously found sequences
             newly_found = {}
+            excluded_count = 0
+            
             for header, seq in expanded_sequences.items():
                 if header not in exclude_sequences:
                     newly_found[header] = seq
+                else:
+                    excluded_count += 1
             
-            excluded_count = len(expanded_sequences) - len(newly_found)
             self.logger.info(f"Round {round_num}: Found {len(newly_found)} NEW sequences "
-                            f"(excluded {excluded_count} duplicates from previous rounds)")
+                           f"(excluded {excluded_count} duplicates from previous rounds)")
             
             return newly_found
         
-        # For round 1 or when we want the full MSA path
+        # Save expanded sequences to MSA file
+        expanded_msa_path = output_dir / "expanded_sequences.a3m"
+        if expanded_sequences:
+            parser = A3MParser(strict_validation=False)
+            parser.write_sequences(expanded_sequences, expanded_msa_path)
+            self.logger.info(f"Saved {len(expanded_sequences)} expanded sequences to {expanded_msa_path}")
+        
+        # Return based on what's requested
         if return_expanded_msa:
             # Copy to final location if it's round 1
             if round_num == 1:
                 final_msa_path = self.base_dir / "hit_expand_final_msa_round_1.a3m"
-                shutil.copy2(expanded_msa, final_msa_path)
-                self.logger.info(f"Similarity search completed: {final_msa_path}")
-                return final_msa_path
+                if expanded_msa_path.exists():
+                    shutil.copy2(expanded_msa_path, final_msa_path)
+                    self.logger.info(f"Expansion completed: {final_msa_path}")
+                    return final_msa_path
+                else:
+                    self.logger.error("Expanded MSA file was not created")
+                    return None
             else:
-                return expanded_msa
+                return expanded_msa_path
+        else:
+            # Return sequences dictionary
+            return expanded_sequences
+    
+    def _run_blosum62_expansion(self,
+                               good_sequences: Dict[str, str],
+                               output_dir: Path,
+                               source_msa: Path) -> Path:
+        """
+        Run BLOSUM62-based similarity search expansion.
         
-        # Load and return all sequences
+        Args:
+            good_sequences: Sequences to expand
+            output_dir: Output directory
+            source_msa: Source MSA file
+            
+        Returns:
+            Path to expanded MSA file
+        """
+        return self.similarity_search.search_and_expand(
+            representative_sequences=good_sequences,
+            source_msa=source_msa,
+            output_dir=output_dir
+        )
+    
+    def _load_sequences_from_msa(self, msa_path: Path) -> Dict[str, str]:
+        """
+        Load sequences from an MSA file.
+        
+        Args:
+            msa_path: Path to MSA file
+            
+        Returns:
+            Dictionary of sequences
+        """
+        if not msa_path or not msa_path.exists():
+            self.logger.warning(f"MSA file not found: {msa_path}")
+            return {}
+            
         parser = A3MParser(strict_validation=False)
-        return parser.parse_file(expanded_msa)
+        return parser.parse_file(msa_path)
 
     def get_workflow_status(self) -> Dict[str, Any]:
         """Get current workflow status and statistics."""

@@ -235,6 +235,9 @@ class HitExpandConfig:
     rounds: int = 1                         # Number of iterative expansion rounds
     cumulative_expansion: bool = True       # Accumulate sequences across rounds
     
+    # Expansion method configuration
+    expansion_method: str = "BLOSUM62"      # Options: "BLOSUM62" or "mmseqs_result"
+    
     # Integration parameters
     random_seed: int = 42
     max_workers: int = 96
@@ -247,6 +250,8 @@ class HitExpandConfig:
             raise ValueError("mmseqs_min_seq_id must be between 0 and 1")
         if self.similarity_threshold < 0 or self.similarity_threshold > 1:
             raise ValueError("similarity_threshold must be between 0 and 1")
+        if self.expansion_method not in ["BLOSUM62", "mmseqs_result"]:
+            raise ValueError("expansion_method must be either 'BLOSUM62' or 'mmseqs_result'")
         if self.plddt_threshold < 0 or self.plddt_threshold > 100:
             raise ValueError("plddt_threshold must be between 0 and 100")
 
