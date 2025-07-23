@@ -6,7 +6,7 @@ This module orchestrates the complete hit expand workflow:
 1. Sequence clustering with MMseqs2
 2. Subset generation for structure prediction
 3. Structure prediction job submission and monitoring
-4. Structure analysis and filtering
+4. Structure analysis
 5. Similarity search with BLOSUM62 to expand good sequences
 6. Expanded subset generation from final MSA
 """
@@ -1344,7 +1344,6 @@ class HitExpandRunner:
                               stage_name: str = "SIMILARITY SEARCH",
                               stage_id: str = "similarity_search",
                               round_num: int = 1,
-                              exclude_sequences: Optional[set] = None,
                               return_expanded_msa: bool = True) -> Union[Path, Dict[str, str]]:
         """
         Unified expansion function supporting both BLOSUM62 and MMseqs2 cluster-based methods.
@@ -1356,7 +1355,6 @@ class HitExpandRunner:
             stage_name: Human-readable stage name
             stage_id: Stage identifier
             round_num: Current round number
-            exclude_sequences: Set of sequence headers to exclude (for round 2+)
             return_expanded_msa: If True, return path to MSA; if False, return sequences dict
             
         Returns:
@@ -1381,10 +1379,13 @@ class HitExpandRunner:
                 expanded_sequences = self._load_sequences_from_msa(expanded_msa_path)
             else:
                 try:
-                    expander = ClusterBasedExpansion(cluster_file, source_msa)
+                    expander = ClusterBasedExpansion(
+                        cluster_file, 
+                        source_msa, 
+                        max_sequences_per_cluster=self.config.max_sequences_per_cluster
+                    )
                     expanded_sequences = expander.expand_by_clusters(
-                        good_sequences, 
-                        exclude_sequences=exclude_sequences,
+                        good_sequences,
                         output_dir=output_dir
                     )
                     
@@ -1411,29 +1412,17 @@ class HitExpandRunner:
         else:
             raise ValueError(f"Unknown expansion method: {self.config.expansion_method}")
         
-        # Handle exclusions for multi-round expansion
-        if exclude_sequences and not return_expanded_msa:
-            # Filter out previously found sequences
-            newly_found = {}
-            excluded_count = 0
-            
-            for header, seq in expanded_sequences.items():
-                if header not in exclude_sequences:
-                    newly_found[header] = seq
-                else:
-                    excluded_count += 1
-            
-            self.logger.info(f"Round {round_num}: Found {len(newly_found)} NEW sequences "
-                           f"(excluded {excluded_count} duplicates from previous rounds)")
-            
-            return newly_found
-        
-        # Save expanded sequences to MSA file
+        # Always save expanded sequences to MSA file (regardless of return_expanded_msa)
         expanded_msa_path = output_dir / "expanded_sequences.a3m"
         if expanded_sequences:
             parser = A3MParser(strict_validation=False)
             parser.write_sequences(expanded_sequences, expanded_msa_path)
             self.logger.info(f"Saved {len(expanded_sequences)} expanded sequences to {expanded_msa_path}")
+        
+        # Return sequences directly if not returning MSA
+        if not return_expanded_msa:
+            self.logger.info(f"Round {round_num}: Found {len(expanded_sequences)} sequences")
+            return expanded_sequences
         
         # Return based on what's requested
         if return_expanded_msa:
@@ -1815,10 +1804,7 @@ class HitExpandRunner:
             if not self.config.skip_hit_expansion:
                 search_dir = round_dir / "05_similarity_search"
                 
-                # Get previously found sequences to exclude
-                previously_found = self._get_all_previous_sequences(round_num)
-                
-                # Search for NEW sequences only
+                # Search for similar sequences (no exclusions - each round works independently)
                 newly_found_sequences = self._run_stage_with_done_check(
                     stage_dir=search_dir,
                     stage_name=f"STAGE 5: SIMILARITY SEARCH (Round {round_num})",
@@ -1828,7 +1814,6 @@ class HitExpandRunner:
                     output_dir=search_dir,
                     source_msa=Path(self.config.input_msa),
                     round_num=round_num,
-                    exclude_sequences=previously_found,
                     return_expanded_msa=False
                 )
                 
@@ -1892,41 +1877,18 @@ class HitExpandRunner:
                             stage_name="expanded subset structure prediction"
                         )
                 
-                # Create final MSA for this round
+                # Create final MSA for this round by copying expanded_sequences.a3m
                 final_msa_name = f"hit_expand_final_msa_round_{round_num}.a3m"
                 final_msa = round_dir / final_msa_name
                 
-                # Combine sequences for final MSA
-                if self.config.cumulative_expansion and round_num > 1:
-                    # Inline _merge_sequences_across_rounds - merge with previous rounds
-                    final_sequences = {}
-                    
-                    # Add sequences from all previous rounds
-                    for prev_round_num in range(1, round_num):
-                        prev_round_dir = self.base_dir / f"round_{prev_round_num}"
-                        final_msa_name = f"hit_expand_final_msa_round_{prev_round_num}.a3m"
-                        final_msa = prev_round_dir / final_msa_name
-                        
-                        if final_msa.exists():
-                            try:
-                                parser = A3MParser(strict_validation=False)
-                                sequences = parser.parse_file(final_msa)
-                                final_sequences.update(sequences)
-                            except Exception as e:
-                                self.logger.debug(f"Failed to parse {final_msa}: {e}")
-                    
-                    # Add current round sequences
-                    final_sequences.update(good_sequences)
-                    final_sequences.update(newly_found_sequences)
-                    
-                    self.logger.info(f"Merged {len(final_sequences)} sequences across {round_num} rounds")
+                # Copy expanded_sequences.a3m from similarity search
+                expanded_sequences_file = search_dir / "expanded_sequences.a3m"
+                if expanded_sequences_file.exists():
+                    shutil.copy2(expanded_sequences_file, final_msa)
+                    self.logger.info(f"Round {round_num} final MSA created by copying expanded sequences")
                 else:
-                    final_sequences = {**good_sequences, **newly_found_sequences}
-                
-                from af_claseq.utils.sequence_processing import A3MParser
-                parser = A3MParser(strict_validation=False)
-                parser.write_sequences(final_sequences, final_msa)
-                self.logger.info(f"Round {round_num} completed with {len(newly_found_sequences)} new sequences")
+                    self.logger.error(f"expanded_sequences.a3m not found: {expanded_sequences_file}")
+                    return None
                 
                 return final_msa
             
@@ -2016,4 +1978,4 @@ class HitExpandRunner:
                 pass
         
         return max(indices) + 1 if indices else 0
-    
+

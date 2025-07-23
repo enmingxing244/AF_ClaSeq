@@ -237,6 +237,7 @@ class HitExpandConfig:
     
     # Expansion method configuration
     expansion_method: str = "BLOSUM62"      # Options: "BLOSUM62" or "mmseqs_result"
+    max_sequences_per_cluster: int = 50     # Maximum sequences per cluster in MMseqs2 expansion
     
     # Integration parameters
     random_seed: int = 42

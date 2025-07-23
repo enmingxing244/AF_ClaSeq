@@ -28,16 +28,18 @@ class ClusterBasedExpansion:
     by collecting all members of the same clusters.
     """
     
-    def __init__(self, cluster_file: Path, source_msa: Path):
+    def __init__(self, cluster_file: Path, source_msa: Path, max_sequences_per_cluster: int = 50):
         """
         Initialize with cluster file and source MSA.
         
         Args:
             cluster_file: Path to clustered_cluster.tsv from MMseqs2
             source_msa: Path to source A3M file with all sequences
+            max_sequences_per_cluster: Maximum sequences to take from each cluster
         """
         self.cluster_file = Path(cluster_file)
         self.source_msa = Path(source_msa)
+        self.max_sequences_per_cluster = max_sequences_per_cluster
         self.seq_to_representative = {}
         self.representative_to_members = defaultdict(set)
         self.source_sequences = {}
@@ -152,24 +154,18 @@ class ClusterBasedExpansion:
     
     def expand_by_clusters(self, 
                           good_sequences: Dict[str, str],
-                          exclude_sequences: Optional[Set[str]] = None,
                           output_dir: Optional[Path] = None) -> Dict[str, str]:
         """
         Expand sequences by collecting all cluster members.
         
         Args:
             good_sequences: Dict of good sequences to expand {header: sequence}
-            exclude_sequences: Optional set of sequence IDs to exclude
             output_dir: Optional output directory for detailed logs
             
         Returns:
             Dict of expanded sequences including all cluster members
         """
         expanded_sequences = {}
-        exclude_sequences = exclude_sequences or set()
-        
-        # Clean the exclusion set
-        clean_exclude = {self._clean_header(seq_id) for seq_id in exclude_sequences}
         
         # Prepare detailed logging
         expansion_details = []
@@ -180,7 +176,6 @@ class ClusterBasedExpansion:
             'clusters_found': 0,
             'sequences_not_in_clusters': 0,
             'total_expanded': 0,
-            'excluded_count': 0,
             'sequences_per_cluster': [],
             'missing_sequences': []
         }
@@ -219,7 +214,6 @@ class ClusterBasedExpansion:
                     'cluster_representative': 'NOT_FOUND',
                     'cluster_members': [],
                     'added_members': [],
-                    'excluded_members': [],
                     'missing_members': []
                 })
                 continue
@@ -237,20 +231,18 @@ class ClusterBasedExpansion:
                 'cluster_representative': representative,
                 'cluster_members': list(cluster_members),
                 'added_members': [],
-                'excluded_members': [],
                 'missing_members': []
             }
             
-            # Add all cluster members
-            for member_id in cluster_members:
+            # Add cluster members (with limit)
+            members_to_process = list(cluster_members)[:self.max_sequences_per_cluster] if len(cluster_members) > self.max_sequences_per_cluster else list(cluster_members)
+            
+            if len(cluster_members) > self.max_sequences_per_cluster:
+                self.logger.debug(f"Limiting cluster {representative} from {len(cluster_members)} to {self.max_sequences_per_cluster} sequences")
+            
+            for member_id in members_to_process:
                 # Skip if already added
                 if member_id in added_clean_ids:
-                    continue
-                    
-                # Skip if in exclusion list
-                if member_id in clean_exclude:
-                    statistics['excluded_count'] += 1
-                    expansion_detail['excluded_members'].append(member_id)
                     continue
                 
                 # Try to find sequence
@@ -298,7 +290,6 @@ class ClusterBasedExpansion:
                     f.write(f"   Cluster Representative: {detail['cluster_representative']}\n")
                     f.write(f"   Total Cluster Members: {len(detail['cluster_members'])}\n")
                     f.write(f"   Added Members: {len(detail['added_members'])}\n")
-                    f.write(f"   Excluded Members: {len(detail['excluded_members'])}\n")
                     f.write(f"   Missing Members: {len(detail['missing_members'])}\n")
                     
                     if detail['cluster_members']:
@@ -313,9 +304,6 @@ class ClusterBasedExpansion:
                             f.write(f" ... and {len(detail['added_members']) - 5} more")
                         f.write("\n")
                     
-                    if detail['excluded_members']:
-                        f.write(f"   Excluded: {', '.join(detail['excluded_members'])}\n")
-                    
                     if detail['missing_members']:
                         f.write(f"   Missing in Source: {', '.join(detail['missing_members'])}\n")
                     
@@ -328,8 +316,6 @@ class ClusterBasedExpansion:
         self.logger.info(f"Expansion complete: {len(good_sequences)} -> {len(expanded_sequences)} sequences")
         self.logger.info(f"Found {statistics['clusters_found']} clusters, "
                         f"{statistics['sequences_not_in_clusters']} sequences not in clusters")
-        if statistics['excluded_count'] > 0:
-            self.logger.info(f"Excluded {statistics['excluded_count']} sequences")
         if statistics['missing_sequences']:
             self.logger.warning(f"Could not find {len(statistics['missing_sequences'])} sequences in source MSA")
         
