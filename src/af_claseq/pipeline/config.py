@@ -47,7 +47,7 @@ class SlurmConfig:
 class PipelineControlConfig:
     """Pipeline control options"""
     stages: List[str] = field(default_factory=lambda: [
-        "01_HIT_EXPAND_RUN", "01_HIT_EXPAND_ANALYSIS", 
+        "01_HIT_EXPAND_RUN", 
         "02_M_FOLD_SAMPLING_RUN", "02_M_FOLD_SAMPLING_PLOT", 
         "03_VOTING_RUN", "04_RECOMPILE_PREDICT_RUN", 
         "05_PURE_SEQ_PLOT_RUN"

@@ -199,92 +199,6 @@ class AFClaSeqPipeline:
             self.logger.error(f"Error in hit expand: {str(e)}", exc_info=True)
             return False
     
-    def analyze_hit_expand(self) -> bool:
-        """
-        Stage 01_ANALYSIS: Analyze results of hit expand
-        """
-        self.logger.info("=== STAGE 01_ANALYSIS: HIT EXPAND ANALYSIS ===")
-        try:
-            # Use existing plotting utilities from af_claseq.utils.plotting_manager
-            from af_claseq.utils.plotting_manager import (
-                create_2d_scatter_plot,
-                load_results_df
-            )
-            
-            # Find final MSA output and structure analysis results
-            hit_expand_dir = Path(self.config.general.base_dir) / "01_hit_expand"
-            final_msa = hit_expand_dir / "hit_expand_final_msa.a3m"
-            
-            # Check for alternative MSA locations
-            if not final_msa.exists():
-                alternative_locations = [
-                    hit_expand_dir / "02_similarity_search" / "expanded_sequences.a3m",
-                    hit_expand_dir / "05_structure_analysis" / "filtered_sequences.a3m",
-                    hit_expand_dir / "expanded_sequences.a3m"
-                ]
-                
-                for alt_location in alternative_locations:
-                    if alt_location.exists():
-                        final_msa = alt_location
-                        self.logger.info(f"Found MSA at alternative location: {alt_location}")
-                        break
-            
-            # Look for structure analysis results
-            analysis_results_file = hit_expand_dir / "05_structure_analysis" / "structure_analysis_results.json"
-            
-            if analysis_results_file.exists():
-                # Load and visualize structure analysis results
-                with open(analysis_results_file, 'r') as f:
-                    analysis_data = json.load(f)
-                
-                plots_dir = hit_expand_dir / "plots"
-                plots_dir.mkdir(exist_ok=True)
-                
-                # Create basic analysis plots using existing utilities
-                self.logger.info("Creating hit expand analysis visualizations")
-                
-                # Simple summary of results
-                all_results = analysis_data.get("all_results", {})
-                filtered_results = analysis_data.get("filtered_results", {})
-                
-                self.logger.info(f"Structure analysis summary:")
-                self.logger.info(f"  Total structures analyzed: {len(all_results)}")
-                self.logger.info(f"  Structures passing filters: {len(filtered_results)}")
-                
-                if len(filtered_results) > 0:
-                    success_rate = len(filtered_results) / len(all_results) * 100
-                    self.logger.info(f"  Success rate: {success_rate:.1f}%")
-                
-                saved_plots = {"summary": "Analysis completed"}
-                
-            elif final_msa.exists():
-                # Just report on MSA if no structure analysis available
-                from af_claseq.utils.sequence_processing import count_sequences_in_a3m
-                seq_count = count_sequences_in_a3m(str(final_msa))
-                
-                self.logger.info(f"Hit expand MSA summary:")
-                self.logger.info(f"  Final MSA: {final_msa}")
-                self.logger.info(f"  Total sequences: {seq_count}")
-                
-                saved_plots = {"msa_summary": f"{seq_count} sequences"}
-                
-            else:
-                self.logger.warning("No final MSA file found for analysis")
-                self.logger.info(f"Searched in: {hit_expand_dir}")
-                saved_plots = {}
-            
-            # Log results
-            if saved_plots:
-                self.logger.info(f"Hit expand analysis completed: {saved_plots}")
-            
-            self.logger.info("Completed hit expand analysis successfully")
-            return True
-            
-        except Exception as e:
-            self.logger.error(f"Error in hit expand analysis: {str(e)}", exc_info=True)
-            return False
-    
-    
     def run_m_fold_sampling(self) -> bool:
         """
         Stage 02_RUN: Run M-fold sampling
@@ -854,12 +768,6 @@ class AFClaSeqPipeline:
             if "01_HIT_EXPAND_RUN" in stages_to_run:
                 if not self.run_hit_expand():
                     self.logger.error("Stopping pipeline due to failure in stage 01_HIT_EXPAND_RUN")
-                    pipeline_success = False
-                    return
-            
-            if "01_HIT_EXPAND_ANALYSIS" in stages_to_run:
-                if not self.analyze_hit_expand():
-                    self.logger.error("Stopping pipeline due to failure in stage 01_HIT_EXPAND_ANALYSIS")
                     pipeline_success = False
                     return
             

@@ -212,7 +212,7 @@ class StructureAnalyzer:
         chain_id: str = "A"
     ) -> float:
         """
-        Calculate RMSD between two structures using all atoms in specified residues.
+        Calculate RMSD between two structures using all heavy atoms in specified residues.
         
         Args:
             reference_pdb: Path to the reference PDB file.
@@ -241,16 +241,16 @@ class StructureAnalyzer:
                         logger.warning(f"Residue {res_id} not found. Skipping.")
                 return atoms
             
-            def get_all_atoms(structure, indices):
-                atoms = []
+            def get_residues(structure, indices):
+                """Get residues by indices, ensuring they exist."""
+                residues = {}
                 for res_id in indices:
                     try:
                         res = structure[0][chain_id][res_id]
-                        for atom in res:
-                            atoms.append(atom)
+                        residues[res_id] = res
                     except KeyError:
                         logger.warning(f"Residue {res_id} not found. Skipping.")
-                return atoms
+                return residues
 
             # Use CA atoms for superposition
             ref_sup_atoms = get_ca_atoms(ref_structure, superposition_indices)
@@ -265,38 +265,45 @@ class StructureAnalyzer:
             super_imposer.set_atoms(ref_sup_atoms, target_sup_atoms)
             super_imposer.apply(target_structure.get_atoms())
 
-            # Get all atoms for RMSD calculation
-            ref_all_atoms = get_all_atoms(ref_structure, rmsd_indices)
-            target_all_atoms = get_all_atoms(target_structure, rmsd_indices)
+            # Get residues for RMSD calculation
+            ref_residues = get_residues(ref_structure, rmsd_indices)
+            target_residues = get_residues(target_structure, rmsd_indices)
             
-            if not ref_all_atoms or not target_all_atoms:
-                logger.warning("No atoms found for RMSD calculation.")
+            if not ref_residues or not target_residues:
+                logger.warning("No residues found for RMSD calculation.")
                 return float('nan')
             
-            # Match atoms between reference and target
+            # Match atoms between reference and target residues
             matched_ref_atoms = []
             matched_target_atoms = []
             
-            # Create a dictionary of target atoms by name and residue
-            target_atom_dict = {}
-            for atom in target_all_atoms:
-                res_id = atom.get_parent().id[1]
-                atom_name = atom.get_name()
-                target_atom_dict[(res_id, atom_name)] = atom
+            # Process only residues that exist in both structures
+            common_res_ids = set(ref_residues.keys()) & set(target_residues.keys())
             
-            # Match reference atoms with target atoms
-            for atom in ref_all_atoms:
-                res_id = atom.get_parent().id[1]
-                atom_name = atom.get_name()
-                key = (res_id, atom_name)
+            for res_id in sorted(common_res_ids):
+                ref_res = ref_residues[res_id]
+                target_res = target_residues[res_id]
                 
-                if key in target_atom_dict:
-                    matched_ref_atoms.append(atom)
-                    matched_target_atoms.append(target_atom_dict[key])
+                # Create atom name sets for this residue pair
+                ref_atom_names = {atom.get_name() for atom in ref_res}
+                target_atom_names = {atom.get_name() for atom in target_res}
+                
+                # Find common atom names (excluding hydrogens)
+                common_atom_names = ref_atom_names & target_atom_names
+                heavy_atom_names = {name for name in common_atom_names if not name.startswith('H')}
+                
+                # Match heavy atoms by name
+                for atom_name in sorted(heavy_atom_names):
+                    ref_atom = ref_res[atom_name]
+                    target_atom = target_res[atom_name]
+                    matched_ref_atoms.append(ref_atom)
+                    matched_target_atoms.append(target_atom)
             
             if not matched_ref_atoms or not matched_target_atoms:
-                logger.warning("No matching atoms found for RMSD calculation.")
+                logger.warning("No matching heavy atoms found for RMSD calculation.")
                 return float('nan')
+            
+            logger.debug(f"Matched {len(matched_ref_atoms)} heavy atoms across {len(common_res_ids)} residues")
                 
             return self._calculate_rmsd(matched_ref_atoms, matched_target_atoms)
 
