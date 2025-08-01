@@ -47,7 +47,8 @@ class VotingAnalyzer:
                               filter_criteria: List[Dict[str, Any]], 
                               basics: Dict[str, Any],
                               precomputed_metrics_file: Optional[str] = None,
-                              plddt_threshold: float = 0) -> Dict[str, Dict[str, float]]:
+                              plddt_threshold: float = 0,
+                              composite_metrics: Optional[List[Dict[str, Any]]] = None) -> Dict[str, Dict[str, float]]:
         """Process sampling directories to calculate metrics in parallel.
         
         Args:
@@ -83,7 +84,7 @@ class VotingAnalyzer:
             futures = [
                 executor.submit(
                     self._process_pdb_file, 
-                    pdb_path, filter_criteria, basics, plddt_threshold
+                    pdb_path, filter_criteria, basics, plddt_threshold, composite_metrics
                 ) for pdb_path in pdb_files
             ]
             
@@ -96,11 +97,11 @@ class VotingAnalyzer:
         self.logger.info(f"Calculated metrics for {len(results)} structures")
         return results
 
-    def _process_pdb_file(self, pdb_path, filter_criteria, basics, plddt_threshold):
+    def _process_pdb_file(self, pdb_path, filter_criteria, basics, plddt_threshold, composite_metrics=None):
         """Process a single PDB file and return metrics if valid."""
         # Use the improved StructureAnalyzer method
         result = self.structure_analyzer.process_single_pdb(
-            pdb_path, filter_criteria, basics, plddt_threshold
+            pdb_path, filter_criteria, basics, plddt_threshold, composite_metrics
         )
         
         if result:
@@ -110,6 +111,13 @@ class VotingAnalyzer:
                 for criterion in filter_criteria 
                 if criterion['name'] in result
             }
+            
+            # Add composite metrics if present
+            if composite_metrics:
+                for composite in composite_metrics:
+                    composite_name = composite.get('name')
+                    if composite_name in result:
+                        metrics[composite_name] = result[composite_name]
             
             return pdb_path, metrics
         
@@ -791,6 +799,14 @@ class SequenceVotingRunner:
                 filtered_criteria = [c for c in self.config['filter_criteria'] 
                                     if c.get('name') == self.filter_criterion]
                 
+                # If not found in filter_criteria, check composite_metrics
+                if not filtered_criteria and 'composite_metrics' in self.config:
+                    composite_metrics = self.config.get('composite_metrics', [])
+                    filtered_criteria = [c for c in composite_metrics
+                                        if c.get('name') == self.filter_criterion]
+                    if filtered_criteria:
+                        self.logger.info(f"Using composite metric '{self.filter_criterion}' for voting")
+                
                 if not filtered_criteria:
                     self.logger.error(f"Filter criterion '{self.filter_criterion}' not found in config")
                     raise ValueError(f"Filter criterion '{self.filter_criterion}' not found in config")
@@ -852,12 +868,14 @@ class SequenceVotingRunner:
             
             # Process sampling directories and get metrics
             self.logger.info("Processing sampling directories...")
+            composite_metrics = self.config.get('composite_metrics', [])
             results = self.analyzer.process_sampling_dirs(
                 self.sampling_dir, 
                 self.config['filter_criteria'], 
                 self.config['basics'],
                 precomputed_metrics_file=self.precomputed_metrics,
-                plddt_threshold=self.plddt_threshold
+                plddt_threshold=self.plddt_threshold,
+                composite_metrics=composite_metrics
             )
             
             if not results:

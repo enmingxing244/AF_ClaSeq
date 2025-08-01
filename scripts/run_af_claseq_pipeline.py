@@ -178,6 +178,7 @@ class AFClaSeqPipeline:
                 slurm_submitter=self.slurm_submitter,
                 base_dir=Path(self.config.general.base_dir) / "01_hit_expand",
                 config_file=self.config.general.config_file,
+                general_config=self.config.general,
                 logger=self.logger
             )
             
@@ -288,7 +289,11 @@ class AFClaSeqPipeline:
                 config = json.load(f)
 
             filter_criteria = config.get('filter_criteria', [])
-            num_criteria = len(filter_criteria)
+            
+            # Get selected metrics using the new explicit metric selection system  
+            from af_claseq.pipeline.config import get_selected_metrics
+            selected_metrics = get_selected_metrics(self.config.general)
+            num_criteria = len(selected_metrics)
             
             # Get number of rounds from configuration
             num_rounds = self.config.m_fold_sampling.rounds
@@ -309,7 +314,10 @@ class AFClaSeqPipeline:
             if num_criteria == 1:
                 # Only one criterion - use 1D plots
                 self.logger.info("One filter criterion detected - generating 1D plots")
-                metric_name = filter_criteria[0].get('name', 'criterion_0')
+                # Get metric name using the new explicit metric selection system
+                from af_claseq.pipeline.config import get_selected_metrics
+                metric_names = get_selected_metrics(self.config.general)
+                metric_name = metric_names[0] if metric_names else filter_criteria[0].get('name', 'criterion_0')
                 
                 # Create metric colors dictionary
                 metric_colors = {
@@ -344,8 +352,9 @@ class AFClaSeqPipeline:
                 # Two criteria - generate both 1D plots for each criterion and 2D plots
                 self.logger.info("Two filter criteria detected - generating 1D plots for each criterion and 2D plots")
 
-                # Get metric names
-                metric_names = [criterion.get('name', f'criterion_{i}') for i, criterion in enumerate(filter_criteria)]
+                # Get metric names using the new explicit metric selection system
+                from af_claseq.pipeline.config import get_selected_metrics
+                metric_names = get_selected_metrics(self.config.general)
                 
                 # Create metric colors dictionary mapping metric names to their colors
                 metric_colors = {
@@ -453,15 +462,22 @@ class AFClaSeqPipeline:
             m_fold_sampling_dir = base_dir / "02_m_fold_sampling"
             
             results_files = []
-
-            # Process each filter criterion separately
-            for i, criterion in enumerate(filter_criteria):
-                criterion_name = criterion.get('name')
+            
+            # Get selected metrics using the new explicit metric selection system  
+            from af_claseq.pipeline.config import get_selected_metrics
+            selected_metrics = get_selected_metrics(self.config.general)
+            
+            if not selected_metrics:
+                # Fall back to all filter criteria if no explicit selection
+                selected_metrics = [criterion.get('name') for criterion in filter_criteria if criterion.get('name')]
+            
+            # Process each selected metric separately
+            for i, criterion_name in enumerate(selected_metrics):
                 if not criterion_name:
-                    self.logger.warning("Filter criterion without name found, skipping")
+                    self.logger.warning("Invalid metric name found, skipping")
                     continue
                 
-                self.logger.info(f"Processing filter criterion: {criterion_name}")
+                self.logger.info(f"Processing selected metric: {criterion_name}")
 
                 # Create criterion-specific output directory
                 criterion_output_dir = voting_dir / criterion_name
@@ -551,14 +567,21 @@ class AFClaSeqPipeline:
             
             all_successful = True
             
-            # Process each filter criterion separately
-            for i, criterion in enumerate(filter_criteria):
-                criterion_name = criterion.get('name')
+            # Get selected metrics using the new explicit metric selection system  
+            from af_claseq.pipeline.config import get_selected_metrics
+            selected_metrics = get_selected_metrics(self.config.general)
+            
+            if not selected_metrics:
+                # Fall back to all filter criteria if no explicit selection
+                selected_metrics = [criterion.get('name') for criterion in filter_criteria if criterion.get('name')]
+            
+            # Process each selected metric separately
+            for i, criterion_name in enumerate(selected_metrics):
                 if not criterion_name:
-                    self.logger.warning("Filter criterion without name found, skipping")
+                    self.logger.warning("Invalid metric name found, skipping")
                     continue
                 
-                self.logger.info(f"Processing recompilation and prediction for criterion: {criterion_name}")
+                self.logger.info(f"Processing recompilation and prediction for selected metric: {criterion_name}")
                 
                 # Create criterion-specific output directory
                 criterion_output_dir = base_output_dir / criterion_name
@@ -682,14 +705,21 @@ class AFClaSeqPipeline:
             
             all_successful = True
             
-            # Process each filter criterion separately
-            for i, criterion in enumerate(filter_criteria):
-                criterion_name = criterion.get('name')
+            # Get selected metrics using the new explicit metric selection system  
+            from af_claseq.pipeline.config import get_selected_metrics
+            selected_metrics = get_selected_metrics(self.config.general)
+            
+            if not selected_metrics:
+                # Fall back to all filter criteria if no explicit selection
+                selected_metrics = [criterion.get('name') for criterion in filter_criteria if criterion.get('name')]
+            
+            # Process each selected metric separately
+            for i, criterion_name in enumerate(selected_metrics):
                 if not criterion_name:
-                    self.logger.warning("Filter criterion without name found, skipping")
+                    self.logger.warning("Invalid metric name found, skipping")
                     continue
                 
-                self.logger.info(f"Processing plots for criterion: {criterion_name}")
+                self.logger.info(f"Processing plots for selected metric: {criterion_name}")
                 
                 # Create criterion-specific output directory
                 criterion_output_dir = os.path.join(base_output_dir, criterion_name)

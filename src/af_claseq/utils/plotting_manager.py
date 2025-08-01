@@ -159,18 +159,33 @@ def calculate_metric_values(
     # Extract filter criteria for requested metrics
     filter_criteria = []
     all_criteria = config.get('filter_criteria', [])
+    composite_metrics = config.get('composite_metrics', [])
     
     if metric_names:
-        # Only include requested metrics
+        # Only include requested metrics from filter criteria
         for criterion in all_criteria:
             if criterion.get('name') in metric_names:
                 filter_criteria.append(criterion)
+        
+        # Include composite metrics if their names are requested
+        requested_composites = []
+        for composite in composite_metrics:
+            if composite.get('name') in metric_names:
+                requested_composites.append(composite)
+                # Also ensure component metrics are included
+                for component in composite.get('components', []):
+                    component_metric = component.get('metric')
+                    # Add component metric to filter if not already there
+                    for criterion in all_criteria:
+                        if criterion.get('name') == component_metric and criterion not in filter_criteria:
+                            filter_criteria.append(criterion)
     else:
         # Include all metrics
         filter_criteria = all_criteria
+        requested_composites = composite_metrics
     
-    if not filter_criteria:
-        log.warning(f"No filter criteria found for metrics: {metric_names}")
+    if not filter_criteria and not requested_composites:
+        log.warning(f"No filter criteria or composite metrics found for: {metric_names}")
         return pd.DataFrame()
     
     basics = config.get('basics', {})
@@ -180,7 +195,8 @@ def calculate_metric_values(
     results_df = analyzer.get_result_df(
         parent_dir=parent_dir,
         filter_criteria=filter_criteria,
-        basics=basics
+        basics=basics,
+        composite_metrics=requested_composites
     )
     
     # Extract and combine data
@@ -200,6 +216,14 @@ def calculate_metric_values(
             data[metric_name] = results_df[metric_name].dropna()
         else:
             log.warning(f"Metric '{metric_name}' not found in results")
+    
+    # Add composite metrics
+    for composite in requested_composites:
+        composite_name = composite.get('name')
+        if composite_name in results_df.columns:
+            data[composite_name] = results_df[composite_name].dropna()
+        else:
+            log.warning(f"Composite metric '{composite_name}' not found in results")
     
     # Add sequence counts if available
     if 'seq_count' in results_df.columns:

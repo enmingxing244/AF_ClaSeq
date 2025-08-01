@@ -25,6 +25,11 @@ class GeneralConfig:
     num_bins: int = 30
     metric1_color: List[str] = field(default_factory=lambda: ["#87CEEB", "#FFFFFF"])  # [start, end] color gradient for metric 1
     metric2_color: List[str] = field(default_factory=lambda: ["#FFB6C1", "#8B0000"])  # [start, end] color gradient for metric 2
+    
+    # Explicit metric selection
+    use_composite_metrics: bool = False
+    metric1_name: Optional[str] = None
+    metric2_name: Optional[str] = None
 
 
 @dataclass
@@ -270,6 +275,91 @@ class PipelineConfig:
     pure_sequence_plotting: PureSequencePlottingConfig
 
 
+def get_selected_metrics(general_config: GeneralConfig) -> List[str]:
+    """
+    Get the list of selected metrics based on configuration.
+    
+    Args:
+        general_config: General configuration object
+        
+    Returns:
+        List of metric names to use (in order: metric1, metric2, ...)
+    """
+    import json
+    
+    selected_metrics = []
+    
+    # If explicit metric names are specified, use them
+    if general_config.metric1_name:
+        selected_metrics.append(general_config.metric1_name)
+    if general_config.metric2_name:
+        selected_metrics.append(general_config.metric2_name)
+    
+    # If no explicit names specified, fall back to default behavior
+    if not selected_metrics:
+        # Load JSON config to get available metrics
+        with open(general_config.config_file, 'r') as f:
+            json_config = json.load(f)
+            
+        if general_config.use_composite_metrics:
+            # Use composite metrics (first 2 by default)
+            composite_metrics = json_config.get('composite_metrics', [])
+            selected_metrics = [comp['name'] for comp in composite_metrics[:2]]
+        else:
+            # Use regular filter criteria (first 2 by default)
+            filter_criteria = json_config.get('filter_criteria', [])
+            selected_metrics = [crit['name'] for crit in filter_criteria[:2]]
+    
+    return selected_metrics
+
+
+def validate_metric_names(general_config: GeneralConfig) -> None:
+    """
+    Validate that specified metric names exist in the JSON configuration file.
+    
+    Args:
+        general_config: General configuration object containing metric selections
+        
+    Raises:
+        ValueError: If specified metrics don't exist in the JSON config
+    """
+    import json
+    import os
+    
+    if not os.path.exists(general_config.config_file):
+        raise ValueError(f"JSON config file not found: {general_config.config_file}")
+    
+    # Load JSON config to check available metrics
+    with open(general_config.config_file, 'r') as f:
+        json_config = json.load(f)
+    
+    # Get available metric names based on use_composite_metrics flag
+    if general_config.use_composite_metrics:
+        available_metrics = [comp['name'] for comp in json_config.get('composite_metrics', [])]
+        metric_type = "composite_metrics"
+        source_section = "composite_metrics"
+    else:
+        available_metrics = [crit['name'] for crit in json_config.get('filter_criteria', [])]
+        metric_type = "filter_criteria"  
+        source_section = "filter_criteria"
+    
+    # Validate metric1_name
+    if general_config.metric1_name:
+        if general_config.metric1_name not in available_metrics:
+            raise ValueError(
+                f"metric1_name '{general_config.metric1_name}' not found in JSON config section '{source_section}'. "
+                f"Available {metric_type} metrics: {available_metrics}"
+            )
+    
+    # Validate metric2_name
+    if general_config.metric2_name:
+        if general_config.metric2_name not in available_metrics:
+            raise ValueError(
+                f"metric2_name '{general_config.metric2_name}' not found in JSON config section '{source_section}'. "
+                f"Available {metric_type} metrics: {available_metrics}"
+            )
+
+
 def load_pipeline_config(yaml_input: str) -> PipelineConfig:
     """
     Load configuration from YAML file and create config objects
@@ -285,6 +375,11 @@ def load_pipeline_config(yaml_input: str) -> PipelineConfig:
     
     # Create individual config objects
     general_config = GeneralConfig(**yaml_config.get('general', {}))
+    
+    # Validate metric names if specified
+    if general_config.metric1_name or general_config.metric2_name:
+        validate_metric_names(general_config)
+    
     slurm_config = SlurmConfig(**yaml_config.get('slurm', {}))
     pipeline_control_config = PipelineControlConfig(**yaml_config.get('pipeline_control', {}))
     

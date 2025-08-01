@@ -438,7 +438,8 @@ class StructureAnalyzer:
                           pdb_path: str, 
                           filter_criteria: List[Dict[str, Any]], 
                           basics: Dict[str, Any], 
-                          plddt_threshold: float = 0) -> Optional[Dict[str, Any]]:
+                          plddt_threshold: float = 0,
+                          composite_metrics: Optional[List[Dict[str, Any]]] = None) -> Optional[Dict[str, Any]]:
         """
         Process a single PDB file and extract metrics based on filter criteria.
         
@@ -447,6 +448,7 @@ class StructureAnalyzer:
             filter_criteria: List of criteria for filtering structures
             basics: Basic configuration parameters
             plddt_threshold: Minimum pLDDT score threshold
+            composite_metrics: Optional list of composite metric definitions
             
         Returns:
             Dictionary of metrics or None if processing fails or pLDDT below threshold
@@ -539,6 +541,13 @@ class StructureAnalyzer:
                         criterion['ref_pdb']
                     )
                     result[metric_name] = tm_score
+            
+            # Calculate composite metrics if specified
+            if composite_metrics:
+                for composite in composite_metrics:
+                    composite_value = self._calculate_composite_metric(result, composite)
+                    if composite_value is not None:
+                        result[composite['name']] = composite_value
 
             return result
         except Exception as e:
@@ -557,13 +566,62 @@ class StructureAnalyzer:
             return result
         else:
             return list(range(indices_spec['start'], indices_spec['end'] + 1))
+    
+    def _calculate_composite_metric(self, metrics: Dict[str, Any], composite_spec: Dict[str, Any]) -> Optional[float]:
+        """
+        Calculate a composite metric from weighted sum of component metrics.
+        
+        Args:
+            metrics: Dictionary of calculated metrics
+            composite_spec: Composite metric specification with structure:
+                {
+                    "name": "composite_metric_name",
+                    "components": [
+                        {"metric": "metric1", "weight": 0.7},
+                        {"metric": "metric2", "weight": 0.3}
+                    ]
+                }
+                
+        Returns:
+            Composite metric value or None if component metrics missing
+        """
+        try:
+            composite_value = 0.0
+            total_weight = 0.0
+            
+            for component in composite_spec.get('components', []):
+                metric_name = component['metric']
+                weight = component['weight']
+                
+                if metric_name not in metrics:
+                    logger.warning(f"Component metric '{metric_name}' not found for composite '{composite_spec['name']}'")
+                    return None
+                
+                metric_value = metrics[metric_name]
+                if metric_value is None or np.isnan(metric_value):
+                    logger.warning(f"Component metric '{metric_name}' has invalid value for composite '{composite_spec['name']}'")
+                    return None
+                
+                composite_value += weight * metric_value
+                total_weight += weight
+            
+            # Normalize if weights don't sum to 1
+            if total_weight > 0 and abs(total_weight - 1.0) > 1e-6:
+                composite_value /= total_weight
+                
+            return composite_value
+            
+        except Exception as e:
+            logger.error(f"Error calculating composite metric '{composite_spec.get('name', 'unknown')}': {e}")
+            return None
         
     def process_pdbs_parallel(self, 
                              pdb_files: List[str | Path],
                              filter_criteria: List[Dict[str, Any]],
                              basics: Dict[str, Any],
                              plddt_threshold: float = 0,
-                             n_jobs: int = -1) -> Dict[str, Any]:
+                             n_jobs: int = -1,
+                             composite_metrics: Optional[List[Dict[str, Any]]] = None) -> Dict[str, Any]:
         """
         Process multiple PDB files in parallel using joblib.
         
@@ -573,6 +631,7 @@ class StructureAnalyzer:
             basics: Basic information required for calculations
             plddt_threshold: Minimum pLDDT score threshold
             n_jobs: Number of parallel jobs (-1 for all available cores)
+            composite_metrics: Optional list of composite metric definitions
             
         Returns:
             Dictionary mapping PDB file paths to their analysis results
@@ -583,7 +642,7 @@ class StructureAnalyzer:
         def process_single_with_fresh_analyzer(pdb_path):
             analyzer = StructureAnalyzer()
             return str(pdb_path), analyzer.process_single_pdb(
-                str(pdb_path), filter_criteria, basics, plddt_threshold
+                str(pdb_path), filter_criteria, basics, plddt_threshold, composite_metrics
             )
         
         # Process PDB files in parallel
@@ -604,7 +663,8 @@ class StructureAnalyzer:
     def get_result_df(self, parent_dir: str | Path,
                      filter_criteria: Sequence[Dict[str, Any]],
                      basics: Dict[str, Any],
-                     plddt_threshold: float = 0) -> pd.DataFrame:
+                     plddt_threshold: float = 0,
+                     composite_metrics: Optional[List[Dict[str, Any]]] = None) -> pd.DataFrame:
         """
         Generate a DataFrame containing calculated properties for each PDB file.
 
@@ -613,6 +673,7 @@ class StructureAnalyzer:
             filter_criteria: List of criteria for filtering and calculation.
             basics: Basic information required for calculations.
             plddt_threshold: Minimum pLDDT score threshold
+            composite_metrics: Optional list of composite metric definitions
 
         Returns:
             DataFrame with results.
@@ -629,7 +690,7 @@ class StructureAnalyzer:
 
         # Use the new parallel processing method
         analysis_results = self.process_pdbs_parallel(
-            pdb_files, filter_criteria, basics, plddt_threshold
+            pdb_files, filter_criteria, basics, plddt_threshold, n_jobs=-1, composite_metrics=composite_metrics
         )
 
         # Convert to DataFrame format

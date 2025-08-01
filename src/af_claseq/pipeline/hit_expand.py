@@ -58,6 +58,7 @@ class HitExpandRunner:
                  slurm_submitter: SlurmJobSubmitter,
                  base_dir: Path,
                  config_file: str,
+                 general_config: Optional[Any] = None,
                  logger: Optional[logging.Logger] = None):
         """
         Initialize hit expand runner.
@@ -67,12 +68,14 @@ class HitExpandRunner:
             slurm_submitter: SLURM job submitter instance
             base_dir: Base output directory
             config_file: Path to JSON config file for structure analysis
+            general_config: General configuration for explicit metric selection
             logger: Optional logger instance
         """
         self.config = config
         self.slurm_submitter = slurm_submitter
         self.base_dir = Path(base_dir)
         self.config_file = config_file
+        self.general_config = general_config
         self.logger = logger or get_logger(__name__)
         
         # Create base directory
@@ -321,6 +324,7 @@ class HitExpandRunner:
         # Get analysis parameters (same as main structure analysis)
        
         all_filter_criteria = filter_config.get("filter_criteria", [])
+        composite_metrics = filter_config.get("composite_metrics", [])
         
         # Temporarily suppress INFO logging from sequence_processing module
         seq_processing_logger = logging.getLogger('af_claseq.sequence_processing')
@@ -339,7 +343,8 @@ class HitExpandRunner:
                     pdb_path=str(pdb_file),
                     filter_criteria=all_filter_criteria,
                     basics=filter_config.get("basics", {}),
-                    plddt_threshold=0.0 # plddt threshold will not be applied in the plotting steps
+                    plddt_threshold=0.0, # plddt threshold will not be applied in the plotting steps
+                    composite_metrics=composite_metrics
                 )
                 
                 if metrics and "error" not in metrics:
@@ -597,13 +602,19 @@ class HitExpandRunner:
             
             plot_files = []
             
-            # Extract metric names from filter criteria
-            metric_names = [criterion.get('name') for criterion in filter_criteria if criterion.get('name')]
-            self.logger.info(f"Expected metrics from filter criteria: {metric_names}")
+            # Get selected metrics using explicit metric selection system
+            if self.general_config:
+                from af_claseq.pipeline.config import get_selected_metrics
+                selected_metrics = get_selected_metrics(self.general_config)
+                self.logger.info(f"Using explicitly selected metrics: {selected_metrics}")
+            else:
+                # Fall back to extracting metric names from filter criteria
+                selected_metrics = [criterion.get('name') for criterion in filter_criteria if criterion.get('name')]
+                self.logger.info(f"Using filter criteria metrics (fallback): {selected_metrics}")
             
             # Check which metrics are actually available in the DataFrame
-            available_metrics = [m for m in metric_names if m in df.columns]
-            missing_metrics = [m for m in metric_names if m not in df.columns]
+            available_metrics = [m for m in selected_metrics if m in df.columns]
+            missing_metrics = [m for m in selected_metrics if m not in df.columns]
             
             if missing_metrics:
                 self.logger.warning(f"Metrics missing from DataFrame: {missing_metrics}")
@@ -809,12 +820,27 @@ class HitExpandRunner:
         
         # Get the selected filter criteria configuration (same logic as analysis stage)
         all_filter_criteria = filter_config.get("filter_criteria", [])
+        composite_metrics = filter_config.get("composite_metrics", [])
         selected_filter_criteria = []
+        
+        # Check if we should use composite metrics
+        use_composite_metrics = False
+        if self.general_config and hasattr(self.general_config, 'use_composite_metrics'):
+            use_composite_metrics = self.general_config.use_composite_metrics
+            
         if filter_criteria_name:
-            # Find criteria matching the specified name
-            for criterion in all_filter_criteria:
-                if criterion.get("name") == filter_criteria_name:
-                    selected_filter_criteria.append(criterion)
+            # Look in the appropriate section based on use_composite_metrics flag
+            if use_composite_metrics:
+                # Look in composite_metrics section
+                for metric in composite_metrics:
+                    if metric.get("name") == filter_criteria_name:
+                        selected_filter_criteria.append(metric)
+                        self.logger.info(f"Using composite metric '{filter_criteria_name}' for filtering")
+            else:
+                # Look in filter_criteria section
+                for criterion in all_filter_criteria:
+                    if criterion.get("name") == filter_criteria_name:
+                        selected_filter_criteria.append(criterion)
         else:
             selected_filter_criteria = all_filter_criteria
         
@@ -1303,13 +1329,16 @@ class HitExpandRunner:
         
         
         all_filter_criteria = filter_config.get("filter_criteria", [])
+        composite_metrics = filter_config.get("composite_metrics", [])
         
         # Analyze structures in parallel
         analysis_results = self.structure_analyzer.process_pdbs_parallel(
             pdb_files=pdb_files,
             filter_criteria=all_filter_criteria,
             basics=filter_config.get("basics", {}),
-            plddt_threshold=0.0 # in the structure analysis steps, all structure will considered and will not apply threshold
+            plddt_threshold=0.0, # in the structure analysis steps, all structure will considered and will not apply threshold
+            n_jobs=-1,  # Use all available CPU cores
+            composite_metrics=composite_metrics
         )
         
         # Apply filtering if requested
