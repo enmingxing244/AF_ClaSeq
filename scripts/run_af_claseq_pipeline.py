@@ -17,16 +17,14 @@ from typing import Dict, Any
 from af_claseq.utils.slurm_utils import SlurmJobSubmitter
 from af_claseq.utils.structure_analysis import StructureAnalyzer
 from af_claseq.utils.sequence_processing import A3MParser, filter_a3m_by_coverage, write_a3m
-from af_claseq.pipeline.init_bootstrapping import InitBootstrappingRunner
-from af_claseq.pipeline.hit_expand import HitExpandRunner
-from af_claseq.pipeline.m_fold_sampling import MFoldSampler
-from af_claseq.pipeline.sequence_voting import SequenceVotingRunner, SequenceVotingPlotter
-from af_claseq.pipeline.sequence_recompile import SequenceRecompiler
-from af_claseq.pipeline.pure_seq_pred import PureSequenceAF2Prediction
-from af_claseq.pipeline.pure_seq_plot import PureSequencePlotter, create_pure_seq_plot_config_from_dict
+from af_claseq.m_fold_sampling_voting.m_fold_sampling import MFoldSampler
+from af_claseq.m_fold_sampling_voting.sequence_voting import SequenceVotingRunner, SequenceVotingPlotter
+from af_claseq.m_fold_sampling_voting.sequence_recompile import SequenceRecompiler
+from af_claseq.m_fold_sampling_voting.pure_seq_pred import PureSequenceAF2Prediction
+from af_claseq.m_fold_sampling_voting.pure_seq_plot import PureSequencePlotter, create_pure_seq_plot_config_from_dict
 from af_claseq.utils.logging_utils import setup_logger 
 
-from af_claseq.pipeline.config import load_pipeline_config
+from af_claseq.m_fold_sampling_voting.config import load_pipeline_config
 
 
 class AFClaSeqPipeline:
@@ -96,12 +94,10 @@ class AFClaSeqPipeline:
         
         # Create stage directories
         stages = [
-            "00_init_bootstrapping",
-            "01_hit_expand",
-            "02_m_fold_sampling",
-            "03_voting",
-            "04_recompile",
-            "05_plots"
+            "01_m_fold_sampling",
+            "02_voting",
+            "03_recompile",
+            "04_plots"
         ]
         
         for stage in stages:
@@ -118,103 +114,24 @@ class AFClaSeqPipeline:
         print(f"Configuration file: {self.config.general.config_file}")
         print("="*80 + "\n")
     
-    def run_init_bootstrapping(self) -> bool:
-        """
-        Stage 00: Run init bootstrapping for quick preview
-        """
-        self.logger.info("=== STAGE 00: INIT BOOTSTRAPPING ===")
-        
-        try:
-            # Use init_bootstrapping config
-            init_config = self.config.init_bootstrapping
-            
-            # Determine input MSA (use general.source_a3m)
-            input_msa = Path(self.config.general.source_a3m)
-            if not input_msa.exists():
-                self.logger.error(f"Input MSA not found: {input_msa}")
-                return False
-            
-            # Create runner instance
-            runner = InitBootstrappingRunner(
-                config=init_config,
-                slurm_submitter=self.slurm_submitter,
-                base_dir=Path(self.config.general.base_dir) / "00_init_bootstrapping",
-                input_msa=input_msa,
-                logger=self.logger
-            )
-            
-            # Run the init bootstrapping process
-            success = runner.run()
-            
-            if success:
-                self.logger.info("Completed init bootstrapping successfully")
-                self.logger.info("Review results before running full pipeline")
-                return True
-            else:
-                self.logger.error("Init bootstrapping failed")
-                return False
-                
-        except Exception as e:
-            self.logger.error(f"Error in init bootstrapping: {str(e)}", exc_info=True)
-            return False
-    
-    def run_hit_expand(self) -> bool:
-        """
-        Stage 01_RUN: Run hit expand pipeline
-        """
-        self.logger.info("=== STAGE 01_RUN: HIT EXPAND ===")
-        
-        try:
-            # Use hit_expand config directly (it's already a HitExpandConfig object)
-            hit_expand_config = self.config.hit_expand
-            
-            # Set input_msa if not provided (use general.source_a3m as fallback)
-            if not hit_expand_config.input_msa:
-                hit_expand_config.input_msa = self.config.general.source_a3m
-                
-            # Create runner instance
-            runner = HitExpandRunner(
-                config=hit_expand_config,
-                slurm_submitter=self.slurm_submitter,
-                base_dir=Path(self.config.general.base_dir) / "01_hit_expand",
-                config_file=self.config.general.config_file,
-                general_config=self.config.general,
-                logger=self.logger
-            )
-            
-            # Set up logging and log parameters
-            runner.setup_logging()
-            runner.log_parameters()
-            
-            # Run the hit expand process
-            final_msa = runner.run()
-            
-            if final_msa is None:
-                self.logger.error("Hit expand failed to produce output")
-                return False
-                
-            self.logger.info(f"Completed hit expand successfully. Final output: {final_msa}")
-            return True
-            
-        except Exception as e:
-            self.logger.error(f"Error in hit expand: {str(e)}", exc_info=True)
-            return False
     
     def run_m_fold_sampling(self) -> bool:
         """
-        Stage 02_RUN: Run M-fold sampling
+        Stage 01_RUN: Run M-fold sampling
         """
-        self.logger.info("=== STAGE 02_RUN: M-FOLD SAMPLING ===")
+        self.logger.info("=== STAGE 01_RUN: M-FOLD SAMPLING ===")
         
         try:
             # Determine input A3M file
             input_a3m = self.config.m_fold_sampling.m_fold_samp_input_a3m
             if not Path(input_a3m).exists():
-                # First try hit_expand output
-                hit_expand_output = Path(self.config.general.base_dir) / "01_hit_expand/hit_expand_final_msa.a3m"
-                if hit_expand_output.exists():
-                    input_a3m = str(hit_expand_output)
-                    self.logger.info(f"Using hit expand output as input: {input_a3m}")
+                # Use general.source_a3m as fallback if configured input doesn't exist
+                if Path(self.config.general.source_a3m).exists():
+                    input_a3m = self.config.general.source_a3m
+                    self.logger.info(f"Using source A3M as input: {input_a3m}")
+                else:
+                    self.logger.error(f"Neither configured input ({self.config.m_fold_sampling.m_fold_samp_input_a3m}) nor source A3M ({self.config.general.source_a3m}) found")
+                    return False
             
             # Get number of rounds from configuration
             num_rounds = self.config.m_fold_sampling.rounds
@@ -227,7 +144,7 @@ class AFClaSeqPipeline:
                 self.logger.info(f"Starting M-fold sampling round {round_num}/{num_rounds}")
                 
                 # Create round-specific directory
-                round_base_dir = Path(self.config.general.base_dir) / "02_m_fold_sampling" / f"round_{round_num}"
+                round_base_dir = Path(self.config.general.base_dir) / "01_m_fold_sampling" / f"round_{round_num}"
                 round_base_dir.mkdir(exist_ok=True, parents=True)
                 
                 # Create sampler instance for this round
@@ -264,9 +181,9 @@ class AFClaSeqPipeline:
         
     def plot_m_fold_sampling(self) -> bool:
         """
-        Stage 02_ANALYSIS: Analyze results of M-fold sampling
+        Stage 01_ANALYSIS: Analyze results of M-fold sampling
         """
-        self.logger.info("=== STAGE 02_ANALYSIS: M-FOLD SAMPLING ANALYSIS ===")
+        self.logger.info("=== STAGE 01_ANALYSIS: M-FOLD SAMPLING ANALYSIS ===")
 
         try:
             # Import plotting functions directly
@@ -277,8 +194,8 @@ class AFClaSeqPipeline:
 
             # Setup directories
             base_dir = Path(self.config.general.base_dir)
-            output_dir = base_dir / "02_m_fold_sampling/plot"
-            csv_dir = base_dir / "02_m_fold_sampling/csv"
+            output_dir = base_dir / "01_m_fold_sampling/plot"
+            csv_dir = base_dir / "01_m_fold_sampling/csv"
             
             # Create output directories
             output_dir.mkdir(parents=True, exist_ok=True)
@@ -291,7 +208,7 @@ class AFClaSeqPipeline:
             filter_criteria = config.get('filter_criteria', [])
             
             # Get selected metrics using the new explicit metric selection system  
-            from af_claseq.pipeline.config import get_selected_metrics
+            from af_claseq.m_fold_sampling_voting.config import get_selected_metrics
             selected_metrics = get_selected_metrics(self.config.general)
             num_criteria = len(selected_metrics)
             
@@ -302,7 +219,7 @@ class AFClaSeqPipeline:
             # Gather all results directories from all rounds
             all_results_dirs = []
             for round_num in range(1, num_rounds + 1):
-                round_dir = base_dir / "02_m_fold_sampling" / f"round_{round_num}"
+                round_dir = base_dir / "01_m_fold_sampling" / f"round_{round_num}"
                 if round_dir.exists():
                     all_results_dirs.append(round_dir)
                     self.logger.info(f"Including round {round_num} in analysis")
@@ -315,7 +232,7 @@ class AFClaSeqPipeline:
                 # Only one criterion - use 1D plots
                 self.logger.info("One filter criterion detected - generating 1D plots")
                 # Get metric name using the new explicit metric selection system
-                from af_claseq.pipeline.config import get_selected_metrics
+                from af_claseq.m_fold_sampling_voting.config import get_selected_metrics
                 metric_names = get_selected_metrics(self.config.general)
                 metric_name = metric_names[0] if metric_names else filter_criteria[0].get('name', 'criterion_0')
                 
@@ -353,7 +270,7 @@ class AFClaSeqPipeline:
                 self.logger.info("Two filter criteria detected - generating 1D plots for each criterion and 2D plots")
 
                 # Get metric names using the new explicit metric selection system
-                from af_claseq.pipeline.config import get_selected_metrics
+                from af_claseq.m_fold_sampling_voting.config import get_selected_metrics
                 metric_names = get_selected_metrics(self.config.general)
                 
                 # Create metric colors dictionary mapping metric names to their colors
@@ -439,9 +356,9 @@ class AFClaSeqPipeline:
             return False
     def run_sequence_voting(self) -> bool:
         """
-        Stage 03: Run sequence voting analysis
+        Stage 02: Run sequence voting analysis
         """
-        self.logger.info("=== STAGE 03: SEQUENCE VOTING ===")
+        self.logger.info("=== STAGE 02: SEQUENCE VOTING ===")
 
         try:
             # Load filter criteria from config file
@@ -455,16 +372,16 @@ class AFClaSeqPipeline:
 
             # Create base output directory
             base_dir = Path(self.config.general.base_dir)
-            voting_dir = base_dir / "03_voting"
+            voting_dir = base_dir / "02_voting"
             voting_dir.mkdir(exist_ok=True)
             
             # Use the correct path for m-fold sampling directory
-            m_fold_sampling_dir = base_dir / "02_m_fold_sampling"
+            m_fold_sampling_dir = base_dir / "01_m_fold_sampling"
             
             results_files = []
             
             # Get selected metrics using the new explicit metric selection system  
-            from af_claseq.pipeline.config import get_selected_metrics
+            from af_claseq.m_fold_sampling_voting.config import get_selected_metrics
             selected_metrics = get_selected_metrics(self.config.general)
             
             if not selected_metrics:
@@ -495,7 +412,7 @@ class AFClaSeqPipeline:
                     min_value=self.config.sequence_voting.vote_min_value,
                     max_value=self.config.sequence_voting.vote_max_value,
                     use_focused_bins=self.config.sequence_voting.use_focused_bins,
-                    precomputed_metrics=base_dir / "02_m_fold_sampling/csv",
+                    precomputed_metrics=base_dir / "01_m_fold_sampling/csv",
                     plddt_threshold=self.config.m_fold_sampling.m_fold_plddt_threshold,
                     filter_criterion=criterion_name
                 )
@@ -540,9 +457,9 @@ class AFClaSeqPipeline:
     
     def run_recompile_and_predict(self) -> bool:
         """
-        Stage 04: Recompile sequences and run structure prediction
+        Stage 03: Recompile sequences and run structure prediction
         """
-        self.logger.info("=== STAGE 04: SEQUENCE RECOMPILATION & PREDICTION ===")
+        self.logger.info("=== STAGE 03: SEQUENCE RECOMPILATION & PREDICTION ===")
         
         try:
             # Load filter criteria from config file
@@ -556,19 +473,16 @@ class AFClaSeqPipeline:
             
             # Create base output directory
             base_dir = Path(self.config.general.base_dir)
-            base_output_dir = base_dir / "04_recompile"
+            base_output_dir = base_dir / "03_recompile"
             base_output_dir.mkdir(exist_ok=True)
             
             # Determine input MSA
             source_msa = self.config.general.source_a3m
-            # First try hit_expand output
-            if (base_dir / "01_hit_expand/hit_expand_final_msa.a3m").exists():
-                source_msa = str(base_dir / "01_hit_expand/hit_expand_final_msa.a3m")
             
             all_successful = True
             
             # Get selected metrics using the new explicit metric selection system  
-            from af_claseq.pipeline.config import get_selected_metrics
+            from af_claseq.m_fold_sampling_voting.config import get_selected_metrics
             selected_metrics = get_selected_metrics(self.config.general)
             
             if not selected_metrics:
@@ -588,8 +502,8 @@ class AFClaSeqPipeline:
                 criterion_output_dir.mkdir(exist_ok=True)
                 
                 # Get voting results for this criterion
-                voting_results = base_dir / f"03_voting/{criterion_name}/voting_results.csv"
-                raw_votes_json = base_dir / f"03_voting/{criterion_name}/raw_sequence_votes.json"
+                voting_results = base_dir / f"02_voting/{criterion_name}/voting_results.csv"
+                raw_votes_json = base_dir / f"02_voting/{criterion_name}/raw_sequence_votes.json"
                 
                 if not voting_results.exists():
                     self.logger.error(f"Voting results not found for criterion: {criterion_name}")
@@ -684,9 +598,9 @@ class AFClaSeqPipeline:
         
     def run_pure_sequence_plotting(self) -> bool:
         """
-        Stage 05: Plot and analyze prediction results
+        Stage 04: Plot and analyze prediction results
         """
-        self.logger.info("=== STAGE 05: PURE SEQUENCE PREDICTION PLOTTING ===")
+        self.logger.info("=== STAGE 04: PURE SEQUENCE PREDICTION PLOTTING ===")
         
         try:
             # Load filter criteria from config file
@@ -700,13 +614,13 @@ class AFClaSeqPipeline:
             
             # Create base output directory
             base_dir = Path(self.config.general.base_dir)
-            base_output_dir = os.path.join(self.config.general.base_dir, "05_plots")
+            base_output_dir = os.path.join(self.config.general.base_dir, "04_plots")
             os.makedirs(base_output_dir, exist_ok=True)
             
             all_successful = True
             
             # Get selected metrics using the new explicit metric selection system  
-            from af_claseq.pipeline.config import get_selected_metrics
+            from af_claseq.m_fold_sampling_voting.config import get_selected_metrics
             selected_metrics = get_selected_metrics(self.config.general)
             
             if not selected_metrics:
@@ -726,7 +640,7 @@ class AFClaSeqPipeline:
                 os.makedirs(criterion_output_dir, exist_ok=True)
                 
                 # Get the recompile directory for this criterion as the base dir for plotting
-                recompile_dir = os.path.join(self.config.general.base_dir, f"04_recompile/{criterion_name}")
+                recompile_dir = os.path.join(self.config.general.base_dir, f"03_recompile/{criterion_name}")
                 
                 if not os.path.exists(recompile_dir):
                     self.logger.error(f"Recompile directory not found for criterion: {recompile_dir}")
@@ -787,52 +701,38 @@ class AFClaSeqPipeline:
         pipeline_success = True
         
         try:
-            # Stage 00: Init Bootstrapping (optional quick preview)
-            if "00_INIT_BOOTSTRAPPING" in stages_to_run:
-                if not self.run_init_bootstrapping():
-                    self.logger.error("Stopping pipeline due to failure in stage 00_INIT_BOOTSTRAPPING")
-                    pipeline_success = False
-                    return
             
-            # Stage 01: Hit Expand (replaces Iterative Shuffling)
-            if "01_HIT_EXPAND_RUN" in stages_to_run:
-                if not self.run_hit_expand():
-                    self.logger.error("Stopping pipeline due to failure in stage 01_HIT_EXPAND_RUN")
-                    pipeline_success = False
-                    return
-            
-            
-            # Stage 02: M-fold Sampling
-            if "02_M_FOLD_SAMPLING_RUN" in stages_to_run:
+            # Stage 01: M-fold Sampling
+            if "01_M_FOLD_SAMPLING_RUN" in stages_to_run:
                 if not self.run_m_fold_sampling():
-                    self.logger.error("Stopping pipeline due to failure in stage 02_M_FOLD_SAMPLING_RUN")
+                    self.logger.error("Stopping pipeline due to failure in stage 01_M_FOLD_SAMPLING_RUN")
                     pipeline_success = False
                     return
-            
-            if "02_M_FOLD_SAMPLING_PLOT" in stages_to_run:
+
+            if "01_M_FOLD_SAMPLING_PLOT" in stages_to_run:
                 if not self.plot_m_fold_sampling():
-                    self.logger.error("Stopping pipeline due to failure in stage 02_M_FOLD_SAMPLING_PLOT")
+                    self.logger.error("Stopping pipeline due to failure in stage 01_M_FOLD_SAMPLING_PLOT")
                     pipeline_success = False
                     return
-            
-            # Stage 03: Sequence Voting
-            if "03_VOTING_RUN" in stages_to_run:
+
+            # Stage 02: Sequence Voting
+            if "02_VOTING_RUN" in stages_to_run:
                 if not self.run_sequence_voting():
-                    self.logger.error("Stopping pipeline due to failure in stage 03_VOTING_RUN")
+                    self.logger.error("Stopping pipeline due to failure in stage 02_VOTING_RUN")
                     pipeline_success = False
                     return
-            
-            # Stage 04: Recompilation & Prediction
-            if "04_RECOMPILE_PREDICT_RUN" in stages_to_run:
+
+            # Stage 03: Recompilation & Prediction
+            if "03_RECOMPILE_PREDICT_RUN" in stages_to_run:
                 if not self.run_recompile_and_predict():
-                    self.logger.error("Stopping pipeline due to failure in stage 04_RECOMPILE_PREDICT_RUN")
+                    self.logger.error("Stopping pipeline due to failure in stage 03_RECOMPILE_PREDICT_RUN")
                     pipeline_success = False
                     return
-            
-            # Stage 05: Pure Sequence Plotting
-            if "05_PURE_SEQ_PLOT_RUN" in stages_to_run:
+
+            # Stage 04: Pure Sequence Plotting
+            if "04_PURE_SEQ_PLOT_RUN" in stages_to_run:
                 if not self.run_pure_sequence_plotting():
-                    self.logger.error("Stopping pipeline due to failure in stage 05_PURE_SEQ_PLOT_RUN")
+                    self.logger.error("Stopping pipeline due to failure in stage 04_PURE_SEQ_PLOT_RUN")
                     pipeline_success = False
                     return
             

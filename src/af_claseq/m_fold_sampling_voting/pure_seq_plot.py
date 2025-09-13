@@ -23,7 +23,7 @@ from af_claseq.utils.plotting_manager import (
 )
 from af_claseq.utils.structure_analysis import StructureAnalyzer
 from af_claseq.utils.logging_utils import get_logger
-from af_claseq.pipeline.config import PureSequencePlottingConfig
+from af_claseq.m_fold_sampling_voting.config import PureSequencePlottingConfig
 
 
 @dataclass

@@ -198,7 +198,7 @@ class VotingAnalyzer:
             # Multi-round structure
             for round_dir in round_dirs:
                 round_path = os.path.join(base_dir, round_dir)
-                sampling_path = os.path.join(round_path, '02_sampling')
+                sampling_path = os.path.join(round_path, '01_sampling')
                 
                 if not os.path.exists(sampling_path):
                     continue
@@ -469,7 +469,7 @@ class VotingAnalyzer:
             self.logger.info(f"Found {len(round_dirs)} sampling rounds")
             for round_dir in round_dirs:
                 round_path = os.path.join(sampling_base_dir, round_dir)
-                sampling_path = os.path.join(round_path, '02_sampling')
+                sampling_path = os.path.join(round_path, '01_sampling')
                 
                 if os.path.exists(sampling_path):
                     sampling_dirs = [d for d in os.listdir(sampling_path) if d.startswith('sampling_')]

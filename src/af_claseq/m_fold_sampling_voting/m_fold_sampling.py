@@ -70,8 +70,8 @@ class MFoldSampler:
         self.max_workers = max_workers
         
         # Set up directories
-        self.init_dir = os.path.join(self.m_fold_sampling_base_dir, "02_init_random_split")
-        self.sampling_base_dir = os.path.join(self.m_fold_sampling_base_dir, "02_sampling")
+        self.init_dir = os.path.join(self.m_fold_sampling_base_dir, "01_init_random_split")
+        self.sampling_base_dir = os.path.join(self.m_fold_sampling_base_dir, "01_sampling")
         os.makedirs(self.init_dir, exist_ok=True)
         os.makedirs(self.sampling_base_dir, exist_ok=True)
         

@@ -9,7 +9,6 @@ import yaml
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional, Any, Tuple, Union
 from af_claseq.utils.plotting_manager import COLORS
-# HitExpandConfig now defined in this file
 
 @dataclass
 class GeneralConfig:
@@ -52,10 +51,9 @@ class SlurmConfig:
 class PipelineControlConfig:
     """Pipeline control options"""
     stages: List[str] = field(default_factory=lambda: [
-        "01_HIT_EXPAND_RUN", 
-        "02_M_FOLD_SAMPLING_RUN", "02_M_FOLD_SAMPLING_PLOT", 
-        "03_VOTING_RUN", "04_RECOMPILE_PREDICT_RUN", 
-        "05_PURE_SEQ_PLOT_RUN"
+        "01_M_FOLD_SAMPLING_RUN", "01_M_FOLD_SAMPLING_PLOT",
+        "02_VOTING_RUN", "03_RECOMPILE_PREDICT_RUN",
+        "04_PURE_SEQ_PLOT_RUN"
     ])
     check_interval: int = 60
 
@@ -63,7 +61,7 @@ class PipelineControlConfig:
 
 @dataclass
 class MFoldSamplingConfig:
-    """Stage 02: M-fold Sampling parameters"""
+    """Stage 01: M-fold Sampling parameters"""
     m_fold_samp_input_a3m: str
     m_fold_group_size: int = 10
     m_fold_random_select: Optional[int] = None
@@ -87,7 +85,7 @@ class MFoldSamplingConfig:
 
 @dataclass
 class SequenceVotingConfig:
-    """Stage 03: Sequence Voting parameters"""
+    """Stage 02: Sequence Voting parameters"""
     vote_threshold: float = 0.0
     vote_min_value: Optional[float] = None
     vote_max_value: Optional[float] = None
@@ -100,7 +98,7 @@ class SequenceVotingConfig:
 
 @dataclass
 class RecompilePredictConfig:
-    """Stage 04: Recompilation & Prediction parameters"""
+    """Stage 03: Recompilation & Prediction parameters"""
     bin_numbers_1: Union[List[int], int] = field(default_factory=list)
     bin_numbers_2: Union[List[int], int] = field(default_factory=list)
     combine_bins: bool = False
@@ -124,142 +122,8 @@ class PureSequencePlottingConfig:
     max_workers: int = 8
 
 
-@dataclass
-class InitBootstrappingConfig:
-    """Configuration for initialization bootstrapping step."""
-    
-    # Subset generation parameters (reduced for quick preview)
-    init_num_subsets: int = 200
-    init_num_random_sequences: int = 8
-    init_num_batches: int = 10
-    init_batch_prefix: str = "init_batch"
-    init_output_prefix: str = "init_subset"
-    
-    # Structure analysis parameters
-    init_plddt_threshold: float = 75.0
-    init_plot_all_structures: bool = True
-    
-    # Plotting configuration
-    init_plot_metric1_min: float = 0.0
-    init_plot_metric1_max: float = 1.0
-    init_plot_metric2_min: float = 0.0
-    init_plot_metric2_max: float = 1.0
-    init_plot_metric1_ticks: Optional[List[float]] = field(default_factory=lambda: [0.0, 0.2, 0.4, 0.6, 0.8, 1.0])
-    init_plot_metric2_ticks: Optional[List[float]] = field(default_factory=lambda: [0.0, 0.2, 0.4, 0.6, 0.8, 1.0])
-    init_plot_figsize: Tuple[int, int] = (10, 8)
-    
-    # Control flags
-    skip_if_exists: bool = True
-    random_seed: int = 42
-    ensure_query_first: bool = True
-    
-    # Job monitoring (reuse from hit_expand)
-    monitor_jobs: bool = True
-    job_check_interval: float = 60.0
-    max_job_wait_time: float = 14400.0  # 4 hours
-    
-    # Integration with filter config
-    filter_config_path: str = ""  # Will be set from general.config_file
-    
-    def __post_init__(self):
-        """Post-initialization processing."""
-        # This will be set later when the full config is loaded
-        pass
 
 
-@dataclass
-class HitExpandConfig:
-    """Configuration for hit expand pipeline step."""
-    
-    # Input MSA file (source A3M) - can reference general.source_a3m
-    input_msa: str = ""
-    
-    # MMseqs2 clustering configuration
-    mmseqs_bin: str = "/fs/ess/PAA0203/xing244/packages/mmseqs/bin/mmseqs"
-    mmseqs_coverage: float = 0.8
-    mmseqs_min_seq_id: float = 0.7
-    mmseqs_cov_mode: int = 0
-    mmseqs_cluster_mode: int = 0
-    mmseqs_threads: int = 8
-    mmseqs_tmp_dir: str = "/tmp"
-    
-    # Subset generation configuration
-    num_subsets: int = 2000
-    num_random_sequences: int = 8
-    num_batches: int = 80
-    batch_prefix: str = "batch"
-    
-    # Similarity search configuration  
-    similarity_top_k: int = 50
-    similarity_threshold: float = 0.7
-    exclude_query_headers: bool = True
-    
-    # Structure analysis configuration
-    plddt_threshold: float = 75.0
-    filter_criteria_threshold: float = 0.8
-    filter_criteria: str = "default"
-    
-    # Job monitoring
-    monitor_jobs: bool = True
-    job_check_interval: float = 60.0
-    job_timeout: Optional[float] = None
-    check_existing_jobs: bool = True
-    
-    # Processing control
-    skip_structure_prediction: bool = False
-    skip_structure_analysis: bool = False
-    skip_hit_expansion: bool = False
-    skip_clustering: bool = False
-    
-    # Output configuration
-    output_prefix: str = "subset"
-    
-    # Plotting configuration
-    plot_num_cols: int = 5
-    plot_x_min: float = 0
-    plot_x_max: float = 20
-    plot_y_min: float = 0.8
-    plot_y_max: float = 10000
-    plot_xticks: Optional[List[float]] = None
-    plot_bin_step: float = 0.2
-    
-    # Scatter plot configuration (for structure analysis plots)
-    scatter_plot_metric1_min: float = 0.0
-    scatter_plot_metric1_max: float = 1.0
-    scatter_plot_metric2_min: float = 0.0
-    scatter_plot_metric2_max: float = 1.0
-    scatter_plot_metric1_ticks: Optional[List[float]] = field(default_factory=lambda: [0.0, 0.2, 0.4, 0.6, 0.8, 1.0])
-    scatter_plot_metric2_ticks: Optional[List[float]] = field(default_factory=lambda: [0.0, 0.2, 0.4, 0.6, 0.8, 1.0])
-    
-    # pLDDT plot configuration
-    plddt_plot_min: int = 0
-    plddt_plot_max: int = 100
-    plddt_plot_ticks: Optional[List[int]] = field(default_factory=lambda: [0, 20, 40, 60, 80, 100])
-    
-    # Multi-round configuration
-    rounds: int = 1                         # Number of iterative expansion rounds
-    cumulative_expansion: bool = True       # Accumulate sequences across rounds
-    
-    # Expansion method configuration
-    expansion_method: str = "BLOSUM62"      # Options: "BLOSUM62" or "mmseqs_result"
-    max_sequences_per_cluster: int = 50     # Maximum sequences per cluster in MMseqs2 expansion
-    
-    # Integration parameters
-    random_seed: int = 42
-    max_workers: int = 96
-    
-    def __post_init__(self):
-        """Validate configuration after initialization."""
-        if self.mmseqs_coverage < 0 or self.mmseqs_coverage > 1:
-            raise ValueError("mmseqs_coverage must be between 0 and 1")
-        if self.mmseqs_min_seq_id < 0 or self.mmseqs_min_seq_id > 1:
-            raise ValueError("mmseqs_min_seq_id must be between 0 and 1")
-        if self.similarity_threshold < 0 or self.similarity_threshold > 1:
-            raise ValueError("similarity_threshold must be between 0 and 1")
-        if self.expansion_method not in ["BLOSUM62", "mmseqs_result"]:
-            raise ValueError("expansion_method must be either 'BLOSUM62' or 'mmseqs_result'")
-        if self.plddt_threshold < 0 or self.plddt_threshold > 100:
-            raise ValueError("plddt_threshold must be between 0 and 100")
 
 @dataclass
 class PipelineConfig:
@@ -267,8 +131,6 @@ class PipelineConfig:
     general: GeneralConfig
     slurm: SlurmConfig
     pipeline_control: PipelineControlConfig
-    init_bootstrapping: InitBootstrappingConfig
-    hit_expand: HitExpandConfig
     m_fold_sampling: MFoldSamplingConfig
     sequence_voting: SequenceVotingConfig
     recompile_predict: RecompilePredictConfig
@@ -382,25 +244,16 @@ def load_pipeline_config(yaml_input: str) -> PipelineConfig:
     
     slurm_config = SlurmConfig(**yaml_config.get('slurm', {}))
     pipeline_control_config = PipelineControlConfig(**yaml_config.get('pipeline_control', {}))
-    
-    # Create init_bootstrapping config with filter_config_path from general config
-    init_bootstrapping_dict = yaml_config.get('init_bootstrapping', {})
-    init_bootstrapping_dict['filter_config_path'] = general_config.config_file
-    init_bootstrapping_config = InitBootstrappingConfig(**init_bootstrapping_dict)
-    
-    hit_expand_config = HitExpandConfig(**yaml_config.get('hit_expand', {}))
     m_fold_sampling_config = MFoldSamplingConfig(**yaml_config.get('m_fold_sampling', {}))
     sequence_voting_config = SequenceVotingConfig(**yaml_config.get('sequence_voting', {}))
     recompile_predict_config = RecompilePredictConfig(**yaml_config.get('recompile_predict', {}))
     pure_sequence_plotting_config = PureSequencePlottingConfig(**yaml_config.get('pure_sequence_plotting', {}))
-    
+
     # Combine into a single config object
     return PipelineConfig(
         general=general_config,
         slurm=slurm_config,
         pipeline_control=pipeline_control_config,
-        init_bootstrapping=init_bootstrapping_config,
-        hit_expand=hit_expand_config,
         m_fold_sampling=m_fold_sampling_config,
         sequence_voting=sequence_voting_config,
         recompile_predict=recompile_predict_config,

@@ -1,0 +1,135 @@
+# ============================================================================
+# GENERAL CONFIGURATION
+# ============================================================================
+general:
+  # Required paths and identifiers
+  source_a3m: "/fs/ess/PAA0203/xing244/AF_ClaSeq/results_updated/KaiB/default/2QKEE_colabfold-8128Seqs.a3m"
+  default_pdb: "/fs/ess/PAA0203/xing244/AF_ClaSeq/results_updated/KaiB/default/2QKEE_colabfold-8128Seqs_unrelaxed_rank_001_alphafold2_ptm_model_4_seed_000.pdb"
+  base_dir: "/fs/ess/PAA0203/xing244/AF_ClaSeq/results_updated/KaiB/run1"
+  config_file: "/fs/ess/PAA0203/xing244/AF_ClaSeq/results_updated/KaiB/configs/config_2qke_5jyt_tmscore.json"
+  protein_name: "KaiB"
+  
+  # General parameters
+  coverage_threshold: 0.5
+  num_models: 1
+  random_seed: 42
+  num_bins: 30
+  
+  # Plotting colors (applied across all stages)
+  metric1_color:  ["#F2E7F1","#AD7BAF"] # For 5jyt
+  metric2_color:   ["#AFD2D0","#468F8B"] # For 2qke 
+
+# ============================================================================
+# SLURM CONFIGURATION
+# ============================================================================
+slurm:
+  conda_env_path: "/fs/ess/PAA0203/xing244/.conda/envs/colabfold"
+  slurm_account: "PAA0203"
+  slurm_output: "/dev/null"
+  slurm_error: "/dev/null"
+  slurm_nodes: 1
+  slurm_gpus_per_task: 1
+  slurm_tasks: 1
+  slurm_cpus_per_task: 8
+  slurm_time: "01:00:00"
+  slurm_partition: "nextgen"
+  max_workers: 200
+
+# ============================================================================
+# PIPELINE CONTROL
+# ============================================================================
+pipeline_control:
+  stages:
+    # - "01_M_FOLD_SAMPLING_RUN"   # Run M-fold sampling
+    - "01_M_FOLD_SAMPLING_PLOT"  # Plot M-fold sampling results
+    - "02_VOTING_RUN"            # Run sequence voting
+    # - "03_RECOMPILE_PREDICT_RUN" # Recompile and predict structures
+    # - "04_PURE_SEQ_PLOT_RUN"     # Generate pure sequence plots
+  check_interval: 60  # Interval (seconds) to check job status
+
+
+
+# ============================================================================
+# STAGE 01: M-FOLD SAMPLING CONFIGURATION
+# ============================================================================
+m_fold_sampling:
+  # Input MSA (use source_a3m since hit_expand is removed)
+  m_fold_samp_input_a3m: "/fs/ess/PAA0203/xing244/AF_ClaSeq/results_updated/KaiB/default/2QKEE_colabfold-8128Seqs.a3m"  # Use source A3M directly
+  
+  # Sampling parameters
+  m_fold_group_size: 10
+  m_fold_random_select: null
+  rounds: 3  # Number of sampling rounds
+  
+  # Quality thresholds
+  m_fold_plddt_threshold: 0
+  
+  # Plotting configuration
+  m_fold_log_scale: true
+  m_fold_gradient_ascending: true
+  m_fold_linear_gradient: false
+  m_fold_figsize: [10, 5]
+  m_fold_show_bin_lines: true
+  
+  # Plot axis configuration
+  m_fold_count_min: 0.8
+  m_fold_count_max: 6000
+  m_fold_metric1_min: 0.4
+  m_fold_metric1_max: 1
+  m_fold_metric2_min: 0.4
+  m_fold_metric2_max: 1
+  m_fold_metric1_ticks: [0.4, 0.6, 0.8, 1.0]
+  m_fold_metric2_ticks: [0.4, 0.6, 0.8, 1.0]
+
+# ============================================================================
+# STAGE 02: SEQUENCE VOTING CONFIGURATION
+# ============================================================================
+sequence_voting:
+  vote_threshold: 0.18
+  vote_min_value: 0.4
+  vote_max_value: 1
+  vote_figsize: [10, 5]
+  vote_y_min: 0.8
+  vote_y_max: 1000
+  vote_x_ticks: [1, 10, 20, 30]
+  use_focused_bins: true
+
+# ============================================================================
+# STAGE 03: RECOMPILE & PREDICTION CONFIGURATION
+# ============================================================================
+recompile_predict:
+  # Bin selection for recompilation
+  bin_numbers_1: [26]        # Bin numbers for first metric
+  bin_numbers_2: [9]        # Bin numbers for second metric (if applicable)
+  combine_bins: false            # Whether to combine bins
+  
+  # Metric mapping (should match filter criteria names)
+  metric_name_1: "2qke_tmscore"     # Name of first metric
+  metric_name_2: "5jyt_tmscore"            # Name of second metric (if using two criteria)
+  
+  # Prediction parameters
+  prediction_num_model: 5        # Number of models per prediction
+  prediction_num_seed: 8         # Number of seeds per prediction
+
+# ============================================================================
+# STAGE 04: PURE SEQUENCE PLOTTING CONFIGURATION
+# ============================================================================
+pure_sequence_plotting:
+  # Quality threshold
+  plddt_threshold: 0
+  
+  # Plot styling
+  figsize: [10,5]
+  dpi: 600
+  
+  # Axis configuration
+  metric1_min: 0.4
+  metric1_max: 1.0
+  metric2_min: 0.4
+  metric2_max: 1.0
+  metric1_ticks: [0.4, 0.6, 0.8, 1.0]
+  metric2_ticks: [0.4, 0.6, 0.8, 1.0]
+  
+  # Performance
+  max_workers: 8
+
