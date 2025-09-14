@@ -48,7 +48,10 @@ class AFClaSeqPipeline:
         
     def _setup_logging(self) -> logging.Logger:
         """Set up logging configuration"""
+        # Use base_dir directly as specified in config
         base_dir = Path(self.config.general.base_dir)
+        base_dir.mkdir(exist_ok=True, parents=True)
+
         log_dir = base_dir / "logs"
         log_dir.mkdir(exist_ok=True, parents=True)
         
@@ -749,7 +752,7 @@ class AFClaSeqPipeline:
 def main():
     """Main entry point for the pipeline"""
     if len(sys.argv) != 2:
-        print("Usage: python run_af_claseq_pipeline.py <config.yaml>")
+        print("Usage: python run_m_fold_sampling_voting.py <config.yaml>")
         sys.exit(1)
     
     yaml_input = sys.argv[1]

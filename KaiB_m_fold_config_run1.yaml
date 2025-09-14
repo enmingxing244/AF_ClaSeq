@@ -3,8 +3,16 @@
 # ============================================================================
 general:
   # Required paths and identifiers
+  # NOTE: source_a3m is the single source of truth for query sequences
+  # The first header/sequence in this file will be used as the query sequence
+  # for all A3M file writing operations throughout the pipeline
   source_a3m: "/fs/ess/PAA0203/xing244/AF_ClaSeq/results_updated/KaiB/default/2QKEE_colabfold-8128Seqs.a3m"
-  default_pdb: "/fs/ess/PAA0203/xing244/AF_ClaSeq/results_updated/KaiB/default/2QKEE_colabfold-8128Seqs_unrelaxed_rank_001_alphafold2_ptm_model_4_seed_000.pdb"
+
+  # DEPRECATED: default_pdb is no longer used for query sequence extraction
+  # Query sequences are now extracted directly from source_a3m
+  # default_pdb: "/fs/ess/PAA0203/xing244/AF_ClaSeq/results_updated/KaiB/default/2QKEE_colabfold-8128Seqs_unrelaxed_rank_001_alphafold2_ptm_model_4_seed_000.pdb"
+
+  # Base directory - will create 'm_fold_sampling_voting' subdirectory within this
   base_dir: "/fs/ess/PAA0203/xing244/AF_ClaSeq/results_updated/KaiB/run1"
   config_file: "/fs/ess/PAA0203/xing244/AF_ClaSeq/results_updated/KaiB/configs/config_2qke_5jyt_tmscore.json"
   protein_name: "KaiB"
@@ -17,7 +25,12 @@ general:
   
   # Plotting colors (applied across all stages)
   metric1_color:  ["#F2E7F1","#AD7BAF"] # For 5jyt
-  metric2_color:   ["#AFD2D0","#468F8B"] # For 2qke 
+  metric2_color:   ["#AFD2D0","#468F8B"] # For 2qke
+
+  # Metric definitions (composite metrics configuration)
+  use_composite_metrics: false
+  metric1_name: "2qke_tmscore"  # First metric name
+  metric2_name: "5jyt_tmscore"  # Second metric name 
 
 # ============================================================================
 # SLURM CONFIGURATION
@@ -53,8 +66,9 @@ pipeline_control:
 # STAGE 01: M-FOLD SAMPLING CONFIGURATION
 # ============================================================================
 m_fold_sampling:
-  # Input MSA (use source_a3m since hit_expand is removed)
-  m_fold_samp_input_a3m: "/fs/ess/PAA0203/xing244/AF_ClaSeq/results_updated/KaiB/default/2QKEE_colabfold-8128Seqs.a3m"  # Use source A3M directly
+  # Input MSA (should match source_a3m from general config)
+  # This file serves as both the input sequences and the source for query sequence extraction
+  m_fold_samp_input_a3m: "/fs/ess/PAA0203/xing244/AF_ClaSeq/results_updated/KaiB/default/2QKEE_colabfold-8128Seqs.a3m"
   
   # Sampling parameters
   m_fold_group_size: 10

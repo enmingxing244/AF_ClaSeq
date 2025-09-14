@@ -11,8 +11,9 @@ from typing import Dict, Any, List, Optional, Tuple
 import logging
 
 from .utils import (
-    validate_file_exists, create_directory, find_files_with_pattern, WorkflowError
+    validate_file_exists, create_directory, find_files_with_pattern
 )
+from af_claseq.utils.exceptions import WorkflowError
 
 
 class ColabFoldManager:
@@ -291,7 +292,7 @@ class ColabFoldManager:
             # If squeue fails, assume no jobs are completed
             return 0
     
-    def monitor_jobs(self, job_ids: List[str], check_interval: int = 300) -> Dict[str, Any]:
+    def monitor_jobs(self, job_ids: List[str], check_interval: int = 10) -> Dict[str, Any]:
         """
         Monitor job completion with detailed progress tracking.
         

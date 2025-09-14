@@ -11,15 +11,15 @@ from typing import Dict, Any, List, Tuple, Optional
 from collections import OrderedDict
 import logging
 
+from af_claseq.divide_and_conquer.nwk_parse import split_alignment_by_clades
 
-# Import existing functionality
-sys.path.append('/fs/ess/PAA0203/xing244/afclaseq_divide_and_conquer/cluster_explore/fasttree/scripts')
-from nwk_parse import split_alignment_by_clades
-
-from .utils import (
-    read_a3m, write_a3m, process_sequences_with_header_conflicts,
-    validate_file_exists, create_directory, get_file_stem, WorkflowError
+from af_claseq.divide_and_conquer.utils import (
+    process_sequences_with_header_conflicts,
+    validate_file_exists
 )
+from af_claseq.utils.sequence_processing import write_a3m
+from af_claseq.utils.exceptions import WorkflowError
+from af_claseq.utils.sequence_processing import read_a3m_to_dict
 
 
 class PhylogeneticProcessor:
@@ -39,10 +39,11 @@ class PhylogeneticProcessor:
         self.logger = logger
         self.fasttree_binary = config['input']['fasttree_binary']
         self.clade_config = config['clade_splitting']
+        # Use working_dir directly as specified in config
         self.working_dir = config.get('output', {}).get('working_dir', '.')
-        
+
         # Create working directory
-        create_directory(self.working_dir)
+        os.makedirs(self.working_dir, exist_ok=True)
         
         # Validate FastTree binary exists
         validate_file_exists(self.fasttree_binary, "FastTree binary")
@@ -63,7 +64,7 @@ class PhylogeneticProcessor:
         validate_file_exists(a3m_file, "Input A3M file")
         
         # Read original sequences
-        sequences = read_a3m(a3m_file)
+        sequences = read_a3m_to_dict(a3m_file)
         self.logger.info(f"Read {len(sequences)} sequences from {a3m_file}")
         
         if not sequences:
@@ -120,7 +121,7 @@ class PhylogeneticProcessor:
             raise WorkflowError("Query sequence lost during preprocessing")
         
         # Write preprocessed file in working directory
-        file_stem = get_file_stem(a3m_file)
+        file_stem = Path(a3m_file).stem
         preprocessed_file = os.path.join(self.working_dir, f"{file_stem}_preprocessed.a3m")
         write_a3m(final_sequences, preprocessed_file)
         
@@ -145,7 +146,7 @@ class PhylogeneticProcessor:
         validate_file_exists(a3m_file, "Preprocessed A3M file")
         
         # Prepare output file in working directory
-        file_stem = get_file_stem(a3m_file)
+        file_stem = Path(a3m_file).stem
         tree_file = os.path.join(self.working_dir, f"{file_stem}.nwk")
         
         # FastTree command
@@ -207,26 +208,23 @@ class PhylogeneticProcessor:
         
         # Prepare output directory - create clades directory in working directory
         output_dir = os.path.join(self.working_dir, "clades")
-        create_directory(output_dir)
+        os.makedirs(output_dir, exist_ok=True)
         
         # Extract configuration parameters
         min_clade_size = self.clade_config.get('min_clade_size', 10)
         max_clade_size = self.clade_config.get('max_clade_size', 100)
-        method = self.clade_config.get('method', 'auto')
-        
-        self.logger.info(f"Clade splitting parameters:")
-        self.logger.info(f"  Method: {method}")
+
+        self.logger.info(f"Distance-guided clade splitting parameters:")
         self.logger.info(f"  Min clade size: {min_clade_size}")
         self.logger.info(f"  Max clade size: {max_clade_size}")
         self.logger.info(f"  Output directory: {output_dir}")
         
         try:
-            # Use existing nwk_parse functionality
+            # Use distance-guided phylogenetic clade splitting
             split_alignment_by_clades(
                 tree_file=tree_file,
                 a3m_file=a3m_file,
                 output_dir=output_dir,
-                method=method,
                 min_clade_size=min_clade_size,
                 max_clade_size=max_clade_size,
                 verbose=True
@@ -240,12 +238,12 @@ class PhylogeneticProcessor:
                     # Process both clade_*.a3m files AND unclustered.a3m
                     if os.path.isfile(item_path) and item.endswith('.a3m') and (item.startswith('clade_') or item == 'unclustered.a3m'):
                         # Create directory for this clade/unclustered file
-                        clade_name = get_file_stem(item)
+                        clade_name = Path(item).stem
                         if item == 'unclustered.a3m':
                             clade_name = 'unclustered'  # Special name for unclustered sequences
-                        
+
                         clade_dir = os.path.join(output_dir, clade_name)
-                        create_directory(clade_dir)
+                        os.makedirs(clade_dir, exist_ok=True)
                         
                         # Move the a3m file into the clade directory
                         clade_a3m_file = os.path.join(clade_dir, f"{clade_name}.a3m")

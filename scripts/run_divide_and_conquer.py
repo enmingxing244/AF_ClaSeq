@@ -19,14 +19,13 @@ import argparse
 import time
 from pathlib import Path
 
-# Add current directory to path for imports
-sys.path.insert(0, str(Path(__file__).parent))
-
-from src import (
-    PhylogeneticProcessor, ShuffleManager, ColabFoldManager, 
+# Import from af_claseq package structure
+from af_claseq.divide_and_conquer import (
+    PhylogeneticProcessor, ShuffleManager, ColabFoldManager,
     StructureAnalyzer, PlotGenerator
 )
-from src.utils import setup_logging, load_config, WorkflowError
+from af_claseq.divide_and_conquer.utils import setup_logging, load_config
+from af_claseq.utils.exceptions import WorkflowError, ValidationError
 
 
 class WorkflowOrchestrator:
@@ -248,6 +247,7 @@ class WorkflowOrchestrator:
         """Load previous workflow state for resuming."""
         self.logger.info(f"Loading previous state for {resume_step}")
         
+        # Use working_dir directly as specified in config
         working_dir = self.config.get('output', {}).get('working_dir', '.')
         
         if resume_step in ['step2', 'step3', 'step4', 'step5']:

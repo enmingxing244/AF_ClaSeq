@@ -11,6 +11,7 @@ from tqdm import tqdm
 
 from af_claseq.utils.sequence_processing import count_sequences_in_a3m
 from af_claseq.utils.logging_utils import get_logger
+from af_claseq.utils.sequence_processing import get_protein_sequence
 
 # Default path for TMalign executable
 DEFAULT_TMALIGN_PATH = "TMalign" # or you can put in your own path to TMalign executable
@@ -699,26 +700,6 @@ class StructureAnalyzer:
 
 
 
-def get_protein_sequence(pdb_filename: str | Path) -> str:
-    """
-    Extract the protein sequence from a PDB file.
-
-    Args:
-        pdb_filename: Path to the PDB file.
-
-    Returns:
-        The full protein sequence.
-
-    Raises:
-        Exception: If there's an error in processing the PDB file.
-    """
-    try:
-        parser = PDBParser(QUIET=True)
-        structure = parser.get_structure("Protein", pdb_filename)
-        return ''.join(str(pp.get_sequence()) for pp in PPBuilder().build_peptides(structure))
-    except Exception as e:
-        logger.error(f"Error getting protein sequence: {e}")
-        raise
 
 def load_filter_modes(file_path: str | Path) -> Dict:
     """

@@ -11,15 +11,15 @@ from typing import Dict, Any, List, Optional
 import pandas as pd
 import logging
 
-# Add AF_ClaSeq to path for imports
-sys.path.append('/fs/ess/PAA0203/xing244/AF_ClaSeq/src')
+# Now part of af_claseq package, no need for path manipulation
 
 from af_claseq.utils.structure_analysis import StructureAnalyzer as BaseStructureAnalyzer
 from af_claseq.utils.structure_analysis import load_filter_modes, apply_filters
 
-from .utils import (
-    validate_file_exists, create_directory, find_files_with_pattern, WorkflowError
+from af_claseq.divide_and_conquer.utils import (
+    validate_file_exists
 )
+from af_claseq.utils.exceptions import WorkflowError
 
 
 class StructureAnalyzer:
@@ -96,7 +96,7 @@ class StructureAnalyzer:
                 continue
             
             # Find PDB files in the shuffle directory
-            pdb_files = find_files_with_pattern(shuffle_dir, "*.pdb")
+            pdb_files = list(Path(shuffle_dir).rglob("*.pdb"))
             
             # Filter out non-structure PDB files if needed
             filtered_pdb_files = []
@@ -285,7 +285,7 @@ class StructureAnalyzer:
             # Create output directory
             output_dir = os.path.dirname(output_file)
             if output_dir:
-                create_directory(output_dir)
+                os.makedirs(output_dir, exist_ok=True)
             
             # Save to CSV
             results_df.to_csv(output_file, index=False)

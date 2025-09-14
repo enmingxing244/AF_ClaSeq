@@ -11,39 +11,42 @@ from pathlib import Path
 from typing import Dict, Any, Optional, List, Tuple
 from collections import defaultdict, OrderedDict
 
+# Import af_claseq functions for reuse
+from af_claseq.utils.sequence_processing import count_sequences_in_a3m
+from af_claseq.utils.logging_utils import setup_logger
+from af_claseq.utils.exceptions import WorkflowError
+
 
 def setup_logging(config: Dict[str, Any], log_file: Optional[str] = None) -> logging.Logger:
     """
-    Set up logging configuration for the workflow.
-    
+    Set up logging configuration for the workflow using af_claseq utilities.
+
     Args:
         config: Configuration dictionary
         log_file: Optional specific log file path
-        
+
     Returns:
         Configured logger instance
     """
     if log_file is None:
         log_file = os.path.join("logs", "dac_workflow.log")
-    
+
     # Create logs directory
     os.makedirs("logs", exist_ok=True)
-    
-    # Configure logging
-    logging.basicConfig(
+
+    # Use af_claseq logging utilities
+    logger = setup_logger(
+        name="dac_workflow",
+        log_file=log_file,
         level=logging.INFO,
-        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-        handlers=[
-            logging.FileHandler(log_file),
-            logging.StreamHandler()
-        ]
+        propagate=False,
+        add_console_handler=True
     )
-    
-    logger = logging.getLogger("dac_workflow")
+
     logger.info("=" * 50)
     logger.info("DAC Phylogenetic Workflow Started")
     logger.info("=" * 50)
-    
+
     return logger
 
 
@@ -192,71 +195,15 @@ def process_sequences_with_header_conflicts(sequences: Dict[str, str], logger: l
     return final_sequences
 
 
-def read_a3m(filename: str) -> Dict[str, str]:
-    """
-    Read a3m alignment file.
-    
-    Args:
-        filename: Path to a3m file
-        
-    Returns:
-        Dictionary mapping sequence IDs to sequences
-    """
-    records = OrderedDict()
-    with open(filename, 'r') as f:
-        current_id = None
-        current_seq = []
-        for line in f:
-            line = line.strip()
-            if line.startswith('>'):
-                if current_id:
-                    records[current_id] = ''.join(current_seq)
-                current_id = line[1:]  # Keep full header initially
-                current_seq = []
-            else:
-                current_seq.append(line)
-        if current_id:
-            records[current_id] = ''.join(current_seq)
-    return records
+# read_a3m removed - use read_a3m_to_dict directly from af_claseq.utils.sequence_processing
 
 
-def write_a3m(records: Dict[str, str], filename: str) -> None:
-    """
-    Write sequences to a3m format file.
-    
-    Args:
-        records: Dictionary mapping sequence IDs to sequences
-        filename: Output file path
-    """
-    os.makedirs(os.path.dirname(filename), exist_ok=True)
-    
-    with open(filename, 'w') as f:
-        for seq_id, seq in records.items():
-            f.write(f'>{seq_id}\n')
-            f.write(seq + '\n')
-
-
-def count_sequences_in_a3m(a3m_file: str) -> int:
-    """
-    Count the number of sequences in an a3m file.
-    
-    Args:
-        a3m_file: Path to a3m file
-        
-    Returns:
-        Number of sequences
-    """
-    try:
-        with open(a3m_file, 'r') as f:
-            return sum(1 for line in f if line.startswith('>'))
-    except FileNotFoundError:
-        return 0
 
 
 def validate_file_exists(file_path: str, description: str = "File") -> None:
     """
     Validate that a file exists, raise exception if not.
-    
+
     Args:
         file_path: Path to check
         description: Description of file for error message
@@ -265,49 +212,30 @@ def validate_file_exists(file_path: str, description: str = "File") -> None:
         raise FileNotFoundError(f"{description} not found: {file_path}")
 
 
-def create_directory(dir_path: str, description: str = "Directory") -> None:
+def create_directory(directory_path: str, description: str = "Directory") -> None:
     """
     Create directory if it doesn't exist.
-    
+
     Args:
-        dir_path: Directory path to create
+        directory_path: Path to directory to create
         description: Description for logging
     """
-    os.makedirs(dir_path, exist_ok=True)
-
-
-def get_file_stem(file_path: str) -> str:
-    """
-    Get file stem (filename without extension).
-    
-    Args:
-        file_path: File path
-        
-    Returns:
-        File stem
-    """
-    return Path(file_path).stem
+    os.makedirs(directory_path, exist_ok=True)
 
 
 def find_files_with_pattern(directory: str, pattern: str) -> List[str]:
     """
-    Find all files matching a pattern in a directory.
-    
+    Find files in directory matching a pattern.
+
     Args:
-        directory: Directory to search
-        pattern: Glob pattern
-        
+        directory: Directory to search in
+        pattern: File pattern to match
+
     Returns:
         List of matching file paths
     """
-    return list(Path(directory).rglob(pattern))
+    import glob
+    search_pattern = os.path.join(directory, pattern)
+    return glob.glob(search_pattern)
 
 
-class WorkflowError(Exception):
-    """Custom exception for workflow errors."""
-    pass
-
-
-class ValidationError(WorkflowError):
-    """Custom exception for validation errors."""
-    pass

@@ -11,10 +11,11 @@ from typing import Dict, Any, List, Optional
 from collections import OrderedDict
 import logging
 
-from .utils import (
-    read_a3m, write_a3m, create_directory, count_sequences_in_a3m, 
-    validate_file_exists, get_file_stem, WorkflowError
+from af_claseq.divide_and_conquer.utils import (
+    validate_file_exists
 )
+from af_claseq.utils.exceptions import WorkflowError
+from af_claseq.utils.sequence_processing import read_a3m_to_dict, write_a3m
 
 
 class ShuffleManager:
@@ -71,7 +72,7 @@ class ShuffleManager:
         validate_file_exists(clade_a3m_file, f"Clade A3M file for {clade_name}")
         
         # Read sequences from clade
-        sequences = read_a3m(clade_a3m_file)
+        sequences = read_a3m_to_dict(clade_a3m_file)
         
         if not sequences:
             self.logger.warning(f"No sequences found in {clade_a3m_file}")
@@ -106,7 +107,7 @@ class ShuffleManager:
         
         for shuffle_num in range(1, self.num_shuffles + 1):
             shuffle_dir = os.path.join(clade_dir, f"shuffle_{shuffle_num:02d}")
-            create_directory(shuffle_dir)
+            os.makedirs(shuffle_dir, exist_ok=True)
             shuffle_dirs.append(shuffle_dir)
             
             # Shuffle sequences
@@ -259,7 +260,7 @@ class ShuffleManager:
                 group_path = os.path.join(shuffle_dir, group_file)
                 
                 try:
-                    sequences = read_a3m(group_path)
+                    sequences = read_a3m_to_dict(group_path)
                     
                     if not sequences:
                         validation_errors.append(f"Empty group file: {group_path}")

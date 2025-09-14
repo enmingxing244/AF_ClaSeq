@@ -10,15 +10,11 @@ from typing import Dict, Any, List, Optional, Tuple
 import pandas as pd
 import logging
 
-# Add AF_ClaSeq to path for imports
-sys.path.append('/fs/ess/PAA0203/xing244/AF_ClaSeq/src')
-
 from af_claseq.utils.plotting_manager import (
-    plot_1d_distribution, create_2d_scatter_plot, create_joint_plot,
-    plot_m_fold_sampling_1d, plot_m_fold_sampling_2d
+    plot_1d_distribution, create_2d_scatter_plot, create_joint_plot
 )
 
-from .utils import create_directory, WorkflowError
+from af_claseq.utils.exceptions import WorkflowError
 
 
 class PlotGenerator:
@@ -49,7 +45,7 @@ class PlotGenerator:
         self.plot_params = self.plotting_config.get('plot_params', {})
         
         # Create output directory
-        create_directory(self.output_dir)
+        os.makedirs(self.output_dir, exist_ok=True)
         
         self.logger.info(f"Plot generation configuration:")
         self.logger.info(f"  Output directory: {self.output_dir}")

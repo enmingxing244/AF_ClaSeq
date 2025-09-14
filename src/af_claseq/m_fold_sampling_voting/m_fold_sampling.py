@@ -131,7 +131,7 @@ class MFoldSampler:
             raise ValueError("No sequences remained after filtering")
         
         filtered_a3m_path = os.path.join(self.m_fold_sampling_base_dir, "filtered_sequences.a3m")
-        write_a3m(filtered_sequences, filtered_a3m_path, reference_pdb=self.default_pdb)
+        write_a3m(filtered_sequences, filtered_a3m_path, source_a3m=self.input_a3m, prepend_query=True)
         
         return filtered_a3m_path
     
@@ -149,7 +149,6 @@ class MFoldSampler:
         num_groups = self._initial_random_split(
             input_a3m=input_a3m,
             output_dir=self.init_dir,
-            reference_pdb=self.default_pdb,
             group_size=self.group_size,
             random_select_num_seqs=self.random_select_num_seqs
         )
@@ -167,7 +166,7 @@ class MFoldSampler:
         self._create_sampling_splits_impl(
             init_dir=self.init_dir,
             output_base_dir=self.sampling_base_dir,
-            reference_pdb=self.default_pdb,
+            source_a3m=self.input_a3m,
             group_size=self.group_size
         )
         self.logger.info(f"Created {num_groups-1} sampling splits")
@@ -219,22 +218,20 @@ class MFoldSampler:
     
     @staticmethod
     def _initial_random_split(
-        input_a3m: str, 
+        input_a3m: str,
         output_dir: str,
-        reference_pdb: str,
         group_size: int,
         random_select_num_seqs: Optional[int] = None
     ) -> int:
         """
         Perform initial random split of sequences.
-        
+
         Args:
             input_a3m: Path to input A3M file
             output_dir: Directory to write output files
-            reference_pdb: Path to reference PDB file
             group_size: Size of each sequence group
             random_select_num_seqs: Number of sequences to randomly select
-            
+
         Returns:
             Number of groups created
         """
@@ -253,24 +250,24 @@ class MFoldSampler:
         
         for i, group in enumerate(groups, 1):
             output_file = os.path.join(output_dir, f'group_{i}.a3m')
-            write_a3m(group, output_file, reference_pdb=reference_pdb)
+            write_a3m(group, output_file, source_a3m=input_a3m, prepend_query=True)
         
         return len(groups)
     
     @staticmethod
     def _create_sampling_splits_impl(
-        init_dir: str, 
-        output_base_dir: str, 
-        reference_pdb: str,
+        init_dir: str,
+        output_base_dir: str,
+        source_a3m: str,
         group_size: int
     ) -> None:
         """
         Create sampling splits by exhaustively leaving one group out at a time.
-        
+
         Args:
             init_dir: Directory containing initial groups
             output_base_dir: Base directory for output sampling splits
-            reference_pdb: Path to reference PDB file
+            source_a3m: Path to source A3M file for query sequence
             group_size: Size of each sequence group
         """
         groups = [f for f in os.listdir(init_dir) if f.endswith('.a3m')]
@@ -294,4 +291,4 @@ class MFoldSampler:
             
             for j, group in enumerate(new_groups, 1):
                 output_file = os.path.join(sample_dir, f'group_{j}.a3m')
-                write_a3m(group, output_file, reference_pdb=reference_pdb)
+                write_a3m(group, output_file, source_a3m=source_a3m, prepend_query=True)

@@ -116,7 +116,7 @@ Available composite_metrics metrics: ['2g2i_A_loop_dfg_weighted_sum_rmsd', '2hiw
    - Integrated validation into `load_pipeline_config()`
 
 ### Pipeline Runner
-2. **`scripts/run_af_claseq_pipeline.py`**:
+2. **`scripts/run_m_fold_sampling_voting.py`**:
    - Updated M-fold sampling plotting to use selected metrics
    - Updated sequence voting to process selected metrics
    - Updated recompile & predict to use selected metrics
