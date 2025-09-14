@@ -46,12 +46,41 @@ class PlotGenerator:
         
         # Create output directory
         os.makedirs(self.output_dir, exist_ok=True)
-        
+
+        # Create metric mapping (metric1, metric2, etc.)
+        self.metric_mapping = self._create_metric_mapping()
+
         self.logger.info(f"Plot generation configuration:")
         self.logger.info(f"  Output directory: {self.output_dir}")
         self.logger.info(f"  Metrics to plot: {self.metrics}")
+        self.logger.info(f"  Metric mapping: {self.metric_mapping}")
         self.logger.info(f"  Plot types: {self.plot_types}")
-    
+
+    def _create_metric_mapping(self) -> Dict[str, str]:
+        """
+        Create mapping from actual metric names to generic names (metric1, metric2, etc.).
+
+        Returns:
+            Dictionary mapping actual metric names to generic names
+        """
+        mapping = {}
+        for i, metric in enumerate(self.metrics, 1):
+            generic_name = f"metric{i}"
+            mapping[metric] = generic_name
+        return mapping
+
+    def _get_generic_metric_name(self, metric: str) -> str:
+        """
+        Get the generic name (metric1, metric2, etc.) for a metric.
+
+        Args:
+            metric: Actual metric name
+
+        Returns:
+            Generic metric name, or original name if not found in mapping
+        """
+        return self.metric_mapping.get(metric, metric)
+
     def generate_1d_plots(self, results_df: pd.DataFrame) -> List[str]:
         """
         Generate 1D distribution plots for all specified metrics.
@@ -197,13 +226,16 @@ class PlotGenerator:
                 try:
                     plot_params = self._get_2d_plot_params(metric, plddt_metric)
                     
+                    # Override color_metric in plot_params to use the plddt metric
+                    plot_params_corr = plot_params.copy()
+                    plot_params_corr['color_metric'] = plddt_metric
+
                     correlation_path = create_2d_scatter_plot(
                         results_df=results_df,
                         metric_name1=metric,
                         metric_name2=plddt_metric,
                         output_dir=self.output_dir,
-                        color_metric=plddt_metric,
-                        **plot_params,
+                        **plot_params_corr,
                         logger=self.logger
                     )
                     
@@ -220,15 +252,15 @@ class PlotGenerator:
     def _get_metric_plot_params(self, metric: str) -> Dict[str, Any]:
         """
         Get plotting parameters for a specific metric.
-        
+
         Args:
             metric: Metric name
-            
+
         Returns:
             Dictionary of plotting parameters
         """
         params = {}
-        
+
         # Default parameters
         params.update({
             'n_plot_bins': 50,
@@ -238,59 +270,80 @@ class PlotGenerator:
             'end_color': '#FFFFFF',
             'show_bin_lines': False
         })
-        
+
         # Override with global plot parameters
         params.update(self.plot_params.get('1d', {}))
-        
-        # Override with metric-specific parameters
+
+        # Get generic metric name for config lookup
+        generic_metric = self._get_generic_metric_name(metric)
+
+        # Override with metric-specific parameters (try both actual and generic names)
         if metric in self.plot_params:
             params.update(self.plot_params[metric])
-        
+        elif generic_metric in self.plot_params:
+            params.update(self.plot_params[generic_metric])
+
         # Add metric range if specified (for 1D plots, this becomes x-axis range)
+        range_config = None
         if metric in self.metric_ranges:
             range_config = self.metric_ranges[metric]
+        elif generic_metric in self.metric_ranges:
+            range_config = self.metric_ranges[generic_metric]
+
+        if range_config:
             params.update({
                 'x_min': range_config.get('min'),
                 'x_max': range_config.get('max'),
                 'x_ticks': range_config.get('ticks')
             })
-        
+
         # Add colors if specified
+        colors = None
         if metric in self.colors:
             colors = self.colors[metric]
-            if isinstance(colors, list) and len(colors) >= 2:
-                params.update({
-                    'initial_color': colors[0],
-                    'end_color': colors[1]
-                })
+        elif generic_metric in self.colors:
+            colors = self.colors[generic_metric]
+
+        if colors and isinstance(colors, list) and len(colors) >= 2:
+            params.update({
+                'initial_color': colors[0],
+                'end_color': colors[1]
+            })
         
         return params
     
     def _get_2d_plot_params(self, metric1: str, metric2: str) -> Dict[str, Any]:
         """
         Get plotting parameters for 2D plots.
-        
+
         Args:
             metric1: First metric name
             metric2: Second metric name
-            
+
         Returns:
             Dictionary of plotting parameters
         """
         params = {}
-        
+
         # Default parameters
         params.update({
             'color_metric': 'plddt'
         })
-        
+
         # Override with global 2D parameters
         params.update(self.plot_params.get('2d', {}))
-        
+
         # Add metric ranges (dynamically assign to x or y axis based on position)
         for i, metric in enumerate([metric1, metric2], 1):
+            generic_metric = self._get_generic_metric_name(metric)
+
+            range_config = None
             if metric in self.metric_ranges:
                 range_config = self.metric_ranges[metric]
+            elif generic_metric in self.metric_ranges:
+                range_config = self.metric_ranges[generic_metric]
+
+            if range_config:
                 if i == 1:  # First metric (x-axis)
                     params.update({
                         'x_min': range_config.get('min'),
