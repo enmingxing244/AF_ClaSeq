@@ -94,9 +94,9 @@ def main():
     plt.legend()
     plt.tight_layout()
 
-    # Save plot
-    output_plot = f"{pdb_dir}/6xr6_vs_6xrg_composite_rmsd_scatter.png"
-    plt.savefig(output_plot, dpi=300, bbox_inches='tight')
+    # Save plot as SVG
+    output_plot = f"{pdb_dir}/6xr6_vs_6xrg_composite_rmsd_scatter.svg"
+    plt.savefig(output_plot, format='svg', bbox_inches='tight')
     print(f"\nScatter plot saved to: {output_plot}")
 
     # Save data

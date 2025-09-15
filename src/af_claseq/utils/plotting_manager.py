@@ -435,6 +435,7 @@ def plot_1d_distribution(
     # Save plot
     plot_path = os.path.join(output_dir, f'{metric_name}_1d_distribution.png')
     plt.savefig(plot_path, dpi=PLOT_PARAMS['dpi'], bbox_inches='tight')
+    plt.savefig(plot_path.replace('.png', '.svg'), format='svg', bbox_inches='tight')
     plt.close()
 
     log.info(f"Saved 1D distribution plot to: {plot_path}")
@@ -537,6 +538,7 @@ def create_2d_scatter_plot(
     plt.tight_layout()
     plot_path = os.path.join(output_dir, f'{metric_name1}_{metric_name2}_scatter_{color_metric}.png')
     plt.savefig(plot_path, bbox_inches='tight', dpi=PLOT_PARAMS['dpi'])
+    plt.savefig(plot_path.replace('.png', '.svg'), format='svg', bbox_inches='tight')
     plt.close()
     
     log.info(f"Saved 2D scatter plot to: {plot_path}")
@@ -623,6 +625,7 @@ def create_joint_plot(
 
     plot_path = os.path.join(output_dir, f'{metric_name1}_{metric_name2}_joint_{color_metric}.png')
     plt.savefig(plot_path, bbox_inches='tight', dpi=PLOT_PARAMS['dpi'])
+    plt.savefig(plot_path.replace('.png', '.svg'), format='svg', bbox_inches='tight')
     plt.close()
     
     log.info(f"Saved joint plot to: {plot_path}")

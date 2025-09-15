@@ -129,6 +129,7 @@ class ImpactPlotter:
             # Save plot
             plot_file = output_dir / "impact_score_distribution.png"
             plt.savefig(plot_file, dpi=self.plotting_config.dpi, bbox_inches='tight')
+            plt.savefig(str(plot_file).replace('.png', '.svg'), format='svg', bbox_inches='tight')
             plt.close()
 
             self.logger.info(f"Created impact histogram: {plot_file}")
@@ -176,6 +177,7 @@ class ImpactPlotter:
             # Save plot
             plot_file = output_dir / "full_vs_loo_scatter.png"
             plt.savefig(plot_file, dpi=self.plotting_config.dpi, bbox_inches='tight')
+            plt.savefig(str(plot_file).replace('.png', '.svg'), format='svg', bbox_inches='tight')
             plt.close()
 
             self.logger.info(f"Created scatter plot: {plot_file}")
@@ -235,6 +237,7 @@ class ImpactPlotter:
             # Save plot
             plot_file = output_dir / "combined_impact_analysis.png"
             plt.savefig(plot_file, dpi=self.plotting_config.dpi, bbox_inches='tight')
+            plt.savefig(str(plot_file).replace('.png', '.svg'), format='svg', bbox_inches='tight')
             plt.close()
 
             self.logger.info(f"Created combined plot: {plot_file}")
@@ -295,6 +298,7 @@ class ImpactPlotter:
             # Save plot
             plot_file = output_dir / f"top_{top_n}_impact_sequences.png"
             plt.savefig(plot_file, dpi=self.plotting_config.dpi, bbox_inches='tight')
+            plt.savefig(str(plot_file).replace('.png', '.svg'), format='svg', bbox_inches='tight')
             plt.close()
 
             self.logger.info(f"Created top sequences plot: {plot_file}")

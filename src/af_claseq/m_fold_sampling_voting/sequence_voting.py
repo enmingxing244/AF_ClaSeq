@@ -712,6 +712,7 @@ class SequenceVotingPlotter:
         os.makedirs(self.output_dir, exist_ok=True)
         plot_path = os.path.join(self.output_dir, 'sequence_voting_distribution.png')
         plt.savefig(plot_path, dpi=600, bbox_inches='tight')
+        plt.savefig(plot_path.replace('.png', '.svg'), format='svg', bbox_inches='tight')
         plt.close()
         
         self.logger.info(f"Created distribution plot: {plot_path}")
