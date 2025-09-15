@@ -7,28 +7,7 @@ import os
 from ete3 import Tree
 import argparse
 
-from af_claseq.utils.sequence_processing import write_a3m
-
-
-def read_a3m(filename):
-    """Read a3m alignment file"""
-    # a3m is similar to FASTA format
-    records = {}
-    with open(filename, 'r') as f:
-        current_id = None
-        current_seq = []
-        for line in f:
-            line = line.strip()
-            if line.startswith('>'):
-                if current_id:
-                    records[current_id] = ''.join(current_seq)
-                current_id = line[1:].split()[0]  # Get ID without description
-                current_seq = []
-            else:
-                current_seq.append(line)
-        if current_id:
-            records[current_id] = ''.join(current_seq)
-    return records
+from af_claseq.utils.sequence_processing import write_a3m, read_a3m_to_dict
 
 def get_monophyletic_clades(tree, min_size=3, max_size=None):
     """
@@ -335,7 +314,14 @@ def split_alignment_by_clades(tree_file, a3m_file, output_dir="clades",
 
     # Read alignment
     print(f"Reading alignment from {a3m_file}...")
-    alignment = read_a3m(a3m_file)
+    alignment_raw = read_a3m_to_dict(a3m_file)
+
+    # Normalize headers by removing '>' prefix to match tree sequence names
+    alignment = {}
+    for header, sequence in alignment_raw.items():
+        clean_header = header.lstrip('>')  # Remove '>' prefix if present
+        alignment[clean_header] = sequence
+
     print(f"Total sequences in alignment: {len(alignment)}")
 
     # Get clades using distance-guided algorithm

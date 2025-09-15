@@ -17,9 +17,8 @@ from af_claseq.divide_and_conquer.utils import (
     process_sequences_with_header_conflicts,
     validate_file_exists
 )
-from af_claseq.utils.sequence_processing import write_a3m
+from af_claseq.utils.sequence_processing import write_a3m, read_a3m_to_dict, filter_a3m_by_coverage
 from af_claseq.utils.exceptions import WorkflowError
-from af_claseq.utils.sequence_processing import read_a3m_to_dict
 
 
 class PhylogeneticProcessor:
@@ -64,17 +63,23 @@ class PhylogeneticProcessor:
         validate_file_exists(a3m_file, "Input A3M file")
         
         # Read original sequences
-        sequences = read_a3m_to_dict(a3m_file)
-        self.logger.info(f"Read {len(sequences)} sequences from {a3m_file}")
-        
-        if not sequences:
+        sequences_raw = read_a3m_to_dict(a3m_file)
+        self.logger.info(f"Read {len(sequences_raw)} sequences from {a3m_file}")
+
+        if not sequences_raw:
             raise WorkflowError(f"No sequences found in {a3m_file}")
-        
+
+        # Normalize headers by removing '>' prefix to match tree sequence names
+        sequences = {}
+        for header, sequence in sequences_raw.items():
+            clean_header = header.lstrip('>')  # Remove '>' prefix if present
+            sequences[clean_header] = sequence
+
         # Extract query sequence (first sequence)
         sequence_items = list(sequences.items())
-        query_header, original_query_sequence = sequence_items[0]
+        query_header, query_sequence = sequence_items[0]
         self.logger.info(f"Query sequence header: {query_header}")
-        self.logger.info(f"Original query sequence length: {len(original_query_sequence)}")
+        self.logger.info(f"Query sequence length: {len(query_sequence)}")
         
         # Remove lowercase letters from sequences (insertions relative to reference)
         self.logger.info("Removing lowercase letters (insertions) from sequences...")
@@ -83,30 +88,31 @@ class PhylogeneticProcessor:
             # Remove lowercase letters, keeping only uppercase letters and gaps
             cleaned_seq = ''.join(c for c in sequence if c.isupper() or c == '-')
             cleaned_sequences[header] = cleaned_seq
-        
-        # Log cleaning statistics
-        original_lengths = [len(seq) for seq in sequences.values()]
-        cleaned_lengths = [len(seq) for seq in cleaned_sequences.values()]
-        if original_lengths and cleaned_lengths:
-            avg_original = sum(original_lengths) / len(original_lengths)
-            avg_cleaned = sum(cleaned_lengths) / len(cleaned_lengths)
-            self.logger.info(f"Sequence cleaning: avg length {avg_original:.1f} -> {avg_cleaned:.1f}")
-        
-        # Process sequences for header conflicts and deduplication
+
+        # Process sequences for header conflicts and deduplication FIRST
         processed_sequences = process_sequences_with_header_conflicts(cleaned_sequences, self.logger)
+
+        # Apply coverage filter AFTER header processing (maintains consistent headers)
+        coverage_config = self.clade_config.get('coverage_filter', {})
+        if coverage_config.get('enabled', False):
+            threshold = coverage_config.get('threshold', 0.8)
+            original_count = len(processed_sequences)
+            self.logger.info(f"Applying coverage filter (threshold: {threshold:.1%})")
+
+            processed_sequences = filter_a3m_by_coverage(processed_sequences, threshold)
+
+            filtered_count = original_count - len(processed_sequences)
+            self.logger.info(f"Coverage filter result: {len(processed_sequences)} sequences retained, "
+                           f"{filtered_count} sequences filtered out")
         
         # Ensure query sequence is first with its processed header
         final_sequences = OrderedDict()
         query_found = False
         processed_query_header = None
         
-        # Get the cleaned query sequence  
-        cleaned_query_sequence = ''.join(c for c in original_query_sequence if c.isupper() or c == '-')
-        self.logger.info(f"Cleaned query sequence length: {len(cleaned_query_sequence)}")
-        
-        # Find the query sequence in processed sequences
+        # Find the query sequence in processed sequences (query should already be clean)
         for header, sequence in processed_sequences.items():
-            if sequence == cleaned_query_sequence and not query_found:
+            if sequence == query_sequence and not query_found:
                 processed_query_header = header
                 final_sequences[header] = sequence
                 query_found = True
@@ -129,7 +135,7 @@ class PhylogeneticProcessor:
         self.logger.info(f"Final sequence count: {len(final_sequences)}")
         self.logger.info(f"Processed query header: {processed_query_header}")
         
-        return preprocessed_file, processed_query_header, cleaned_query_sequence
+        return preprocessed_file, processed_query_header, query_sequence
     
     def run_fasttree(self, a3m_file: str) -> str:
         """
@@ -235,12 +241,10 @@ class PhylogeneticProcessor:
             if os.path.exists(output_dir):
                 for item in os.listdir(output_dir):
                     item_path = os.path.join(output_dir, item)
-                    # Process both clade_*.a3m files AND unclustered.a3m
-                    if os.path.isfile(item_path) and item.endswith('.a3m') and (item.startswith('clade_') or item == 'unclustered.a3m'):
-                        # Create directory for this clade/unclustered file
+                    # Process clade_*.a3m files
+                    if os.path.isfile(item_path) and item.endswith('.a3m') and item.startswith('clade_'):
+                        # Create directory for this clade file
                         clade_name = Path(item).stem
-                        if item == 'unclustered.a3m':
-                            clade_name = 'unclustered'  # Special name for unclustered sequences
 
                         clade_dir = os.path.join(output_dir, clade_name)
                         os.makedirs(clade_dir, exist_ok=True)
@@ -256,14 +260,10 @@ class PhylogeneticProcessor:
             if not clade_dirs:
                 raise WorkflowError("No clades were generated from tree splitting")
             
-            # Count regular clades vs unclustered
-            regular_clades = [d for d in clade_dirs if not os.path.basename(d) == 'unclustered']
-            unclustered_dirs = [d for d in clade_dirs if os.path.basename(d) == 'unclustered']
-            
-            self.logger.info(f"Successfully created {len(regular_clades)} clades + {len(unclustered_dirs)} unclustered group:")
-            
-            # Log regular clades first
-            for i, clade_dir in enumerate(regular_clades, 1):
+            self.logger.info(f"Successfully created {len(clade_dirs)} clades:")
+
+            # Log clades
+            for i, clade_dir in enumerate(clade_dirs, 1):
                 clade_a3m = os.path.join(clade_dir, f"{os.path.basename(clade_dir)}.a3m")
                 if os.path.exists(clade_a3m):
                     with open(clade_a3m, 'r') as f:
@@ -272,15 +272,6 @@ class PhylogeneticProcessor:
                 else:
                     self.logger.warning(f"  {i}. {clade_dir}: A3M file not found")
             
-            # Log unclustered separately if it exists
-            for clade_dir in unclustered_dirs:
-                clade_a3m = os.path.join(clade_dir, f"{os.path.basename(clade_dir)}.a3m")
-                if os.path.exists(clade_a3m):
-                    with open(clade_a3m, 'r') as f:
-                        seq_count = sum(1 for line in f if line.startswith('>'))
-                    self.logger.info(f"  UNCLUSTERED: {clade_dir}: {seq_count} sequences")
-                else:
-                    self.logger.warning(f"  UNCLUSTERED: {clade_dir}: A3M file not found")
             
             return clade_dirs
             
@@ -305,7 +296,7 @@ class PhylogeneticProcessor:
         
         try:
             # Step 1: Preprocess A3M file
-            preprocessed_file, processed_query_header, cleaned_query_sequence = self.preprocess_a3m(a3m_file)
+            preprocessed_file, processed_query_header, query_sequence = self.preprocess_a3m(a3m_file)
             
             # Step 2: Run FastTree
             tree_file = self.run_fasttree(preprocessed_file)
@@ -316,16 +307,10 @@ class PhylogeneticProcessor:
             self.logger.info("=" * 50)
             self.logger.info("PHYLOGENETIC PROCESSING COMPLETED")
             
-            regular_clades = [d for d in clade_dirs if not os.path.basename(d) == 'unclustered']
-            unclustered_dirs = [d for d in clade_dirs if os.path.basename(d) == 'unclustered']
-            
-            if unclustered_dirs:
-                self.logger.info(f"Generated {len(regular_clades)} clades + 1 unclustered group (total: {len(clade_dirs)} groups)")
-            else:
-                self.logger.info(f"Generated {len(clade_dirs)} clades (no unclustered sequences)")
+            self.logger.info(f"Generated {len(clade_dirs)} clades")
             self.logger.info("=" * 50)
             
-            return clade_dirs, processed_query_header, cleaned_query_sequence
+            return clade_dirs, processed_query_header, query_sequence
             
         except Exception as e:
             self.logger.error("=" * 50)
