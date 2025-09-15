@@ -21,11 +21,12 @@ from pathlib import Path
 
 # Import from af_claseq package structure
 from af_claseq.divide_and_conquer import (
-    PhylogeneticProcessor, ShuffleManager, ColabFoldManager,
+    PhylogeneticProcessor, ShuffleManager,
     StructureAnalyzer, PlotGenerator
 )
-from af_claseq.divide_and_conquer.utils import setup_logging, load_config
+from af_claseq.divide_and_conquer.utils import setup_logging, load_config, find_files_with_pattern
 from af_claseq.utils.exceptions import WorkflowError, ValidationError
+from af_claseq.utils.slurm_utils import SlurmJobSubmitter
 
 
 class WorkflowOrchestrator:
@@ -47,7 +48,6 @@ class WorkflowOrchestrator:
         # Initialize components
         self.phylo_processor = None
         self.shuffle_manager = None
-        self.colabfold_manager = None
         self.structure_analyzer = None
         self.plot_generator = None
         
@@ -99,29 +99,97 @@ class WorkflowOrchestrator:
     def step_3_colabfold_jobs(self) -> None:
         """Step 3: ColabFold structure prediction job submission and monitoring."""
         self.logger.info("STEP 3: COLABFOLD STRUCTURE PREDICTION")
-        
+
         if not self.shuffle_dirs:
             raise WorkflowError("No shuffle directories available. Run Step 2 first.")
-        
-        # Initialize ColabFold manager
-        self.colabfold_manager = ColabFoldManager(self.config, self.logger)
-        
-        # Submit all jobs
-        job_ids = self.colabfold_manager.submit_all_jobs(self.shuffle_dirs)
-        
-        if not job_ids:
-            raise WorkflowError("No ColabFold jobs were submitted successfully")
-        
-        # Monitor jobs to completion
-        results = self.colabfold_manager.monitor_jobs(job_ids)
-        
-        completed_jobs = len(results['completed_jobs'])
-        failed_jobs = len(results['failed_jobs'])
-        
-        if completed_jobs == 0:
-            raise WorkflowError("No ColabFold jobs completed successfully")
-        
-        self.logger.info(f"Step 3 completed: {completed_jobs} jobs completed, {failed_jobs} failed")
+
+        # Extract configuration parameters
+        colabfold_config = self.config.get('colabfold', {})
+        slurm_config = self.config.get('slurm', {})
+
+        # Initialize SlurmJobSubmitter with ColabFold parameters
+        slurm_submitter = SlurmJobSubmitter(
+            conda_env_path=colabfold_config.get('conda_env', 'colabfold'),
+            slurm_account=slurm_config.get('account', 'PAA0203'),
+            slurm_partition=slurm_config.get('partition', 'nextgen'),
+            slurm_time=slurm_config.get('time', '00:30:00'),
+            slurm_cpus_per_task=slurm_config.get('cpus', 8),
+            job_name_prefix="cf",
+            num_models=colabfold_config.get('num_models', 1),
+            num_seeds=colabfold_config.get('num_seeds', 1)
+        )
+
+        self.logger.info("==" * 25)
+        self.logger.info("COLABFOLD JOB SUBMISSION STARTED")
+        self.logger.info("==" * 25)
+
+        # Prepare directories and job IDs for batch processing
+        valid_dirs = []
+        job_ids = []
+        failed_prep = []
+
+        for shuffle_dir in self.shuffle_dirs:
+            # Check for A3M files
+            a3m_files = find_files_with_pattern(shuffle_dir, "*.a3m")
+
+            if not a3m_files:
+                self.logger.warning(f"No A3M files found in {shuffle_dir}, skipping")
+                failed_prep.append(shuffle_dir)
+                continue
+
+            # Clean directory of non-sequence files before submission
+            self._clean_directory_for_colabfold(shuffle_dir)
+
+            # Generate job ID
+            clade_name = os.path.basename(os.path.dirname(shuffle_dir))
+            shuffle_name = os.path.basename(shuffle_dir)
+            job_id = f"cf_{clade_name}_{shuffle_name}"
+
+            valid_dirs.append(shuffle_dir)
+            job_ids.append(job_id)
+            self.logger.info(f"Prepared: {job_id} ({len(a3m_files)} A3M files)")
+
+        if not valid_dirs:
+            raise WorkflowError("No valid shuffle directories found for ColabFold submission")
+
+        self.logger.info(f"Processing {len(valid_dirs)} directories concurrently")
+        self.logger.info(f"Failed preparations: {len(failed_prep)}")
+
+        # Use SlurmJobSubmitter's high-level concurrent processing method
+        max_workers = colabfold_config.get('max_concurrent_jobs', 90)
+        slurm_submitter.process_folders_concurrently(
+            folders=valid_dirs,
+            job_ids=job_ids,
+            max_workers=max_workers
+        )
+
+        # process_folders_concurrently is a blocking method that handles everything
+        self.logger.info("==" * 25)
+        self.logger.info("COLABFOLD JOB PROCESSING COMPLETED")
+        self.logger.info(f"Processed {len(valid_dirs)} directories")
+        self.logger.info(f"Failed preparations: {len(failed_prep)}")
+        self.logger.info("==" * 25)
+
+    def _clean_directory_for_colabfold(self, input_dir: str) -> None:
+        """
+        Clean directory of non-A3M files before ColabFold submission.
+
+        Args:
+            input_dir: Directory to clean
+        """
+        input_path = Path(input_dir)
+        if not input_path.is_dir():
+            return
+
+        cleaned_files = []
+        for file in input_path.iterdir():
+            if file.is_file() and file.suffix.lower() not in ['.a3m', '.fasta', '.fas']:
+                self.logger.debug(f"Removing non-sequence file: {file}")
+                file.unlink(missing_ok=True)
+                cleaned_files.append(str(file))
+
+        if cleaned_files:
+            self.logger.info(f"Cleaned {len(cleaned_files)} non-sequence files from {input_dir}")
     
     def step_4_structure_analysis(self) -> None:
         """Step 4: Multi-metric structure analysis."""

@@ -96,11 +96,24 @@ class ShuffleManager:
             self.logger.warning(f"No non-query sequences in clade {clade_name}")
             return []
         
-        # Calculate number of groups
-        num_groups = math.ceil(sequence_count / self.group_size)
-        actual_group_size = math.ceil(sequence_count / num_groups)
-        
-        self.logger.info(f"  Will create {num_groups} groups of ~{actual_group_size} sequences each")
+        # Calculate number of groups with smart remainder handling
+        full_groups = sequence_count // self.group_size
+        remainder = sequence_count % self.group_size
+
+        if remainder == 0:
+            # Perfect division - create full_groups of exact group_size
+            num_groups = full_groups
+            group_sizes = [self.group_size] * num_groups
+        elif full_groups >= 1:
+            # Has remainder - merge with second-to-last group to avoid small final group
+            num_groups = full_groups
+            group_sizes = [self.group_size] * (num_groups - 1) + [self.group_size + remainder]
+        else:
+            # Too few sequences for even one full group - create single group
+            num_groups = 1
+            group_sizes = [sequence_count]
+
+        self.logger.info(f"  Will create {num_groups} groups with sizes: {group_sizes}")
         
         # Create shuffle directories
         shuffle_dirs = []
@@ -114,15 +127,17 @@ class ShuffleManager:
             seq_items = list(clade_sequences.items())
             random.shuffle(seq_items)
             
-            # Split into groups
+            # Split into groups using calculated group sizes
+            start_idx = 0
             for group_num in range(1, num_groups + 1):
-                start_idx = (group_num - 1) * actual_group_size
-                end_idx = min(start_idx + actual_group_size, len(seq_items))
-                
+                current_group_size = group_sizes[group_num - 1]
+                end_idx = start_idx + current_group_size
+
                 if start_idx >= len(seq_items):
                     break
-                
+
                 group_sequences = seq_items[start_idx:end_idx]
+                start_idx = end_idx
                 
                 # Create group file with query sequence first
                 group_file = os.path.join(shuffle_dir, f"group_{group_num:03d}.a3m")
@@ -187,43 +202,21 @@ class ShuffleManager:
             clade_dirs: List of clade directories
             shuffle_dirs: List of shuffle directories
         """
-        self.logger.info("Clade Shuffle and Split Summary")
         self.logger.info("=" * 50)
-        self.logger.info(f"Clades directory: {os.path.dirname(clade_dirs[0]) if clade_dirs else 'N/A'}")
-        self.logger.info(f"Number of shuffles: {self.num_shuffles}")
-        self.logger.info(f"Group size: {self.group_size}")
-        
-        if self.random_seed is not None:
-            self.logger.info(f"Random seed: {self.random_seed}")
-        
-        self.logger.info("\nProcessing complete. Check each clade subdirectory for results.")
-        self.logger.info("\nDirectory structure:")
-        self.logger.info("  clades/")
-        
+        self.logger.info("SHUFFLE PROCESSING SUMMARY")
+        self.logger.info(f"Processed {len(clade_dirs)} clades with {self.num_shuffles} shuffles each")
+
+        # Count total sequences per clade
         for clade_dir in clade_dirs:
             clade_name = os.path.basename(clade_dir)
-            self.logger.info(f"    {clade_name}/")
-            
-            # Count groups in first shuffle to show structure
-            first_shuffle = os.path.join(clade_dir, "shuffle_01")
-            if os.path.exists(first_shuffle):
-                group_files = [f for f in os.listdir(first_shuffle) if f.startswith('group_') and f.endswith('.a3m')]
-                group_count = len(group_files)
-                
-                for shuffle_num in range(1, min(4, self.num_shuffles + 1)):  # Show first 3 shuffles
-                    self.logger.info(f"        shuffle_{shuffle_num:02d}/")
-                    if shuffle_num == 1:
-                        for group_num in range(1, min(4, group_count + 1)):  # Show first 3 groups
-                            self.logger.info(f"          group_{group_num:03d}.a3m")
-                        if group_count > 3:
-                            self.logger.info(f"          ... ({group_count - 3} more groups)")
-                    else:
-                        self.logger.info(f"          group_001.a3m")
-                        self.logger.info(f"          group_002.a3m")
-                        self.logger.info("          ...")
-                
-                if self.num_shuffles > 3:
-                    self.logger.info(f"        ... (shuffle_04 to shuffle_{self.num_shuffles:02d})")
+            clade_a3m_file = os.path.join(clade_dir, f"{clade_name}.a3m")
+
+            if os.path.exists(clade_a3m_file):
+                with open(clade_a3m_file, 'r') as f:
+                    seq_count = sum(1 for line in f if line.startswith('>'))
+                self.logger.info(f"  {clade_name}: {seq_count} sequences")
+
+        self.logger.info("=" * 50)
     
     def validate_shuffle_results(self, shuffle_dirs: List[str]) -> bool:
         """
