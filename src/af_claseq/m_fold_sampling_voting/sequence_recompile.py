@@ -400,8 +400,9 @@ class SequenceRecompiler:
         # Save plot
         plot_dir = os.path.join(self.output_dir, "plots")
         os.makedirs(plot_dir, exist_ok=True)
-        plt.savefig(os.path.join(plot_dir, f'{target_bin}_sequence_vote_ratios.png'), 
+        plt.savefig(os.path.join(plot_dir, f'{target_bin}_sequence_vote_ratios.png'),
                    dpi=600, bbox_inches='tight')
+        plt.savefig(os.path.join(plot_dir, f'{target_bin}_sequence_vote_ratios.svg'), format='svg', bbox_inches='tight')
         plt.close()
         
         self.logger.info(f"Created vote distribution plot for bin {target_bin}")

@@ -997,6 +997,7 @@ class OccurrenceVotingManager:
             plt.tight_layout()
             occurrence_bar_plot = plots_dir / "top_sequence_occurrences.png"
             plt.savefig(occurrence_bar_plot, dpi=300, bbox_inches='tight', facecolor='white')
+            plt.savefig(str(occurrence_bar_plot).replace('.png', '.svg'), format='svg', bbox_inches='tight', facecolor='white')
             plt.close()
             plot_files.append(str(occurrence_bar_plot))
             self.logger.info(f"  Generated enhanced occurrence bar chart: {occurrence_bar_plot}")
