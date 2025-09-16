@@ -28,7 +28,6 @@ class SequenceRecompiler:
         self,
         output_dir: str,
         source_msa: str,
-        default_pdb: str,
         voting_results: str,
         bin_numbers: Union[List[int], int],
         num_total_bins: int = 20,
@@ -36,7 +35,8 @@ class SequenceRecompiler:
         combine_bins: bool = False,
         ratio_colorbar_min_max: Optional[Tuple[float, float]] = None,
         raw_votes_json: Optional[str] = None,
-        logger: Optional[logging.Logger] = None
+        logger: Optional[logging.Logger] = None,
+        default_pdb: Optional[str] = None
     ):
         """
         Initialize the SequenceRecompiler.
@@ -44,7 +44,7 @@ class SequenceRecompiler:
         Args:
             output_dir: Output directory for recompiled sequences
             source_msa: Path to source MSA file
-            default_pdb: Path to reference PDB file for getting query sequence
+            default_pdb: Optional path to reference PDB file (deprecated - query sequence read from source_msa)
             voting_results: Path to voting results CSV file
             bin_numbers: List of bin numbers or single bin number to compile sequences from
             num_total_bins: Number of total bins to include in vote distribution plots
@@ -209,13 +209,19 @@ class SequenceRecompiler:
     
     def get_query_sequence(self) -> str:
         """
-        Get query sequence from PDB file with caching.
-        
+        Get query sequence from source MSA file with caching.
+
         Returns:
             Query sequence string
         """
         if self._query_seq is None:
-            self._query_seq = get_protein_sequence(self.default_pdb)
+            if self.default_pdb is not None:
+                # Legacy support: use PDB if provided
+                self._query_seq = get_protein_sequence(self.default_pdb)
+            else:
+                # Modern approach: read query sequence from A3M file
+                from af_claseq.utils.sequence_processing import get_query_sequence_from_a3m
+                _, self._query_seq = get_query_sequence_from_a3m(self.source_msa)
         return self._query_seq
     
     def compile_sequences(self, bin_headers: List[str], output_file: str) -> None:
