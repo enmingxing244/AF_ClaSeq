@@ -98,6 +98,125 @@ class StructureAnalyzer:
             logger.error(f"Error calculating angle: {e}")
             raise
 
+    def calculate_dihedral_angle(self, atom1, atom2, atom3, atom4) -> float:
+        """
+        Calculate dihedral angle between four atoms.
+
+        The dihedral angle is the angle between two planes:
+        - Plane 1: defined by atoms 1, 2, 3
+        - Plane 2: defined by atoms 2, 3, 4
+
+        Args:
+            atom1, atom2, atom3, atom4: Atom objects with .coord attribute
+
+        Returns:
+            Dihedral angle in degrees (0 to 360)
+        """
+        try:
+            # Get coordinates
+            coords = [atom.get_coord() for atom in [atom1, atom2, atom3, atom4]]
+
+            # Calculate vectors
+            v1 = coords[0] - coords[1]  # atom1 -> atom2
+            v2 = coords[2] - coords[1]  # atom3 -> atom2
+            v3 = coords[2] - coords[3]  # atom2 -> atom4
+
+            # Calculate normal vectors to planes
+            n1 = np.cross(v1, v2)  # Normal to plane 1-2-3
+            n2 = np.cross(v2, v3)  # Normal to plane 2-3-4
+
+            # Normalize normal vectors
+            n1_norm = np.linalg.norm(n1)
+            n2_norm = np.linalg.norm(n2)
+
+            if n1_norm == 0 or n2_norm == 0:
+                logger.warning("Cannot calculate dihedral angle: atoms are collinear")
+                return None
+
+            n1 = n1 / n1_norm
+            n2 = n2 / n2_norm
+
+            # Calculate angle between normal vectors
+            cos_angle = np.clip(np.dot(n1, n2), -1.0, 1.0)
+            angle = np.arccos(cos_angle)
+
+            # Determine sign of angle using triple scalar product
+            # Sign is determined by the orientation of v2 relative to the cross product n1 x n2
+            cross_product = np.cross(n1, n2)
+            sign = np.sign(np.dot(v2, cross_product))
+
+            # Convert to degrees and apply sign
+            dihedral_deg = np.degrees(angle) * sign
+
+            # Normalize to range [0, 360] instead of [-180, 180]
+            while dihedral_deg < 0:
+                dihedral_deg += 360
+            while dihedral_deg >= 360:
+                dihedral_deg -= 360
+
+            return dihedral_deg
+
+        except Exception as e:
+            logger.error(f"Error calculating dihedral angle: {e}")
+            return None
+
+    def calculate_phi_angle(self, pdb_path: str, residue_number: int, chain_id: str = 'A') -> Optional[float]:
+        """
+        Calculate phi dihedral angle for a specific residue.
+
+        Phi angle is defined as: C(i-1) - N(i) - CA(i) - C(i)
+
+        Args:
+            pdb_path: Path to PDB file
+            residue_number: Residue number to calculate phi angle for
+            chain_id: Chain identifier (default 'A')
+
+        Returns:
+            Phi angle in degrees (0 to 360) or None if calculation fails
+        """
+        try:
+            # Load structure
+            structure = self.pdb_parser.get_structure('protein', pdb_path)
+            chain = structure[0][chain_id]
+
+            # Check if residue exists
+            if residue_number not in [res.get_id()[1] for res in chain.get_residues()]:
+                logger.warning(f"Residue {residue_number} not found in chain {chain_id}")
+                return None
+
+            # Get current residue
+            current_residue = chain[residue_number]
+
+            # Get previous residue (for C atom)
+            prev_residue_num = residue_number - 1
+            if prev_residue_num not in [res.get_id()[1] for res in chain.get_residues()]:
+                logger.warning(f"Previous residue {prev_residue_num} not found - cannot calculate phi for first residue")
+                return None
+
+            prev_residue = chain[prev_residue_num]
+
+            # Extract required atoms
+            try:
+                c_prev = prev_residue['C']     # C atom from previous residue
+                n_curr = current_residue['N']   # N atom from current residue
+                ca_curr = current_residue['CA'] # CA atom from current residue
+                c_curr = current_residue['C']   # C atom from current residue
+            except KeyError as e:
+                logger.warning(f"Missing backbone atom for phi calculation at residue {residue_number}: {e}")
+                return None
+
+            # Calculate phi dihedral angle: C(i-1) - N(i) - CA(i) - C(i)
+            phi_angle = self.calculate_dihedral_angle(c_prev, n_curr, ca_curr, c_curr)
+
+            if phi_angle is not None:
+                logger.debug(f"Phi angle for residue {residue_number}: {phi_angle:.2f}°")
+
+            return phi_angle
+
+        except Exception as e:
+            logger.error(f"Error calculating phi angle for residue {residue_number}: {e}")
+            return None
+
     def calculate_residue_distance(
         self,
         pdb_file: str | Path,
@@ -538,10 +657,24 @@ class StructureAnalyzer:
                     
                 elif criterion_type == 'tmscore':
                     tm_score = self.calculate_tm_score(
-                        pdb_path, 
+                        pdb_path,
                         criterion['ref_pdb']
                     )
                     result[metric_name] = tm_score
+
+                elif criterion_type == 'phi_angle':
+                    residue_num = criterion['indices']
+                    # Ensure indices is a single integer, not a set or list
+                    if isinstance(residue_num, (set, list)):
+                        if len(residue_num) == 1:
+                            residue_num = next(iter(residue_num))
+                        else:
+                            logger.error(f"Phi angle calculation requires exactly one residue, got {len(residue_num)}: {residue_num}")
+                            result[metric_name] = None
+                            continue
+
+                    phi_angle = self.calculate_phi_angle(pdb_path, residue_num)
+                    result[metric_name] = phi_angle
             
             # Calculate composite metrics if specified
             if composite_metrics:
