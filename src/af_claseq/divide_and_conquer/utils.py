@@ -84,7 +84,13 @@ def load_config(config_file: str) -> Dict[str, Any]:
     for section in required_sections:
         if section not in config:
             raise ValueError(f"Required configuration section '{section}' not found")
-    
+
+    # Validate prediction_mode if specified
+    if 'prediction_mode' in config['colabfold']:
+        prediction_mode = config['colabfold']['prediction_mode']
+        if prediction_mode not in ['monomer', 'homodimer']:
+            raise ValueError(f"Invalid prediction_mode: '{prediction_mode}'. Must be 'monomer' or 'homodimer'")
+
     return config
 
 

@@ -110,7 +110,8 @@ def read_a3m_to_dict(a3m_file_path: str) -> Dict[str, str]:
 def write_a3m(sequences: Dict[str, str],
                file_path: str,
                source_a3m: Optional[str] = None,
-               prepend_query: bool = False) -> None:
+               prepend_query: bool = False,
+               homodimer_mode: bool = False) -> None:
     """
     Write sequences to an A3M file, optionally prepending query sequence from source A3M.
 
@@ -119,6 +120,7 @@ def write_a3m(sequences: Dict[str, str],
         file_path: Path to the output A3M file
         source_a3m: Source A3M file to extract query sequence from (if prepend_query=True)
         prepend_query: Whether to prepend query sequence from source_a3m
+        homodimer_mode: Whether to format for homodimer prediction (ColabFold format)
 
     Raises:
         FileNotFoundError: If source_a3m doesn't exist when prepend_query=True
@@ -130,21 +132,42 @@ def write_a3m(sequences: Dict[str, str],
         Path(file_path).parent.mkdir(parents=True, exist_ok=True)
 
         with open(file_path, 'w') as a3m_file:
-            # Handle query sequence prepending
-            if prepend_query:
-                if source_a3m is None:
-                    raise ValueError("source_a3m must be provided when prepend_query=True")
+            # Handle homodimer format
+            if homodimer_mode:
+                # Get first sequence as query (should be the query sequence)
+                first_header, first_sequence = next(iter(sequences.items()))
+                query_length = len(first_sequence.replace('-', ''))  # Remove gaps for length calculation
 
-                # Extract query sequence from source A3M
-                query_header, query_sequence = get_query_sequence_from_a3m(source_a3m)
-                a3m_file.write(f'>{query_header}\n')
-                a3m_file.write(f"{query_sequence}\n")
+                # Write homodimer header
+                a3m_file.write(f'#{query_length}\t2\n')
 
-            # Write all other sequences
-            for header, sequence in sequences.items():
-                # Ensure header starts with '>' if not already
-                header_line = header if header.startswith('>') else f'>{header}'
-                a3m_file.write(f'{header_line}\n{sequence}\n')
+                # Write query sequence twice
+                query_header_line = first_header if first_header.startswith('>') else f'>{first_header}'
+                a3m_file.write(f'{query_header_line}\n{first_sequence}\n')
+                a3m_file.write(f'{query_header_line}\n{first_sequence}\n')
+
+                # Write all other sequences (skip first since we already wrote it twice)
+                sequence_items = list(sequences.items())
+                for header, sequence in sequence_items[1:]:
+                    header_line = header if header.startswith('>') else f'>{header}'
+                    a3m_file.write(f'{header_line}\n{sequence}\n')
+
+            else:
+                # Handle query sequence prepending (original behavior)
+                if prepend_query:
+                    if source_a3m is None:
+                        raise ValueError("source_a3m must be provided when prepend_query=True")
+
+                    # Extract query sequence from source A3M
+                    query_header, query_sequence = get_query_sequence_from_a3m(source_a3m)
+                    a3m_file.write(f'>{query_header}\n')
+                    a3m_file.write(f"{query_sequence}\n")
+
+                # Write all sequences (original behavior)
+                for header, sequence in sequences.items():
+                    # Ensure header starts with '>' if not already
+                    header_line = header if header.startswith('>') else f'>{header}'
+                    a3m_file.write(f'{header_line}\n{sequence}\n')
 
     except Exception as e:
         logger.error(f"Error writing A3M file: {e}")

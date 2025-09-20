@@ -47,6 +47,15 @@ class StructurePredictionConfig:
     """Structure prediction configuration for ColabFold"""
     num_models: int = 1     # Number of models per prediction
     num_seeds: int = 1      # Number of seeds per prediction
+    prediction_mode: str = "monomer"  # Prediction mode: "monomer" or "homodimer"
+    num_recycle: int = 3    # Number of recycle iterations (default: 3)
+
+    def __post_init__(self):
+        """Validate structure prediction configuration"""
+        if self.prediction_mode not in ["monomer", "homodimer"]:
+            raise ValueError(f"Invalid prediction_mode: '{self.prediction_mode}'. Must be 'monomer' or 'homodimer'")
+        if self.num_recycle < 0:
+            raise ValueError(f"num_recycle must be non-negative, got: {self.num_recycle}")
 
 
 @dataclass

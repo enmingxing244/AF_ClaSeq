@@ -36,10 +36,14 @@ class SequenceSampler:
         # Set random seed for reproducibility
         random.seed(config.general.random_seed)
 
+        # Extract homodimer mode from structure prediction config
+        self.homodimer_mode = config.structure_prediction.prediction_mode == "homodimer"
+
         # Note: No longer creating individual group directories
         # Groups are created directly in batch directories
 
         self.logger.info(f"Initialized SequenceSampler with seed: {config.general.random_seed}")
+        self.logger.info(f"Prediction mode: {config.structure_prediction.prediction_mode}")
 
     def create_random_groups(self) -> List[Dict[str, any]]:
         """
@@ -139,7 +143,7 @@ class SequenceSampler:
                     sequences_dict[header] = sequence
 
                 # Write A3M file
-                write_a3m(sequences_dict, a3m_filepath)
+                write_a3m(sequences_dict, a3m_filepath, homodimer_mode=self.homodimer_mode)
 
                 batch_groups.append({
                     'group_id': group_id,

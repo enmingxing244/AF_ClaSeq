@@ -44,15 +44,19 @@ class ShuffleManager:
         self.num_shuffles = self.shuffle_config.get('num_shuffles', 10)
         self.group_size = self.shuffle_config.get('group_size', 50)
         self.random_seed = self.shuffle_config.get('random_seed', None)
-        
+
+        # Extract homodimer mode from colabfold config
+        self.homodimer_mode = self.config['colabfold'].get('prediction_mode', 'monomer') == 'homodimer'
+
         if self.random_seed:
             random.seed(self.random_seed)
             self.logger.info(f"Random seed set to: {self.random_seed}")
-        
+
         self.logger.info(f"Shuffle parameters:")
         self.logger.info(f"  Number of shuffles: {self.num_shuffles}")
         self.logger.info(f"  Group size: {self.group_size}")
         self.logger.info(f"  Query header: {self.query_header}")
+        self.logger.info(f"  Prediction mode: {'homodimer' if self.homodimer_mode else 'monomer'}")
     
     def shuffle_and_split_clade(self, clade_dir: str) -> List[str]:
         """
@@ -149,7 +153,7 @@ class ShuffleManager:
                 for header, sequence in group_sequences:
                     final_sequences[header] = sequence
                 
-                write_a3m(final_sequences, group_file)
+                write_a3m(final_sequences, group_file, homodimer_mode=self.homodimer_mode)
                 
                 self.logger.debug(f"    Created {group_file} with {len(final_sequences)} sequences")
             

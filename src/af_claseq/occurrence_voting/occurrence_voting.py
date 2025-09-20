@@ -47,6 +47,9 @@ class OccurrenceVotingManager:
         self.config = config
         self.logger = get_logger("occurrence_voting")
 
+        # Extract homodimer mode from structure prediction config
+        self.homodimer_mode = config.structure_prediction.prediction_mode == "homodimer"
+
         # Setup output directories
         self.output_dir = config.get_output_dir()
         self.batches_dir = config.get_batches_dir()
@@ -79,6 +82,7 @@ class OccurrenceVotingManager:
             slurm_cpus_per_task=slurm_config.cpus,
             num_models=structure_config.num_models,
             num_seeds=structure_config.num_seeds,
+            num_recycle=structure_config.num_recycle,
             job_name_prefix="occ_vote"
         )
 
@@ -734,7 +738,7 @@ class OccurrenceVotingManager:
 
         # Write final A3M file
         final_a3m_path = self.results_dir / "top_sequences.a3m"
-        write_a3m(final_sequences, str(final_a3m_path))
+        write_a3m(final_sequences, str(final_a3m_path), homodimer_mode=self.homodimer_mode)
 
         return final_a3m_path
 
