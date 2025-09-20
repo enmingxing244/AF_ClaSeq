@@ -55,6 +55,7 @@ class SlurmJobSubmitter:
         slurm_partition: str = "nextgen",
         check_interval: int = 60,
         job_name_prefix: str = "fold",
+        num_recycle: int = 3,
         **kwargs
     ):
         """
@@ -95,6 +96,7 @@ class SlurmJobSubmitter:
         self.slurm_partition = slurm_partition
         self.check_interval = check_interval
         self.job_name_prefix = job_name_prefix
+        self.num_recycle = num_recycle
 
         # Determine mode based on kwargs
         if any(k.startswith('prediction_') for k in kwargs):
@@ -143,7 +145,7 @@ class SlurmJobSubmitter:
         # Build colabfold command
         colabfold_cmd = [
             "colabfold_batch",
-            "--num-recycle", "3",
+            "--num-recycle", str(self.num_recycle),
             "--num-models", str(config['num_models']),
             "--num-seeds", str(config['num_seeds'])
         ]

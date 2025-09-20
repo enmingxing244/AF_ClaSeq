@@ -4,6 +4,7 @@ Quick script to analyze PDB files in top_pred folder and create scatter plot
 of 6xr6 vs 6xrg composite RMSD values.
 """
 
+import sys
 import json
 import pandas as pd
 import matplotlib.pyplot as plt
@@ -14,9 +15,16 @@ import glob
 from af_claseq.utils.structure_analysis import StructureAnalyzer
 
 def main():
-    # Paths
+    if len(sys.argv) != 2:
+        print("Usage: python analyze_top_pred.py <pdb_directory>")
+        print("Example: python analyze_top_pred.py /path/to/top_pred")
+        sys.exit(1)
+
+    # Get pdb_dir from command line argument
+    pdb_dir = sys.argv[1]
+
+    # Fixed config path
     config_path = "/fs/ess/PAA0203/xing244/AF_ClaSeq/results_updated/ABL1/ABL1_6xrg_6xr6_composite_rmsd.json"
-    pdb_dir = "/fs/ess/PAA0203/xing244/AF_ClaSeq/results_updated/ABL1/run1/occurrence_voting/results/top_pred"
 
     print(f"Loading config from: {config_path}")
     print(f"Analyzing PDB files in: {pdb_dir}")

@@ -35,7 +35,6 @@ class MFoldSampler:
     def __init__(
         self,
         input_a3m: str,
-        default_pdb: str,
         m_fold_sampling_base_dir: str,
         group_size: int = 10,
         coverage_threshold: float = 0.0,
@@ -43,14 +42,14 @@ class MFoldSampler:
         slurm_submitter: Optional[SlurmJobSubmitter] = None,
         random_seed: int = 42,
         max_workers: int = 64,
-        logger: Optional[logging.Logger] = None
+        logger: Optional[logging.Logger] = None,
+        default_pdb: Optional[str] = None
     ):
         """
         Initialize the M-fold sampler.
-        
+
         Args:
             input_a3m: Path to input A3M file
-            default_pdb: Path to reference PDB file
             m_fold_sampling_base_dir: Base directory for output
             group_size: Size of each sequence group
             coverage_threshold: Minimum required sequence coverage
@@ -59,6 +58,7 @@ class MFoldSampler:
             random_seed: Random seed for reproducibility
             max_workers: Maximum number of concurrent workers
             logger: Optional logger instance
+            default_pdb: Optional path to reference PDB file (deprecated - query sequence read from A3M)
         """
         self.input_a3m = input_a3m
         self.default_pdb = default_pdb

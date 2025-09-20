@@ -16,7 +16,7 @@ from typing import Dict, Any
 # Import modules from AF-ClaSeq
 from af_claseq.utils.slurm_utils import SlurmJobSubmitter
 from af_claseq.utils.structure_analysis import StructureAnalyzer
-from af_claseq.utils.sequence_processing import A3MParser, filter_a3m_by_coverage, write_a3m
+from af_claseq.utils.sequence_processing import filter_a3m_by_coverage, write_a3m
 from af_claseq.m_fold_sampling_voting.m_fold_sampling import MFoldSampler
 from af_claseq.m_fold_sampling_voting.sequence_voting import SequenceVotingRunner, SequenceVotingPlotter
 from af_claseq.m_fold_sampling_voting.sequence_recompile import SequenceRecompiler
@@ -153,7 +153,6 @@ class AFClaSeqPipeline:
                 # Create sampler instance for this round
                 sampler = MFoldSampler(
                     input_a3m=input_a3m,
-                    default_pdb=self.config.general.default_pdb,
                     m_fold_sampling_base_dir=str(round_base_dir),
                     group_size=self.config.m_fold_sampling.m_fold_group_size,
                     coverage_threshold=self.config.general.coverage_threshold,
@@ -161,7 +160,8 @@ class AFClaSeqPipeline:
                     slurm_submitter=self.slurm_submitter,
                     random_seed=self.config.general.random_seed + round_num,  # Use different seed for each round
                     max_workers=self.config.slurm.max_workers,
-                    logger=self.logger
+                    logger=self.logger,
+                    default_pdb=self.config.general.default_pdb  # Optional for backward compatibility
                 )
                 
                 # Run the sampling process for this round
@@ -541,14 +541,14 @@ class AFClaSeqPipeline:
                 recompiler = SequenceRecompiler(
                     output_dir=criterion_output_dir,
                     source_msa=source_msa,
-                    default_pdb=self.config.general.default_pdb,
                     voting_results=voting_results,
                     bin_numbers=bin_numbers,
                     num_total_bins=self.config.general.num_bins,
                     initial_color=colors[0],
                     combine_bins=self.config.recompile_predict.combine_bins,
                     raw_votes_json=raw_votes_json if raw_votes_json.exists() else None,
-                    logger=self.logger
+                    logger=self.logger,
+                    default_pdb=self.config.general.default_pdb  # Optional for backward compatibility
                 )
                 
                 # Recompile sequences

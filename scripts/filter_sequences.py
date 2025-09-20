@@ -16,6 +16,7 @@ import argparse
 import pandas as pd
 from pathlib import Path
 from typing import Dict, List, Tuple
+from datetime import datetime
 
 from af_claseq.utils.sequence_processing import read_a3m_to_dict, write_a3m
 from af_claseq.utils.logging_utils import get_logger
@@ -303,6 +304,45 @@ def collect_sequences(pdb_paths: List[str], verbose: bool = False) -> Dict[str, 
     return unique_sequences
 
 
+def write_filter_log(log_path: str, csv_file: str, filter_type: str, filter_details: str,
+                     total_structures: int, filtered_structures: int, sequences_written: int,
+                     output_path: str, metrics_summary: Dict[str, str] = None):
+    """Write a detailed log file of the filtering operation."""
+    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+    with open(log_path, 'w') as f:
+        f.write("SEQUENCE FILTERING LOG\n")
+        f.write("=" * 50 + "\n")
+        f.write(f"Timestamp: {timestamp}\n")
+        f.write(f"Script: filter_sequences.py\n\n")
+
+        f.write("INPUT PARAMETERS:\n")
+        f.write("-" * 20 + "\n")
+        f.write(f"Input CSV file: {csv_file}\n")
+        f.write(f"Filter type: {filter_type}\n")
+        f.write(f"Filter details: {filter_details}\n")
+        f.write(f"Output A3M file: {output_path}\n\n")
+
+        f.write("FILTERING RESULTS:\n")
+        f.write("-" * 20 + "\n")
+        f.write(f"Total structures in CSV: {total_structures}\n")
+        f.write(f"Structures passing filter: {filtered_structures}\n")
+        f.write(f"Filtering rate: {filtered_structures/total_structures*100:.2f}%\n")
+        f.write(f"Unique sequences written: {sequences_written}\n\n")
+
+        if metrics_summary:
+            f.write("METRICS SUMMARY:\n")
+            f.write("-" * 20 + "\n")
+            for metric, summary in metrics_summary.items():
+                f.write(f"{metric}: {summary}\n")
+            f.write("\n")
+
+        f.write("FILES GENERATED:\n")
+        f.write("-" * 20 + "\n")
+        f.write(f"Output A3M: {output_path}\n")
+        f.write(f"Filter log: {log_path}\n")
+
+
 def main():
     """Main function."""
     args = parse_arguments()
@@ -320,10 +360,14 @@ def main():
             criteria = parse_criteria(args.criteria)
             filtered_df = filter_structures_criteria(df, criteria, args.combine_method)
             metrics_used = [criterion[0] for criterion in criteria]
+            filter_type = "criteria"
+            filter_details = f"Criteria: {args.criteria}, Combine method: {args.combine_method}"
         else:
             top_n_specs = parse_top_n(args.top_n)
             filtered_df = filter_structures_top_n(df, top_n_specs)
             metrics_used = [spec[0] for spec in top_n_specs]
+            filter_type = "top_n"
+            filter_details = f"Top-N selection: {args.top_n}"
 
         if len(filtered_df) == 0:
             logger.warning("No structures meet the filtering criteria!")
@@ -331,10 +375,13 @@ def main():
 
         # Show filtering summary
         logger.info("Filtering Summary:")
+        metrics_summary = {}
         for metric in metrics_used:
             if metric in filtered_df.columns:
                 values = filtered_df[metric]
-                logger.info(f"  {metric}: {values.min():.4f} - {values.max():.4f} (mean: {values.mean():.4f})")
+                summary = f"{values.min():.4f} - {values.max():.4f} (mean: {values.mean():.4f})"
+                metrics_summary[metric] = summary
+                logger.info(f"  {metric}: {summary}")
 
         # Get PDB paths that meet criteria
         pdb_paths = filtered_df['PDB'].tolist()
@@ -356,12 +403,30 @@ def main():
         # Write combined A3M file using existing utility
         write_a3m(sequences, args.output)
 
+        # Generate log file path (same directory as output, with .log extension)
+        output_path = Path(args.output)
+        log_path = output_path.parent / (output_path.stem + "_filter.log")
+
+        # Write detailed log file
+        write_filter_log(
+            log_path=str(log_path),
+            csv_file=args.csv_file,
+            filter_type=filter_type,
+            filter_details=filter_details,
+            total_structures=len(df),
+            filtered_structures=len(filtered_df),
+            sequences_written=len(sequences),
+            output_path=args.output,
+            metrics_summary=metrics_summary
+        )
+
         logger.info("=" * 60)
         logger.info("FILTERING COMPLETED SUCCESSFULLY")
         logger.info("=" * 60)
         logger.info(f"Structures filtered: {len(filtered_df)} out of {len(df)}")
         logger.info(f"Unique sequences collected: {len(sequences)}")
         logger.info(f"Output A3M file: {args.output}")
+        logger.info(f"Filter log file: {log_path}")
         logger.info("=" * 60)
 
     except Exception as e:

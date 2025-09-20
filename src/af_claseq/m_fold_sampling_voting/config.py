@@ -14,10 +14,10 @@ from af_claseq.utils.plotting_manager import COLORS
 class GeneralConfig:
     """General configuration options"""
     source_a3m: str
-    default_pdb: str
     base_dir: str
     config_file: str  # This refers to the JSON filter criteria file
     protein_name: str
+    default_pdb: Optional[str] = None  # Optional - query sequence will be read from source_a3m if not provided
     coverage_threshold: float = 0.8
     num_models: int = 1
     random_seed: int = 42

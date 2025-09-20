@@ -20,7 +20,7 @@ from collections import Counter, defaultdict
 
 # Use existing AF_ClaSeq utilities
 from af_claseq.utils.slurm_utils import SlurmJobSubmitter
-from af_claseq.utils.plotting_manager import create_2d_scatter_plot, plot_1d_distribution
+from af_claseq.utils.plotting_manager import create_2d_scatter_plot, plot_1d_distribution, create_joint_plot
 from af_claseq.utils.sequence_processing import read_a3m_to_dict, write_a3m
 from af_claseq.utils.logging_utils import get_logger
 from af_claseq.utils.exceptions import WorkflowError
@@ -46,6 +46,9 @@ class OccurrenceVotingManager:
         """
         self.config = config
         self.logger = get_logger("occurrence_voting")
+
+        # Extract homodimer mode from structure prediction config
+        self.homodimer_mode = config.structure_prediction.prediction_mode == "homodimer"
 
         # Setup output directories
         self.output_dir = config.get_output_dir()
@@ -79,6 +82,7 @@ class OccurrenceVotingManager:
             slurm_cpus_per_task=slurm_config.cpus,
             num_models=structure_config.num_models,
             num_seeds=structure_config.num_seeds,
+            num_recycle=structure_config.num_recycle,
             job_name_prefix="occ_vote"
         )
 
@@ -734,7 +738,7 @@ class OccurrenceVotingManager:
 
         # Write final A3M file
         final_a3m_path = self.results_dir / "top_sequences.a3m"
-        write_a3m(final_sequences, str(final_a3m_path))
+        write_a3m(final_sequences, str(final_a3m_path), homodimer_mode=self.homodimer_mode)
 
         return final_a3m_path
 
@@ -775,6 +779,172 @@ class OccurrenceVotingManager:
                 f.write(f"  {i:3d}. Count: {count:4d} - {seq_preview}\n")
 
         return summary_path
+
+    def _create_metric_mapping(self, metrics: List[str]) -> Dict[str, str]:
+        """
+        Create mapping from actual metric names to generic names (metric1, metric2, etc.).
+
+        Args:
+            metrics: List of metric names
+
+        Returns:
+            Dictionary mapping actual metric names to generic names
+        """
+        mapping = {}
+        for i, metric in enumerate(metrics, 1):
+            generic_name = f"metric{i}"
+            mapping[metric] = generic_name
+        return mapping
+
+    def _get_generic_metric_name(self, metric: str, metric_mapping: Dict[str, str]) -> str:
+        """
+        Get the generic name (metric1, metric2, etc.) for a metric.
+
+        Args:
+            metric: Actual metric name
+            metric_mapping: Mapping dictionary
+
+        Returns:
+            Generic metric name, or original name if not found in mapping
+        """
+        return metric_mapping.get(metric, metric)
+
+    def _get_metric_plot_params(self, metric: str, metric_mapping: Dict[str, str]) -> Dict[str, Any]:
+        """
+        Get plotting parameters for a specific metric (1D plots).
+
+        Args:
+            metric: Metric name
+            metric_mapping: Mapping dictionary
+
+        Returns:
+            Dictionary of plotting parameters
+        """
+        params = {}
+
+        # Default parameters
+        params.update({
+            'n_plot_bins': 50,
+            'log_scale': False,
+            'figsize': (10, 6),
+            'initial_color': '#87CEEB',
+            'end_color': '#FFFFFF',
+            'show_bin_lines': False
+        })
+
+        # Check if plotting config exists
+        if not (self.config.plotting and hasattr(self.config.plotting, 'plot_params')):
+            return params
+
+        # Override with global plot parameters
+        if hasattr(self.config.plotting, 'plot_params') and self.config.plotting.plot_params:
+            plot_params = self.config.plotting.plot_params
+            if '1d' in plot_params:
+                params.update(plot_params['1d'])
+
+        # Get generic metric name for config lookup
+        generic_metric = self._get_generic_metric_name(metric, metric_mapping)
+
+        # Override with metric-specific parameters
+        if hasattr(self.config.plotting, 'plot_params') and self.config.plotting.plot_params:
+            plot_params = self.config.plotting.plot_params
+            if metric in plot_params:
+                params.update(plot_params[metric])
+            elif generic_metric in plot_params:
+                params.update(plot_params[generic_metric])
+
+        # Add metric range if specified
+        if hasattr(self.config.plotting, 'metric_ranges') and self.config.plotting.metric_ranges:
+            metric_ranges = self.config.plotting.metric_ranges
+            range_config = None
+
+            if metric in metric_ranges:
+                range_config = metric_ranges[metric]
+            elif generic_metric in metric_ranges:
+                range_config = metric_ranges[generic_metric]
+
+            if range_config:
+                params.update({
+                    'x_min': range_config.get('min'),
+                    'x_max': range_config.get('max'),
+                    'x_ticks': range_config.get('ticks')
+                })
+
+        # Add colors if specified
+        if hasattr(self.config.plotting, 'colors') and self.config.plotting.colors:
+            colors_config = self.config.plotting.colors
+            colors = None
+
+            if metric in colors_config:
+                colors = colors_config[metric]
+            elif generic_metric in colors_config:
+                colors = colors_config[generic_metric]
+
+            if colors and isinstance(colors, list) and len(colors) >= 2:
+                params.update({
+                    'initial_color': colors[0],
+                    'end_color': colors[1]
+                })
+
+        return params
+
+    def _get_2d_plot_params(self, metric1: str, metric2: str, metric_mapping: Dict[str, str]) -> Dict[str, Any]:
+        """
+        Get plotting parameters for 2D plots.
+
+        Args:
+            metric1: First metric name
+            metric2: Second metric name
+            metric_mapping: Mapping dictionary
+
+        Returns:
+            Dictionary of plotting parameters
+        """
+        params = {}
+
+        # Default parameters
+        params.update({
+            'color_metric': 'plddt'
+        })
+
+        # Check if plotting config exists
+        if not (self.config.plotting and hasattr(self.config.plotting, 'plot_params')):
+            return params
+
+        # Override with global 2D parameters
+        if hasattr(self.config.plotting, 'plot_params') and self.config.plotting.plot_params:
+            plot_params = self.config.plotting.plot_params
+            if '2d' in plot_params:
+                params.update(plot_params['2d'])
+
+        # Add metric ranges (dynamically assign to x or y axis based on position)
+        if hasattr(self.config.plotting, 'metric_ranges') and self.config.plotting.metric_ranges:
+            metric_ranges = self.config.plotting.metric_ranges
+
+            for i, metric in enumerate([metric1, metric2], 1):
+                generic_metric = self._get_generic_metric_name(metric, metric_mapping)
+
+                range_config = None
+                if metric in metric_ranges:
+                    range_config = metric_ranges[metric]
+                elif generic_metric in metric_ranges:
+                    range_config = metric_ranges[generic_metric]
+
+                if range_config:
+                    if i == 1:  # First metric (x-axis)
+                        params.update({
+                            'x_min': range_config.get('min'),
+                            'x_max': range_config.get('max'),
+                            'x_ticks': range_config.get('ticks')
+                        })
+                    else:  # Second metric (y-axis)
+                        params.update({
+                            'y_min': range_config.get('min'),
+                            'y_max': range_config.get('max'),
+                            'y_ticks': range_config.get('ticks')
+                        })
+
+        return params
 
     def generate_structure_plots(self, results_csv: str) -> Dict[str, Any]:
         """
@@ -830,6 +1000,10 @@ class OccurrenceVotingManager:
         if len(available_metrics) < 2:
             self.logger.warning("Need at least 2 metrics for comprehensive plotting")
 
+        # Create metric mapping for configuration lookup
+        metric_mapping = self._create_metric_mapping(available_metrics)
+        self.logger.info(f"Created metric mapping: {metric_mapping}")
+
         # Check which plot types to generate
         plot_types = ['1d', '2d']  # Default plot types
         if self.config.plotting and self.config.plotting.plot_types:
@@ -841,16 +1015,15 @@ class OccurrenceVotingManager:
                 if metric in results_df.columns:
                     try:
                         self.logger.info(f"  Generating distribution plot for {metric}")
+
+                        # Get metric-specific parameters
+                        metric_params = self._get_metric_plot_params(metric, metric_mapping)
+
                         plot_path = plot_1d_distribution(
                             results_df=results_df,
                             metric_name=metric,
                             output_dir=str(plots_dir),
-                            n_plot_bins=50,
-                            figsize=(10, 6),
-                            initial_color='#87CEEB',
-                            end_color='#FFFFFF',
-                            show_bin_lines=False,
-                            log_scale=False,
+                            **metric_params,
                             logger=self.logger
                         )
                         if plot_path:
@@ -866,19 +1039,79 @@ class OccurrenceVotingManager:
                     if metric1 in results_df.columns and metric2 in results_df.columns:
                         try:
                             self.logger.info(f"  Generating scatter plot for {metric1} vs {metric2}")
+
+                            # Get plot parameters for this metric pair
+                            plot_params = self._get_2d_plot_params(metric1, metric2, metric_mapping)
+
                             plot_path = create_2d_scatter_plot(
                                 results_df=results_df,
                                 metric_name1=metric1,
                                 metric_name2=metric2,
                                 output_dir=str(plots_dir),
-                                title=f"{metric1} vs {metric2} - Occurrence Voting Structures",
+                                title=None,
+                                **plot_params,
                                 logger=self.logger
                             )
                             if plot_path:
                                 plot_files.append(plot_path)
                                 self.logger.info(f"    Saved scatter plot: {plot_path}")
+
+                            # Generate joint plot if requested
+                            if 'joint' in plot_types:
+                                joint_path = create_joint_plot(
+                                    results_df=results_df,
+                                    metric_name1=metric1,
+                                    metric_name2=metric2,
+                                    output_dir=str(plots_dir),
+                                    **plot_params,
+                                    logger=self.logger
+                                )
+
+                                if joint_path:
+                                    plot_files.append(joint_path)
+                                    self.logger.info(f"    Saved joint plot: {joint_path}")
+
                         except Exception as e:
                             self.logger.warning(f"Failed to generate scatter plot for {metric1} vs {metric2}: {e}")
+
+        # Generate correlation plots
+        if 'correlation' in plot_types:
+            self.logger.info("Generating correlation plots...")
+            plddt_metrics = ['plddt', 'local_plddt']
+
+            for plddt_metric in plddt_metrics:
+                if plddt_metric not in results_df.columns:
+                    continue
+
+                self.logger.info(f"  Generating correlation plots with {plddt_metric}")
+
+                for metric in available_metrics:
+                    if metric == plddt_metric or metric not in results_df.columns:
+                        continue
+
+                    try:
+                        plot_params = self._get_2d_plot_params(metric, plddt_metric, metric_mapping)
+
+                        # Override color_metric in plot_params to use the plddt metric
+                        plot_params_corr = plot_params.copy()
+                        plot_params_corr['color_metric'] = plddt_metric
+
+                        correlation_path = create_2d_scatter_plot(
+                            results_df=results_df,
+                            metric_name1=metric,
+                            metric_name2=plddt_metric,
+                            output_dir=str(plots_dir),
+                            title=None,
+                            **plot_params_corr,
+                            logger=self.logger
+                        )
+
+                        if correlation_path:
+                            plot_files.append(correlation_path)
+                            self.logger.info(f"    Saved correlation plot: {correlation_path}")
+
+                    except Exception as e:
+                        self.logger.warning(f"Failed to generate correlation plot for {metric} vs {plddt_metric}: {e}")
 
         self.logger.info(f"Generated {len(plot_files)} structure analysis plots")
 

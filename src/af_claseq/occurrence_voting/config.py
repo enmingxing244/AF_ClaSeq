@@ -47,6 +47,15 @@ class StructurePredictionConfig:
     """Structure prediction configuration for ColabFold"""
     num_models: int = 1     # Number of models per prediction
     num_seeds: int = 1      # Number of seeds per prediction
+    prediction_mode: str = "monomer"  # Prediction mode: "monomer" or "homodimer"
+    num_recycle: int = 3    # Number of recycle iterations (default: 3)
+
+    def __post_init__(self):
+        """Validate structure prediction configuration"""
+        if self.prediction_mode not in ["monomer", "homodimer"]:
+            raise ValueError(f"Invalid prediction_mode: '{self.prediction_mode}'. Must be 'monomer' or 'homodimer'")
+        if self.num_recycle < 0:
+            raise ValueError(f"num_recycle must be non-negative, got: {self.num_recycle}")
 
 
 @dataclass
@@ -90,8 +99,13 @@ class PlottingConfig:
     """Plotting configuration for occurrence voting"""
     enabled: bool = True                           # Enable/disable plotting
     metrics_to_plot: List[str] = None             # Specific metrics to plot (None = all available)
-    plot_types: List[str] = None                  # Plot types: ['1d', '2d', 'occurrence']
+    plot_types: List[str] = None                  # Plot types: ['1d', '2d', 'correlation', 'joint', 'occurrence']
     output_subdir: str = "plots"                  # Subdirectory for plots
+
+    # Advanced plotting configuration (new fields for sophisticated plotting)
+    colors: Optional[Dict[str, List[str]]] = None           # Colors per metric (metric1, metric2, etc.)
+    metric_ranges: Optional[Dict[str, Dict[str, Any]]] = None  # Ranges per metric (min, max, ticks)
+    plot_params: Optional[Dict[str, Dict[str, Any]]] = None    # Plot-specific parameters (1d, 2d, etc.)
 
     def __post_init__(self):
         """Set defaults and validate plotting configuration"""
@@ -99,6 +113,12 @@ class PlottingConfig:
             self.metrics_to_plot = []  # Empty list means plot all available
         if self.plot_types is None:
             self.plot_types = ['1d', '2d', 'occurrence']  # Default to all plot types
+        if self.colors is None:
+            self.colors = {}  # Empty dict means use default colors
+        if self.metric_ranges is None:
+            self.metric_ranges = {}  # Empty dict means auto-determine ranges
+        if self.plot_params is None:
+            self.plot_params = {}  # Empty dict means use default parameters
 
 
 @dataclass
@@ -159,7 +179,14 @@ class OccurrenceVotingConfig:
         voting_config = VotingConfig(**voting_data)
 
         plotting_data = config_data.get('plotting', {})
-        plotting_config = PlottingConfig(**plotting_data) if plotting_data else PlottingConfig()
+        if plotting_data:
+            # Filter plotting_data to only include fields that PlottingConfig accepts
+            valid_fields = {'enabled', 'metrics_to_plot', 'plot_types', 'output_subdir',
+                          'colors', 'metric_ranges', 'plot_params'}
+            filtered_plotting_data = {k: v for k, v in plotting_data.items() if k in valid_fields}
+            plotting_config = PlottingConfig(**filtered_plotting_data)
+        else:
+            plotting_config = PlottingConfig()
 
         workflow_config = cls(
             general=general_config,

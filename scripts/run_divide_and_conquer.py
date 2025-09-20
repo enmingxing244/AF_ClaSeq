@@ -116,7 +116,8 @@ class WorkflowOrchestrator:
             slurm_cpus_per_task=slurm_config.get('cpus', 8),
             job_name_prefix="cf",
             num_models=colabfold_config.get('num_models', 1),
-            num_seeds=colabfold_config.get('num_seeds', 1)
+            num_seeds=colabfold_config.get('num_seeds', 1),
+            num_recycle=colabfold_config.get('num_recycle', 3)
         )
 
         self.logger.info("==" * 25)
