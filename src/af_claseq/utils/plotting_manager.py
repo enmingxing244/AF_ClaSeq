@@ -445,17 +445,17 @@ def plot_1d_distribution(
     return plot_path
 
 def create_2d_scatter_plot(
-    results_df: pd.DataFrame, 
-    metric_name1: str, 
-    metric_name2: str, 
+    results_df: pd.DataFrame,
+    metric_name1: str,
+    metric_name2: str,
     output_dir: str,
-    color_metric: str = 'plddt', 
+    color_metric: str = 'plddt',
     cmap_colors: List[str] = None,
-    x_min: Optional[float] = None, 
-    x_max: Optional[float] = None, 
-    y_min: Optional[float] = None, 
-    y_max: Optional[float] = None, 
-    x_ticks: Optional[List[float]] = None, 
+    x_min: Optional[float] = None,
+    x_max: Optional[float] = None,
+    y_min: Optional[float] = None,
+    y_max: Optional[float] = None,
+    x_ticks: Optional[List[float]] = None,
     y_ticks: Optional[List[float]] = None,
     title: Optional[str] = None,
     threshold_x: Optional[float] = None,
@@ -464,7 +464,7 @@ def create_2d_scatter_plot(
 ) -> str:
     """
     Create a 2D scatter plot with the specified parameters.
-    
+
     Args:
         results_df: DataFrame containing results
         metric_name1: Name of metric for x-axis
@@ -482,14 +482,28 @@ def create_2d_scatter_plot(
         threshold_x: Optional x-axis threshold for vertical dashed line
         threshold_y: Optional y-axis threshold for horizontal dashed line
         logger: Optional logger to use
-        
+
     Returns:
         Path to saved plot
     """
     log = logger or get_logger(__name__)
-    
+
     # Create output directory
     os.makedirs(output_dir, exist_ok=True)
+
+    # Store current rcParams to restore later
+    original_rcParams = plt.rcParams.copy()
+
+    # Set consistent font sizes for 2D scatter plots only
+    plt.rcParams.update({
+        'font.family': ['sans-serif'],
+        'font.sans-serif': ['DejaVu Sans'],
+        'font.size': 24,
+        'axes.labelsize': 24,
+        'axes.titlesize': 24,
+        'xtick.labelsize': 24,
+        'ytick.labelsize': 24
+    })
     
     # Use provided colormap or default
     if cmap_colors is None:
@@ -540,9 +554,12 @@ def create_2d_scatter_plot(
     plt.savefig(plot_path, bbox_inches='tight', dpi=PLOT_PARAMS['dpi'])
     plt.savefig(plot_path.replace('.png', '.svg'), format='svg', bbox_inches='tight')
     plt.close()
-    
+
+    # Restore original rcParams to not affect other plots
+    plt.rcParams.update(original_rcParams)
+
     log.info(f"Saved 2D scatter plot to: {plot_path}")
-    
+
     return plot_path
 
 def create_joint_plot(

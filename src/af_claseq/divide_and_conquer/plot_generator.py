@@ -37,13 +37,17 @@ class PlotGenerator:
         # Extract plotting parameters
         self.metrics = self.plotting_config.get('metrics', [])
         self.plot_types = self.plotting_config.get('plot_types', ['1d', '2d'])
-        self.output_dir = self.plotting_config.get('output_dir', 'plots')
-        
+
+        # Use working_dir for plot outputs
+        working_dir = config.get('output', {}).get('working_dir', '.')
+        plots_subdir = self.plotting_config.get('output_dir', 'plots')
+        self.output_dir = os.path.join(working_dir, plots_subdir)
+
         # Plot customization options
         self.colors = self.plotting_config.get('colors', {})
         self.metric_ranges = self.plotting_config.get('metric_ranges', {})
         self.plot_params = self.plotting_config.get('plot_params', {})
-        
+
         # Create output directory
         os.makedirs(self.output_dir, exist_ok=True)
 
