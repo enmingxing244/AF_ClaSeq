@@ -13,6 +13,7 @@ import glob
 
 # Import AF_ClaSeq modules
 from af_claseq.utils.structure_analysis import StructureAnalyzer
+from af_claseq.utils.plotting_manager import save_ai_compatible_plot
 
 def main():
     if len(sys.argv) != 2:
@@ -102,10 +103,10 @@ def main():
     plt.legend()
     plt.tight_layout()
 
-    # Save plot as SVG
-    output_plot = f"{pdb_dir}/6xr6_vs_6xrg_composite_rmsd_scatter.svg"
-    plt.savefig(output_plot, format='svg', bbox_inches='tight')
-    print(f"\nScatter plot saved to: {output_plot}")
+    # Save plot using AI-compatible format
+    base_path = f"{pdb_dir}/6xr6_vs_6xrg_composite_rmsd_scatter"
+    save_ai_compatible_plot(plt.gcf(), base_path)
+    print(f"\nScatter plot saved to: {base_path}.png, {base_path}.pdf, {base_path}.svg")
 
     # Save data
     output_csv = f"{pdb_dir}/6xr6_vs_6xrg_composite_rmsd_data.csv"

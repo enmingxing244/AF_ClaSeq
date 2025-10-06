@@ -14,6 +14,7 @@ from pathlib import Path
 from typing import List, Dict, Any, Optional
 
 from af_claseq.utils.logging_utils import get_logger
+from af_claseq.utils.plotting_manager import save_ai_compatible_plot
 
 # Set publication-quality font defaults (following existing patterns)
 plt.rcParams.update({
@@ -126,14 +127,13 @@ class ImpactPlotter:
 
             plt.tight_layout()
 
-            # Save plot
-            plot_file = output_dir / "impact_score_distribution.png"
-            plt.savefig(plot_file, dpi=self.plotting_config.dpi, bbox_inches='tight')
-            plt.savefig(str(plot_file).replace('.png', '.svg'), format='svg', bbox_inches='tight')
+            # Save plot using AI-compatible format
+            base_path = str(output_dir / "impact_score_distribution")
+            save_ai_compatible_plot(plt.gcf(), base_path, dpi=self.plotting_config.dpi, logger=self.logger)
             plt.close()
 
-            self.logger.info(f"Created impact histogram: {plot_file}")
-            return str(plot_file)
+            self.logger.info(f"Created impact histogram: {base_path}")
+            return base_path
 
         except Exception as e:
             self.logger.error(f"Error creating impact histogram: {e}")
@@ -170,18 +170,18 @@ class ImpactPlotter:
 
             # Add colorbar
             cbar = plt.colorbar(scatter, ax=ax)
+            cbar.solids.set_rasterized(True)
             cbar.set_label('Impact Score', rotation=270, labelpad=20)
 
             plt.tight_layout()
 
-            # Save plot
-            plot_file = output_dir / "full_vs_loo_scatter.png"
-            plt.savefig(plot_file, dpi=self.plotting_config.dpi, bbox_inches='tight')
-            plt.savefig(str(plot_file).replace('.png', '.svg'), format='svg', bbox_inches='tight')
+            # Save plot using AI-compatible format
+            base_path = str(output_dir / "full_vs_loo_scatter")
+            save_ai_compatible_plot(plt.gcf(), base_path, dpi=self.plotting_config.dpi, logger=self.logger)
             plt.close()
 
-            self.logger.info(f"Created scatter plot: {plot_file}")
-            return str(plot_file)
+            self.logger.info(f"Created scatter plot: {base_path}")
+            return base_path
 
         except Exception as e:
             self.logger.error(f"Error creating scatter plot: {e}")
@@ -230,18 +230,18 @@ class ImpactPlotter:
 
             # Add colorbar for scatter plot
             cbar = plt.colorbar(scatter, ax=ax2)
+            cbar.solids.set_rasterized(True)
             cbar.set_label('Impact Score', rotation=270, labelpad=20)
 
             plt.tight_layout()
 
-            # Save plot
-            plot_file = output_dir / "combined_impact_analysis.png"
-            plt.savefig(plot_file, dpi=self.plotting_config.dpi, bbox_inches='tight')
-            plt.savefig(str(plot_file).replace('.png', '.svg'), format='svg', bbox_inches='tight')
+            # Save plot using AI-compatible format
+            base_path = str(output_dir / "combined_impact_analysis")
+            save_ai_compatible_plot(plt.gcf(), base_path, dpi=self.plotting_config.dpi, logger=self.logger)
             plt.close()
 
-            self.logger.info(f"Created combined plot: {plot_file}")
-            return str(plot_file)
+            self.logger.info(f"Created combined plot: {base_path}")
+            return base_path
 
         except Exception as e:
             self.logger.error(f"Error creating combined plot: {e}")
@@ -295,14 +295,13 @@ class ImpactPlotter:
 
             plt.tight_layout()
 
-            # Save plot
-            plot_file = output_dir / f"top_{top_n}_impact_sequences.png"
-            plt.savefig(plot_file, dpi=self.plotting_config.dpi, bbox_inches='tight')
-            plt.savefig(str(plot_file).replace('.png', '.svg'), format='svg', bbox_inches='tight')
+            # Save plot using AI-compatible format
+            base_path = str(output_dir / f"top_{top_n}_impact_sequences")
+            save_ai_compatible_plot(plt.gcf(), base_path, dpi=self.plotting_config.dpi, logger=self.logger)
             plt.close()
 
-            self.logger.info(f"Created top sequences plot: {plot_file}")
-            return str(plot_file)
+            self.logger.info(f"Created top sequences plot: {base_path}")
+            return base_path
 
         except Exception as e:
             self.logger.error(f"Error creating top sequences plot: {e}")

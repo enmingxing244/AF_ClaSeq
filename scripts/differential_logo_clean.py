@@ -11,6 +11,11 @@ import numpy as np
 from collections import Counter
 import argparse
 import sys
+import os
+
+# Add the src directory to the path so we can import from af_claseq
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
+from af_claseq.utils.plotting_manager import save_ai_compatible_plot
 
 def parse_a3m_file(filename):
     """Parse A3M file and extract sequences"""
@@ -174,13 +179,14 @@ def create_differential_logo(file1, file2, output_name=None):
     if output_name is None:
         output_name = 'differential_logo'
 
-    plt.savefig(f'{output_name}.png', dpi=600, bbox_inches='tight', facecolor='white')
-    plt.savefig(f'{output_name}.svg', bbox_inches='tight', facecolor='white')
+    # Save plot using AI-compatible format
+    save_ai_compatible_plot(plt.gcf(), output_name, dpi=600)
+    plt.close()
 
     # Print summary to stdout
     print(f"Processed {len(sequences1)} vs {len(sequences2)} sequences")
     print(f"Top different positions: {list(top_different)}")
-    print(f"Files saved: {output_name}.png, {output_name}.svg")
+    print(f"Files saved: {output_name}.png, {output_name}.pdf, {output_name}.svg")
 
     return {
         'diff_matrix': diff_matrix,
