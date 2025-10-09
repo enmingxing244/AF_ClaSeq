@@ -1,6 +1,6 @@
 # Byte-compiled / optimized / DLL files
 __pycache__/
-examples/
+example/
 result*/
 test*/
 xtc/
