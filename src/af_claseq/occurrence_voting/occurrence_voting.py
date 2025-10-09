@@ -20,7 +20,7 @@ from collections import Counter, defaultdict
 
 # Use existing AF_ClaSeq utilities
 from af_claseq.utils.slurm_utils import SlurmJobSubmitter
-from af_claseq.utils.plotting_manager import create_2d_scatter_plot, plot_1d_distribution, create_joint_plot
+from af_claseq.utils.plotting_manager import create_2d_scatter_plot, plot_1d_distribution, create_joint_plot, save_ai_compatible_plot
 from af_claseq.utils.sequence_processing import read_a3m_to_dict, write_a3m
 from af_claseq.utils.logging_utils import get_logger
 from af_claseq.utils.exceptions import WorkflowError
@@ -1228,12 +1228,13 @@ class OccurrenceVotingManager:
                    verticalalignment='top', bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.8))
 
             plt.tight_layout()
-            occurrence_bar_plot = plots_dir / "top_sequence_occurrences.png"
-            plt.savefig(occurrence_bar_plot, dpi=300, bbox_inches='tight', facecolor='white')
-            plt.savefig(str(occurrence_bar_plot).replace('.png', '.svg'), format='svg', bbox_inches='tight', facecolor='white')
+
+            # Save plot using AI-compatible format
+            base_path = str(plots_dir / "top_sequence_occurrences")
+            save_ai_compatible_plot(plt.gcf(), base_path, dpi=300, logger=self.logger)
             plt.close()
-            plot_files.append(str(occurrence_bar_plot))
-            self.logger.info(f"  Generated enhanced occurrence bar chart: {occurrence_bar_plot}")
+            plot_files.append(base_path)
+            self.logger.info(f"  Generated enhanced occurrence bar chart: {base_path}")
 
         except Exception as e:
             self.logger.warning(f"Failed to generate occurrence bar chart: {e}")

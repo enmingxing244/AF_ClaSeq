@@ -28,11 +28,17 @@ def setup_logging(config: Dict[str, Any], log_file: Optional[str] = None) -> log
     Returns:
         Configured logger instance
     """
+    # Get working directory from config
+    working_dir = config.get('output', {}).get('working_dir', '.')
+
     if log_file is None:
-        log_file = os.path.join("logs", "dac_workflow.log")
+        # Create logs directory within working_dir
+        logs_dir = os.path.join(working_dir, "logs")
+        log_file = os.path.join(logs_dir, "dac_workflow.log")
 
     # Create logs directory
-    os.makedirs("logs", exist_ok=True)
+    log_dir = os.path.dirname(log_file)
+    os.makedirs(log_dir, exist_ok=True)
 
     # Use af_claseq logging utilities
     logger = setup_logger(

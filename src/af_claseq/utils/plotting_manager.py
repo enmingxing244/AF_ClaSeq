@@ -38,6 +38,57 @@ COLORS = {
     'default_control': '#AFD2D0',
     'correlation_cmap': ['#72b3d4', '#dadada', '#bc6565']
 }
+
+# Adobe Illustrator compatibility settings
+ADOBE_ILLUSTRATOR_SETTINGS = {
+    'pdf.fonttype': 42,        # TrueType fonts (editable in AI)
+    'ps.fonttype': 42,         # PostScript fonts
+    'svg.fonttype': 'none',    # SVG text as text (not paths)
+    'pdf.use14corefonts': True, # Standard fonts
+    'ps.usedistiller': 'xpdf', # Prevents clipping paths and AI issues
+    'font.family': ['sans-serif'],
+    'font.sans-serif': ['Arial', 'DejaVu Sans', 'Liberation Sans'],
+}
+
+def save_ai_compatible_plot(fig, base_path: str, dpi: int = 300, transparent: bool = False, logger: Optional[Any] = None):
+    """
+    Save plots in 3 formats: PNG (PowerPoint), PDF (AI-editable), SVG (web/backup).
+
+    Args:
+        fig: matplotlib figure object
+        base_path: base file path without extension
+        dpi: DPI for PNG output (default 300 for presentation quality)
+        transparent: whether to use transparent background
+        logger: optional logger instance
+    """
+    if logger is None:
+        logger = get_logger(__name__)
+
+    # Store current rcParams to restore later
+    original_rcParams = plt.rcParams.copy()
+
+    try:
+        # Apply Adobe Illustrator compatibility settings
+        plt.rcParams.update(ADOBE_ILLUSTRATOR_SETTINGS)
+
+        # Save PNG for PowerPoint (high DPI, good for presentations)
+        png_path = f"{base_path}.png"
+        fig.savefig(png_path, dpi=600, bbox_inches='tight', transparent=transparent, facecolor='white')
+
+        # Save PDF for Adobe Illustrator (fully editable vectors, no rasterization to avoid linked files)
+        pdf_path = f"{base_path}.pdf"
+        fig.savefig(pdf_path, format='pdf', bbox_inches='tight', transparent=False)
+
+        # Save SVG for web/backup (fully editable vector format)
+        svg_path = f"{base_path}.svg"
+        fig.savefig(svg_path, format='svg', bbox_inches='tight', transparent=False)
+
+        logger.info(f"Saved plots: {png_path}, {pdf_path}, {svg_path}")
+
+    finally:
+        # Restore original rcParams to not affect other plots
+        plt.rcParams.update(original_rcParams)
+
 def load_results_df(
     results_dir: Union[str, List[str]],
     metric_names: List[str],
@@ -270,7 +321,6 @@ def set_axis_limits_and_ticks(
         if plt_obj.gca().get_yscale() == 'log':
             # For log scale, use nice powers of 10 with superscript notation
             from matplotlib.ticker import LogLocator, FuncFormatter
-            import numpy as np
             
             ax = plt_obj.gca()
             ax.yaxis.set_major_locator(LogLocator(base=10.0, numticks=15))
@@ -382,6 +432,9 @@ def plot_1d_distribution(
     counts, bin_edges, _ = plt.hist(results_df[metric_name], bins=bins.tolist())
     plt.clf()  # Clear the figure
 
+    # Ensure counts is a numpy array (plt.hist can return array or list of arrays)
+    counts = np.asarray(counts)
+
     # Create color gradient
     colors = []
     for i in range(len(bin_edges)-1):
@@ -401,61 +454,82 @@ def plot_1d_distribution(
             
         colors.append((r, g, b))
 
+    # Get current axes
+    ax = plt.gca()
+
+    # CRITICAL: Set log scale FIRST if needed (before creating bars)
+    if log_scale:
+        ax.set_yscale('log')
+
+        # Calculate appropriate bottom value for log scale (must be > 0)
+        if y_min is not None:
+            bar_bottom = y_min
+        else:
+            # Use a sensible minimum for log scale
+            min_count = counts[counts > 0].min() if np.any(counts > 0) else 1
+            bar_bottom = max(0.5, min_count * 0.5)
+    else:
+        bar_bottom = 0  # Normal scale starts at 0
+
     # Plot each bar with its own color
-    plt.bar(
-        bin_edges[:-1], 
-        counts, 
-        width=np.diff(bin_edges), 
-        align='edge', 
-        color=colors, 
-        edgecolor=None
+    # CRITICAL: Use bottom parameter to prevent bars extending to -infinity in log space
+    bars = plt.bar(
+        bin_edges[:-1],
+        counts,
+        width=np.diff(bin_edges),
+        align='edge',
+        color=colors,
+        edgecolor=None,
+        bottom=bar_bottom if log_scale else None
     )
 
     # Add vertical dashed lines at bin boundaries if requested
     if show_bin_lines:
         for bin_edge in bin_edges:
             plt.axvline(x=bin_edge, color='gray', linestyle='--', alpha=0.5)
-    
+
     plt.xlabel(f'{metric_name}')
     plt.ylabel('Count')
-    
+
+    # Set y-axis limits for log scale
     if log_scale:
-        plt.yscale('log')
-    
+        if y_min is not None and y_max is not None:
+            ax.set_ylim(bar_bottom, y_max)
+        elif y_min is not None:
+            ax.set_ylim(bottom=bar_bottom)
+
     # Set axis limits and ticks
     set_axis_limits_and_ticks(
-        plt, 
-        x_min=x_min, 
-        x_max=x_max, 
-        y_min=y_min, 
-        y_max=y_max, 
+        plt,
+        x_min=x_min,
+        x_max=x_max,
+        y_min=y_min,
+        y_max=y_max,
         x_ticks=x_ticks
     )
 
-    # Save plot
-    plot_path = os.path.join(output_dir, f'{metric_name}_1d_distribution.png')
-    plt.savefig(plot_path, dpi=PLOT_PARAMS['dpi'], bbox_inches='tight')
-    plt.savefig(plot_path.replace('.png', '.svg'), format='svg', bbox_inches='tight')
+    # Save plot using AI-compatible format
+    base_path = os.path.join(output_dir, f'{metric_name}_1d_distribution')
+    save_ai_compatible_plot(plt.gcf(), base_path, dpi=PLOT_PARAMS['dpi'], logger=log)
     plt.close()
 
-    log.info(f"Saved 1D distribution plot to: {plot_path}")
     log.info(f"Mean {metric_name}: {results_df[metric_name].mean():.2f}")
     log.info(f"Median {metric_name}: {results_df[metric_name].median():.2f}")
-    
-    return plot_path
+
+    return base_path
 
 def create_2d_scatter_plot(
-    results_df: pd.DataFrame, 
-    metric_name1: str, 
-    metric_name2: str, 
+    results_df: pd.DataFrame,
+    metric_name1: str,
+    metric_name2: str,
     output_dir: str,
-    color_metric: str = 'plddt', 
+    color_metric: str = 'plddt',
     cmap_colors: List[str] = None,
-    x_min: Optional[float] = None, 
-    x_max: Optional[float] = None, 
-    y_min: Optional[float] = None, 
-    y_max: Optional[float] = None, 
-    x_ticks: Optional[List[float]] = None, 
+    x_min: Optional[float] = None,
+    x_max: Optional[float] = None,
+    y_min: Optional[float] = None,
+    y_max: Optional[float] = None,
+    x_ticks: Optional[List[float]] = None,
     y_ticks: Optional[List[float]] = None,
     title: Optional[str] = None,
     threshold_x: Optional[float] = None,
@@ -464,7 +538,7 @@ def create_2d_scatter_plot(
 ) -> str:
     """
     Create a 2D scatter plot with the specified parameters.
-    
+
     Args:
         results_df: DataFrame containing results
         metric_name1: Name of metric for x-axis
@@ -482,14 +556,28 @@ def create_2d_scatter_plot(
         threshold_x: Optional x-axis threshold for vertical dashed line
         threshold_y: Optional y-axis threshold for horizontal dashed line
         logger: Optional logger to use
-        
+
     Returns:
         Path to saved plot
     """
     log = logger or get_logger(__name__)
-    
+
     # Create output directory
     os.makedirs(output_dir, exist_ok=True)
+
+    # Store current rcParams to restore later
+    original_rcParams = plt.rcParams.copy()
+
+    # Set consistent font sizes for 2D scatter plots only
+    plt.rcParams.update({
+        'font.family': ['sans-serif'],
+        'font.sans-serif': ['DejaVu Sans'],
+        'font.size': 24,
+        'axes.labelsize': 24,
+        'axes.titlesize': 24,
+        'xtick.labelsize': 24,
+        'ytick.labelsize': 24
+    })
     
     # Use provided colormap or default
     if cmap_colors is None:
@@ -497,7 +585,7 @@ def create_2d_scatter_plot(
     
     custom_cmap = LinearSegmentedColormap.from_list('custom', cmap_colors)
     
-    plt.figure(figsize=(8, 7))
+    plt.figure(figsize=(10, 8))
     scatter = plt.scatter(
         results_df[metric_name1],
         results_df[metric_name2], 
@@ -511,7 +599,8 @@ def create_2d_scatter_plot(
         linewidths=0
     )
 
-    plt.colorbar(scatter, label=f'{color_metric.replace("plddt", "pLDDT")} Score')
+    cbar = plt.colorbar(scatter, label=f'{color_metric.replace("plddt", "pLDDT")} Score')
+    cbar.solids.set_rasterized(True)
     plt.xlabel(metric_name1)
     plt.ylabel(metric_name2)
     
@@ -536,14 +625,16 @@ def create_2d_scatter_plot(
     )
 
     plt.tight_layout()
-    plot_path = os.path.join(output_dir, f'{metric_name1}_{metric_name2}_scatter_{color_metric}.png')
-    plt.savefig(plot_path, bbox_inches='tight', dpi=PLOT_PARAMS['dpi'])
-    plt.savefig(plot_path.replace('.png', '.svg'), format='svg', bbox_inches='tight')
+
+    # Save plot using AI-compatible format
+    base_path = os.path.join(output_dir, f'{metric_name1}_{metric_name2}_scatter_{color_metric}')
+    save_ai_compatible_plot(plt.gcf(), base_path, dpi=PLOT_PARAMS['dpi'], logger=logger)
     plt.close()
-    
-    log.info(f"Saved 2D scatter plot to: {plot_path}")
-    
-    return plot_path
+
+    # Restore original rcParams to not affect other plots
+    plt.rcParams.update(original_rcParams)
+
+    return base_path
 
 def create_joint_plot(
     results_df: pd.DataFrame, 
@@ -613,7 +704,8 @@ def create_joint_plot(
     )
 
     cax = g.figure.add_axes((.95, .4, .02, .2))
-    plt.colorbar(g.ax_joint.collections[0], cax=cax, label=f'{color_metric.replace("plddt", "pLDDT")} Score')
+    cbar = plt.colorbar(g.ax_joint.collections[0], cax=cax, label=f'{color_metric.replace("plddt", "pLDDT")} Score')
+    cbar.solids.set_rasterized(True)
 
     g.ax_joint.set_xlabel(metric_name1)
     g.ax_joint.set_ylabel(metric_name2)
@@ -623,14 +715,12 @@ def create_joint_plot(
     if y_min is not None and y_max is not None:
         g.ax_joint.set_ylim(y_min, y_max)
 
-    plot_path = os.path.join(output_dir, f'{metric_name1}_{metric_name2}_joint_{color_metric}.png')
-    plt.savefig(plot_path, bbox_inches='tight', dpi=PLOT_PARAMS['dpi'])
-    plt.savefig(plot_path.replace('.png', '.svg'), format='svg', bbox_inches='tight')
+    # Save plot using AI-compatible format
+    base_path = os.path.join(output_dir, f'{metric_name1}_{metric_name2}_joint_{color_metric}')
+    save_ai_compatible_plot(plt.gcf(), base_path, dpi=PLOT_PARAMS['dpi'], logger=log)
     plt.close()
-    
-    log.info(f"Saved joint plot to: {plot_path}")
-    
-    return plot_path
+
+    return base_path
 def plot_m_fold_sampling_1d(
     results_dir: Union[str, List[str]],
     metric_name: str,

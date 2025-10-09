@@ -11,6 +11,7 @@ from collections import Counter
 import pandas as pd
 
 from af_claseq.utils.sequence_processing import read_a3m_to_dict, get_protein_sequence
+from af_claseq.utils.plotting_manager import save_ai_compatible_plot
 
 
 class SequenceRecompiler:
@@ -377,7 +378,8 @@ class SequenceRecompiler:
                           vmax=self.ratio_colorbar_min_max[1])
         else:
             im = ax.imshow(bin_ratios, cmap=custom_cmap, aspect='auto')
-        plt.colorbar(im, ax=ax, label='Ratio of votes')
+        cbar = plt.colorbar(im, ax=ax, label='Ratio of votes')
+        cbar.solids.set_rasterized(True)
         
         # Customize axes
         ax.set_xlabel('Bin Index', fontsize=12)
@@ -403,12 +405,11 @@ class SequenceRecompiler:
         plt.title(f'Vote Distribution for Bin {target_bin} Sequences')
         plt.tight_layout()
         
-        # Save plot
+        # Save plot using AI-compatible format
         plot_dir = os.path.join(self.output_dir, "plots")
         os.makedirs(plot_dir, exist_ok=True)
-        plt.savefig(os.path.join(plot_dir, f'{target_bin}_sequence_vote_ratios.png'),
-                   dpi=600, bbox_inches='tight')
-        plt.savefig(os.path.join(plot_dir, f'{target_bin}_sequence_vote_ratios.svg'), format='svg', bbox_inches='tight')
+        base_path = os.path.join(plot_dir, f'{target_bin}_sequence_vote_ratios')
+        save_ai_compatible_plot(plt.gcf(), base_path, dpi=600, logger=self.logger)
         plt.close()
         
         self.logger.info(f"Created vote distribution plot for bin {target_bin}")

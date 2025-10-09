@@ -202,8 +202,9 @@ class WorkflowOrchestrator:
         # Initialize structure analyzer
         self.structure_analyzer = StructureAnalyzer(self.config, self.logger)
         
-        # Analyze structures
-        output_file = "structure_analysis_results.csv"
+        # Analyze structures - use working_dir for output file
+        working_dir = self.config.get('output', {}).get('working_dir', '.')
+        output_file = os.path.join(working_dir, "structure_analysis_results.csv")
         self.analysis_results = self.structure_analyzer.analyze_complete(
             self.shuffle_dirs, output_file
         )

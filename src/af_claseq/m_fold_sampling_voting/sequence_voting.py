@@ -21,6 +21,7 @@ from pathlib import Path
 
 from af_claseq.utils.structure_analysis import StructureAnalyzer
 from af_claseq.utils.logging_utils import get_logger
+from af_claseq.utils.plotting_manager import save_ai_compatible_plot
 
 
 class VotingAnalyzer:
@@ -669,54 +670,91 @@ class SequenceVotingPlotter:
         # Create histogram data without plotting
         counts, bins, _ = plt.hist(results_df['Bin_Assignment'], bins=bins)
         plt.clf()  # Clear the figure
-        
+
+        # Ensure counts is a numpy array (plt.hist can return array or list of arrays)
+        counts = np.asarray(counts)
+
         if self.end_color is not None:  # Only create gradient if end_color is provided
+            # Get axes
+            ax = plt.gca()
+
+            # CRITICAL: Calculate bar bottom value FIRST (always using log scale)
+            if self.y_min is not None:
+                bar_bottom = self.y_min
+            else:
+                # Use a sensible minimum for log scale (must be > 0)
+                min_count = counts[counts > 0].min() if np.any(counts > 0) else 1
+                bar_bottom = max(0.5, min_count * 0.5)
+
+            # CRITICAL: Set log scale FIRST (before creating bars)
+            ax.set_yscale('log')
+
             # Create color gradient
             initial_rgb = self._hex2color(self.initial_color)
             end_rgb = self._hex2color(self.end_color)
-            
+
             # Generate gradient colors
             colors = []
             for i in range(len(bins)-1):
                 ratio = i / (len(bins)-2)  # Linear gradient from 0 to 1
                 color = tuple(initial_rgb[j] + (end_rgb[j] - initial_rgb[j]) * ratio for j in range(3))
                 colors.append(color)
-            
+
             # Plot each bar centered on bin numbers with gradient colors
+            # CRITICAL: Use bottom parameter to prevent bars extending to -infinity in log space
             for i, (count, color) in enumerate(zip(counts, colors)):
                 plt.bar(bins[i], count, width=1.0, align='center',
-                       color=color, edgecolor=None)
+                       color=color, edgecolor=None, bottom=bar_bottom)
         else:
+            # Get axes
+            ax = plt.gca()
+
+            # CRITICAL: Calculate bar bottom value FIRST (always using log scale)
+            if self.y_min is not None:
+                bar_bottom = self.y_min
+            else:
+                # Use a sensible minimum for log scale (must be > 0)
+                min_count = counts[counts > 0].min() if np.any(counts > 0) else 1
+                bar_bottom = max(0.5, min_count * 0.5)
+
+            # CRITICAL: Set log scale FIRST (before creating bars)
+            ax.set_yscale('log')
+
             # Use single color if no end_color provided
+            # CRITICAL: Use bottom parameter to prevent bars extending to -infinity in log space
             plt.bar(bins[:-1], counts, width=1.0, align='center',
-                   color=self._hex2color(self.initial_color), edgecolor=None)
-        
+                   color=self._hex2color(self.initial_color), edgecolor=None,
+                   bottom=bar_bottom)
+
         # Add vertical dashed lines at bin boundaries
         for bin_edge in bins:
             plt.axvline(x=bin_edge - 0.5, color='gray', linestyle='--', alpha=0.5)
-        
+
         plt.xlabel('Bin Assignment')
         plt.ylabel('Count')
-        plt.yscale('log')
         plt.xlim(0.5, num_bins + 0.5)
-        
+
         # Set custom x ticks if provided, otherwise use all bins
         if self.x_ticks is not None:
             plt.xticks(self.x_ticks)
-        
-        # Set y-axis limits if provided
+
+        # Set y-axis limits
+        ax = plt.gca()
         if self.y_min is not None and self.y_max is not None:
-            plt.ylim(self.y_min, self.y_max)
+            ax.set_ylim(bar_bottom, self.y_max)
+        elif self.y_min is not None:
+            ax.set_ylim(bottom=bar_bottom)
+        else:
+            ax.set_ylim(bottom=bar_bottom)
         
-        # Save plot
+        # Save plot using AI-compatible format
         os.makedirs(self.output_dir, exist_ok=True)
-        plot_path = os.path.join(self.output_dir, 'sequence_voting_distribution.png')
-        plt.savefig(plot_path, dpi=600, bbox_inches='tight')
-        plt.savefig(plot_path.replace('.png', '.svg'), format='svg', bbox_inches='tight')
+        base_path = os.path.join(self.output_dir, 'sequence_voting_distribution')
+        save_ai_compatible_plot(plt.gcf(), base_path, dpi=600, logger=self.logger)
         plt.close()
-        
-        self.logger.info(f"Created distribution plot: {plot_path}")
-        return plot_path
+
+        self.logger.info(f"Created distribution plot: {base_path}")
+        return base_path
 
 
 class SequenceVotingRunner:
