@@ -18,8 +18,6 @@ from af_claseq.utils.plotting_manager import save_ai_compatible_plot
 
 # Set publication-quality font defaults (following existing patterns)
 plt.rcParams.update({
-    'font.family': ['sans-serif'],
-    'font.sans-serif': ['DejaVu Sans'],
     'font.size': 24,
     'axes.labelsize': 24,
     'axes.titlesize': 24,

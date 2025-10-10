@@ -612,8 +612,6 @@ class SequenceVotingPlotter:
         
         # Configure matplotlib for publication-quality plots
         plt.rcParams.update({
-            'font.family': ['sans-serif'],
-            'font.sans-serif': ['DejaVu Sans'],
             'font.size': 24,
             'axes.labelsize': 24,
             'axes.titlesize': 24,
