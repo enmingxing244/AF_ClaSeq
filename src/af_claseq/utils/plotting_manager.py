@@ -14,8 +14,6 @@ from af_claseq.utils.logging_utils import get_logger
 
 # Set publication-quality font defaults
 plt.rcParams.update({
-    'font.family': ['sans-serif'],
-    'font.sans-serif': ['DejaVu Sans'],
     'font.size': 24,
     'axes.labelsize': 24,
     'axes.titlesize': 24,
@@ -46,8 +44,6 @@ ADOBE_ILLUSTRATOR_SETTINGS = {
     'svg.fonttype': 'none',    # SVG text as text (not paths)
     'pdf.use14corefonts': True, # Standard fonts
     'ps.usedistiller': 'xpdf', # Prevents clipping paths and AI issues
-    'font.family': ['sans-serif'],
-    'font.sans-serif': ['Arial', 'DejaVu Sans', 'Liberation Sans'],
 }
 
 def save_ai_compatible_plot(fig, base_path: str, dpi: int = 300, transparent: bool = False, logger: Optional[Any] = None):
@@ -570,8 +566,6 @@ def create_2d_scatter_plot(
 
     # Set consistent font sizes for 2D scatter plots only
     plt.rcParams.update({
-        'font.family': ['sans-serif'],
-        'font.sans-serif': ['DejaVu Sans'],
         'font.size': 24,
         'axes.labelsize': 24,
         'axes.titlesize': 24,
