@@ -1,12 +1,14 @@
 # Byte-compiled / optimized / DLL files
 __pycache__/
 example/
+*json
 result*/
 test*/
 xtc/
 zenodo*
 af_cluster_compar*/
 pyrightconfig.json
+
 read_code/
 
 CASP*
