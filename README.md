@@ -1136,44 +1136,14 @@ Warning: No sequences pass coverage threshold
 If you use AF_ClaSeq in your research, please cite:
 
 ```
-[Citation information to be added upon publication]
+
+@misc{xing2025leveragingsequencepurificationaccurate,
+      title={Leveraging Sequence Purification for Accurate Prediction of Multiple Conformational States with AlphaFold2}, 
+      author={Enming Xing and Junjie Zhang and Shen Wang and Xiaolin Cheng},
+      year={2025},
+      eprint={2503.00165},
+      archivePrefix={arXiv},
+      primaryClass={q-bio.BM},
+      url={https://arxiv.org/abs/2503.00165}, 
+}
 ```
-
-## 🤝 Contributing
-
-We welcome contributions to AF_ClaSeq! Please see our contribution guidelines:
-
-1. Fork the repository
-2. Create a feature branch
-3. Make your changes with appropriate tests
-4. Submit a pull request with detailed description
-
-## 📞 Support
-
-For questions, issues, or feature requests:
-- Create an issue on GitHub
-- Check existing documentation and examples
-- Review troubleshooting section above
-
-## 📜 License
-
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
-
-## 🔄 Version History
-
-### v1.2.2 - Latest
-- **Major Bug Fixes**: Resolved header mismatch issues in phylogenetic processing
-- **Enhanced Job Management**: Direct SlurmJobSubmitter integration
-- **Coverage Filtering**: Configurable sequence quality filtering
-- **Smart Grouping**: Improved remainder handling in sequence shuffling
-- **Performance Improvements**: Optimized concurrent job processing
-
-### Previous Versions
-- v1.2.1: M-fold sampling enhancements
-- v1.2.0: Leave-one-out validation framework
-- v1.1.0: Occurrence voting implementation
-- v1.0.0: Initial divide-and-conquer implementation
-
----
-
-**AF_ClaSeq** - Advancing protein structure prediction through phylogenetically-guided sequence analysis
