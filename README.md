@@ -74,11 +74,15 @@ which TMalign  # or TMscore, depending on your TM-align installation
 
 Update the configuration files to point to your ColabFold environment and FastTree binary:
 ```yaml
-phylogenetic:
+input:
+  a3m_file: "/path/to/input/alignment.a3m"
   fasttree_binary: "/path/to/FastTree"
 
+output:
+  working_dir: "/path/to/output/working_directory"
+
 colabfold:
-  conda_env: "/path/to/colabfold/env"
+  conda_env: "/path/to/colabfold/conda/env"
 ```
 
 ## 📖 Usage
@@ -90,8 +94,12 @@ The divide-and-conquer approach splits large sequence alignments into phylogenet
 #### Configuration Example
 ```yaml
 # Divide-and-conquer configuration
-phylogenetic:
+input:
+  a3m_file: "/path/to/input/alignment.a3m"
   fasttree_binary: "/path/to/FastTree"
+
+output:
+  working_dir: "/path/to/output/working_directory"
 
 clade_splitting:
   min_clade_size: 40
@@ -100,20 +108,21 @@ clade_splitting:
     enabled: true
     threshold: 0.7  # 70% non-gap content minimum
 
-shuffle:
+shuffling:
   num_shuffles: 10
-  group_size: 15
+  group_size: 8
+  random_seed: 42
 
 colabfold:
-  conda_env: "/path/to/colabfold/env"
+  conda_env: "/path/to/colabfold/conda/env"
   num_models: 1
   num_seeds: 1
-  max_concurrent_jobs: 90
+  max_concurrent_jobs: 80
 
 slurm:
-  account: "your_account"
-  partition: "gpu_partition"
-  time: "02:30:00"
+  account: "your_slurm_account"
+  partition: "your_partition"
+  time: "01:00:00"
   memory: "32G"
   cpus: 8
 ```
@@ -199,11 +208,18 @@ AF_ClaSeq/
 
 ### Core Configuration Parameters
 
-#### Phylogenetic Analysis
+#### Input/Output Configuration
 ```yaml
-phylogenetic:
-  fasttree_binary: "/usr/local/bin/FastTree"  # FastTree executable path
+input:
+  a3m_file: "/path/to/input/alignment.a3m"  # Input alignment file
+  fasttree_binary: "/path/to/FastTree"      # FastTree executable path
 
+output:
+  working_dir: "/path/to/output/directory"  # Working directory for outputs
+```
+
+#### Clade Splitting
+```yaml
 clade_splitting:
   min_clade_size: 40          # Minimum sequences per clade
   max_clade_size: 150         # Maximum sequences per clade
@@ -212,29 +228,29 @@ clade_splitting:
     threshold: 0.7            # Minimum non-gap content ratio (70%)
 ```
 
-#### Sequence Processing
+#### Sequence Shuffling
 ```yaml
-shuffle:
+shuffling:
   num_shuffles: 10            # Number of random shuffles per clade
-  group_size: 15              # Target sequences per group
+  group_size: 8               # Number of sequences per group
   random_seed: 42             # For reproducible shuffling
 ```
 
 #### ColabFold Integration
 ```yaml
 colabfold:
-  conda_env: "/path/to/colabfold"  # ColabFold environment path
-  num_models: 1                    # Number of models to generate
-  num_seeds: 1                     # Number of random seeds
-  max_concurrent_jobs: 90          # Maximum parallel jobs
+  conda_env: "/path/to/colabfold/conda/env"  # ColabFold environment path
+  num_models: 1                              # Number of models to generate
+  num_seeds: 1                               # Number of random seeds
+  max_concurrent_jobs: 80                    # Maximum parallel jobs
 ```
 
 #### SLURM Configuration
 ```yaml
 slurm:
-  account: "research_account"      # SLURM account name
-  partition: "gpu_nodes"           # GPU partition name
-  time: "02:30:00"                # Job time limit
+  account: "your_slurm_account"   # SLURM account name
+  partition: "your_partition"     # SLURM partition name
+  time: "01:00:00"                # Job time limit
   memory: "32G"                   # Memory per job
   cpus: 8                         # CPU cores per job
 ```
