@@ -1,0 +1,86 @@
+# Occurrence Voting Workflow Configuration
+# Example configuration for AF_ClaSeq occurrence voting analysis
+
+# General workflow settings
+general:
+  source_a3m: "/path/to/source/sequences.a3m"
+  base_dir: "/path/to/occurrence_voting/output_directory"
+  protein_name: "YourProtein"
+  random_seed: 42  # For reproducible random sampling
+
+# Random sampling configuration
+sampling:
+  num_groups: 3000      # Number of random groups to create
+  group_size: 8         # Number of sequences per group (excluding query)
+  num_batches: 90       # Number of SLURM batches to organize groups into
+
+# Structure prediction settings
+structure_prediction:
+  num_models: 1         # Number of ColabFold models per prediction
+  num_seeds: 1          # Number of ColabFold seeds per prediction
+  prediction_mode: "monomer"  # Prediction mode: "monomer" or "homodimer"
+
+# Structure analysis configuration
+structure_analysis:
+  config_json: "/path/to/structure/analysis/config.json"
+  plddt_threshold: 0                   # Minimum pLDDT threshold for structure inclusion
+
+# Structure filtering configuration
+filtering:
+  metric_name: "6xrg_composite_rmsd"   # Metric to use for filtering (from structure analysis)
+  cutoff_value: 4.0                    # Threshold value for filtering
+  cutoff_method: "below"               # "above" or "below" - structures below 3.0 RMSD
+
+# Occurrence voting settings
+voting:
+  top_n_sequences: 16  # Number of top frequent sequences to select as final result
+
+# Plotting configuration
+plotting:
+  enabled: true                                   # Enable/disable plotting
+  metrics_to_plot: ["6xr6_composite_rmsd", "6xrg_composite_rmsd"]  # Specific metrics to plot (empty list = all available)
+
+  plot_types:             # Types of plots to generate
+    - "1d"                # 1D distribution plots
+    - "2d"                # 2D scatter plots
+    - "correlation"       # Correlation plots with pLDDT
+    - "joint"             # Joint plots (marginal distributions)
+    - "occurrence"        # Occurrence bar charts (unique to occurrence voting)
+
+  # Color schemes for different metrics (generic names: metric1, metric2, etc.)
+  colors:
+    metric1: ["#87ebe1", "#87CEEB"]     # Sky blue to white for 6xr6_composite_rmsd
+    metric2: ["#AD7BAF", "#F2E7F1"]     # Light pink to purple for 6xrg_composite_rmsd
+
+  # Range and ticks for each metric (applies to both x and y axis depending on plot context)
+  metric_ranges:
+    metric1:
+      min: 0
+      max: 20
+      ticks: [0, 4, 8, 12, 16, 20]
+    metric2:
+      min: 0
+      max: 20
+      ticks: [0, 4, 8, 12, 16, 20]
+
+  # Plot-specific parameters
+  plot_params:
+    1d:
+      n_plot_bins: 50     # Number of histogram bins
+      figsize: [10, 5]    # Figure size [width, height]
+      log_scale: true    # Use log scale for y-axis
+      show_bin_lines: true  # Show vertical lines at bin edges
+    2d:
+      color_metric: "plddt"  # Metric to use for point coloring
+
+  output_subdir: "plots"                          # Subdirectory for plots
+
+# SLURM job configuration for ColabFold predictions
+slurm:
+  conda_env_path: "/path/to/colabfold/conda/env"
+  account: "your_slurm_account"
+  partition: "your_partition"
+  time: "00:30:00"      # Time limit per job
+  memory: "32G"         # Memory per job
+  cpus: 8               # CPUs per job
+  max_concurrent_jobs: 90  # Maximum simultaneous jobs

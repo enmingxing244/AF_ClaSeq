@@ -1,0 +1,82 @@
+# Divide and Conquer Phylogenetic Workflow Configuration
+# Main configuration file in YAML format for better readability
+
+# Input files and binaries
+input:
+  a3m_file: "/path/to/input/alignment.a3m"
+  fasttree_binary: "/path/to/FastTree"
+
+output:
+  working_dir: "/path/to/output/working_directory"
+# Phylogenetic tree construction and clade splitting
+clade_splitting:
+  min_clade_size: 40      # Minimum sequences per clade
+  max_clade_size: 150     # Maximum sequences per clade (larger clades will be subdivided)
+  coverage_filter:
+      enabled: true      # Enable/disable coverage filtering
+      threshold: 0.7
+
+# Random shuffling and grouping within clades
+shuffling:
+  num_shuffles: 10        # Number of random shuffles per clade
+  group_size: 8          # Number of sequences per group
+  random_seed: 42         # Random seed for reproducibility (optional)
+
+# ColabFold structure prediction settings
+colabfold:
+  conda_env: "/path/to/colabfold/conda/env"  # Conda environment name
+  num_models: 1           # Number of models per prediction
+  num_seeds: 1            # Number of seeds per prediction
+  max_concurrent_jobs: 80 # Maximum concurrent SLURM jobs
+
+# SLURM job configuration
+slurm:
+  account: "your_slurm_account"      # SLURM account
+  partition: "your_partition"    # SLURM partition
+  time: "01:00:00"        # Job time limit
+  memory: "32G"           # Memory per job
+  cpus: 8                 # CPUs per job
+
+# Structure analysis configuration
+structure_analysis:
+  config_file: "/path/to/structure/analysis/config.json"  # JSON config for metrics and analysis
+  plddt_threshold: 0     # Minimum pLDDT score for structure inclusion
+
+# Plotting and visualization
+plotting:
+  metrics:                # List of metrics to plot
+    - "6xr6_composite_rmsd"
+    - "6xrg_composite_rmsd"
+
+
+  plot_types:             # Types of plots to generate
+    - "1d"                # 1D distribution plots
+    - "2d"                # 2D scatter plots
+    - "correlation"       # Correlation plots
+  
+  # Color schemes for different metrics
+  colors:
+    metric1:  ["#F2E7F1","#AD7BAF"] # Sky blue to white for 6xr6_composite_rmsd
+    metric2:   ["#AFD2D0","#468F8B"]      # Light pink to purple for 6xrg_composite_rmsd
+
+
+  # Range and ticks for each metric (applies to both x and y axis depending on plot context)
+  metric_ranges:
+    metric1:
+      min: 0
+      max: 20
+      ticks: [0, 4,8,12,16,20]
+    metric2:
+      min: 0
+      max: 20
+      ticks: [0, 4,8,12,16,20]
+  
+  # Plot-specific parameters
+  plot_params:
+    1d:
+      n_plot_bins: 50     # Number of histogram bins
+      figsize: [10, 5]    # Figure size [width, height]
+      log_scale: true    # Use log scale for y-axis
+      show_bin_lines: true  # Show vertical lines at bin edges
+    2d:
+      color_metric: "plddt"  # Metric to use for point coloring

@@ -1,6 +1,5 @@
 # Byte-compiled / optimized / DLL files
 __pycache__/
-example/
 *json
 result*/
 test*/
@@ -8,7 +7,7 @@ xtc/
 zenodo*
 af_cluster_compar*/
 pyrightconfig.json
-
+example/KaiB_demo/m_fold_sampling_voting
 read_code/
 
 CASP*

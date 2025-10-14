@@ -1,0 +1,43 @@
+# Leave-One-Out Impact Analysis Configuration
+# Example configuration file for AF_ClaSeq leave-one-out workflow
+
+# General workflow settings
+general:
+  source_a3m: "/path/to/source/alignment.a3m"
+  base_dir: "/path/to/leave_one_out/output_directory"
+  structure_analysis_config: "/path/to/structure/analysis/config.json"
+  protein_name: "YourProtein"
+  random_seed: 42  # For reproducible sequence grouping
+
+# Leave-one-out specific settings
+leave_one_out:
+  num_seq_per_group: 8  # Number of sequences per group (excluding query)
+  impact_metric_name: "6xrg_composite_rmsd"  # Must match metric in structure_analysis_config
+  impact_threshold: 1.0  # Threshold for significant impact
+  cutoff_method: "above"  # "above" for metrics where higher impact = better contribution
+                         # "below" for metrics where lower impact = better contribution
+
+  # Additional filtering on full group mean values
+  full_group_mean_threshold: 10.0  # Filter groups based on their full ensemble mean
+  full_mean_cutoff_method: "below"  # "below" to select groups with good initial predictions
+
+  min_sequences_for_loo: 3  # Minimum sequences needed to perform LOO analysis
+
+# SLURM job configuration for ColabFold predictions
+slurm:
+  conda_env_path: "/path/to/colabfold/conda/env"
+  account: "your_slurm_account"
+  partition: "your_partition"
+  time: "01:30:00"  # Time limit per job
+  memory: "32G"     # Memory per job
+  cpus: 8           # CPUs per job
+  max_concurrent_jobs: 200  # Maximum simultaneous jobs
+  num_models: 5     # Number of models per ColabFold prediction (required for LOO)
+  num_seeds: 1      # Number of seeds per prediction
+
+# Plotting and visualization settings
+plotting:
+  output_dir: null  # If null, will use base_dir/leave_one_out/plots
+  figsize: [12, 6]  # Figure size for plots [width, height]
+  dpi: 150          # Plot resolution
+  show_plots: false # Whether to display plots interactively
