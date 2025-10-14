@@ -1,4 +1,4 @@
-# AF_ClaSeq: AlphaFold Clade Sequence Analysis Pipeline
+# AF_ClaSeq: Leveraging Sequence Purification for Accurate Prediction of Multiple Conformational States with AlphaFold2
 
 A comprehensive bioinformatics toolkit for phylogenetically-guided protein structure prediction using AlphaFold and ColabFold. AF_ClaSeq implements advanced sequence analysis strategies including divide-and-conquer phylogenetic splitting, leave-one-out validation, m-fold sampling, and occurrence voting to improve structure prediction quality.
 
