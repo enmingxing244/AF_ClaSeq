@@ -37,27 +37,65 @@ pip install ete3 biopython numpy pandas matplotlib seaborn pyyaml
 
 ## 🛠️ Installation
 
+### Prerequisites
+
+Before installing AF_ClaSeq, ensure you have the following external tools properly installed:
+
+1. **FastTree** - Required for phylogenetic tree construction
+   - Download from: https://morgannprice.github.io/fasttree/
+   - For detailed installation instructions, refer to the FastTree documentation
+
+2. **TM-align** - Required for structure alignment and comparison
+   - Download from: https://zhanggroup.org/TM-align/
+   - For detailed installation instructions, refer to the TM-align documentation
+
+3. **ColabFold** - Required for AlphaFold structure prediction
+   - Installation guide: https://github.com/sokrypton/ColabFold
+   - **IMPORTANT**: Ensure ColabFold is properly installed and configured with GPU access before proceeding
+   - Verify your installation by running ColabFold test predictions
+
+### Installation Steps
+
 1. **Clone the repository:**
 ```bash
 git clone https://github.com/enmingxing244/AF_ClaSeq.git
 cd AF_ClaSeq
 ```
 
-2. **Install the package:**
+2. **Install the AF_ClaSeq package:**
+
+The package dependencies are defined in `pyproject.toml`. Install the package in editable mode:
+
 ```bash
 pip install -e .
 ```
 
-3. **Set up ColabFold environment:**
+This will automatically install all required Python dependencies including:
+- ete3 (phylogenetic tree handling)
+- biopython (sequence processing)
+- numpy, pandas (data analysis)
+- matplotlib, seaborn (visualization)
+- pyyaml (configuration management)
+
+3. **Verify installation:**
 ```bash
-# Follow ColabFold installation instructions
-# Ensure GPU access is configured
+# Check that AF_ClaSeq modules are importable
+python -c "import af_claseq; print('AF_ClaSeq successfully installed!')"
+
+# Verify external tools are accessible
+which FastTree
+which TMalign  # or TMscore, depending on your TM-align installation
 ```
 
-4. **Configure SLURM settings:**
-```bash
-# Update SLURM account and partition in configuration files
-# Ensure FastTree binary is accessible
+4. **Configure paths in your config files:**
+
+Update the configuration files to point to your ColabFold environment and FastTree binary:
+```yaml
+phylogenetic:
+  fasttree_binary: "/path/to/FastTree"
+
+colabfold:
+  conda_env: "/path/to/colabfold/env"
 ```
 
 ## 📖 Usage

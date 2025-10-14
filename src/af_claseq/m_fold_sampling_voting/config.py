@@ -107,6 +107,12 @@ class RecompilePredictConfig:
     prediction_num_model: int = 5
     prediction_num_seed: int = 8
 
+    # NEW: Specify which metrics to process in stages 03 & 04
+    # If None or empty → process all metrics (backward compatible)
+    # If ["bound_rmsd"] → only process that metric
+    # If ["bound_rmsd", "apo_rmsd"] → process both
+    metrics_to_process: Optional[List[str]] = None
+
 @dataclass
 class PureSequencePlottingConfig:
     """Configuration for pure sequence plotting."""

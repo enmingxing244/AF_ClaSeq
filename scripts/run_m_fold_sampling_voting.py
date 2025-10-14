@@ -11,7 +11,7 @@ import sys
 import logging
 import json
 from pathlib import Path
-from typing import Dict, Any
+from typing import Dict, Any, List
 
 # Import modules from AF-ClaSeq
 from af_claseq.utils.slurm_utils import SlurmJobSubmitter
@@ -116,14 +116,75 @@ class AFClaSeqPipeline:
         print(f"Base directory: {self.config.general.base_dir}")
         print(f"Configuration file: {self.config.general.config_file}")
         print("="*80 + "\n")
+
+    def _filter_metrics_to_process(self, selected_metrics: List[str]) -> List[str]:
+        """
+        Filter selected metrics based on metrics_to_process configuration.
+
+        Args:
+            selected_metrics: All available metrics from config
+
+        Returns:
+            Filtered list of metrics to actually process
+        """
+        metrics_to_process = self.config.recompile_predict.metrics_to_process
+
+        # Backward compatibility: If not specified, empty, or None → process all
+        if not metrics_to_process or len(metrics_to_process) == 0:
+            self.logger.info(f"No metric filter specified, processing all metrics: {selected_metrics}")
+            return selected_metrics
+
+        # Filter metrics
+        filtered_metrics = [m for m in selected_metrics if m in metrics_to_process]
+
+        # Validation
+        if len(filtered_metrics) == 0:
+            self.logger.warning(
+                f"None of the specified metrics {metrics_to_process} "
+                f"were found in available metrics {selected_metrics}"
+            )
+            self.logger.warning("Falling back to processing all metrics")
+            return selected_metrics
+
+        # Log filtering results
+        self.logger.info(f"Metric filter applied: {len(selected_metrics)} available → {len(filtered_metrics)} to process")
+        self.logger.info(f"Processing metrics: {filtered_metrics}")
+
+        if len(filtered_metrics) < len(selected_metrics):
+            skipped = [m for m in selected_metrics if m not in filtered_metrics]
+            self.logger.info(f"Skipping metrics: {skipped}")
+
+        return filtered_metrics
+
+    def _get_metric_colors(self, criterion_name: str) -> List[str]:
+        """
+        Get color configuration for a specific metric by name.
+
+        Args:
+            criterion_name: Name of the metric (e.g., "bound_rmsd")
+
+        Returns:
+            List of [initial_color, end_color]
+        """
+        if criterion_name == self.config.recompile_predict.metric_name_1:
+            return self.config.general.metric1_color
+        elif criterion_name == self.config.recompile_predict.metric_name_2:
+            return self.config.general.metric2_color
+        else:
+            # Fallback to metric1_color
+            self.logger.warning(
+                f"No explicit color mapping for '{criterion_name}', "
+                f"using metric1_color as fallback"
+            )
+            return self.config.general.metric1_color
     
     
     def run_m_fold_sampling(self) -> bool:
         """
-        Stage 01_RUN: Run M-fold sampling
+        Stage 01_RUN: Run M-fold sampling with ultra-parallel job submission
         """
-        self.logger.info("=== STAGE 01_RUN: M-FOLD SAMPLING ===")
-        
+        self.logger.info("=== STAGE 01_RUN: M-FOLD SAMPLING (ULTRA-PARALLEL) ===")
+
         try:
             # Determine input A3M file
             input_a3m = self.config.m_fold_sampling.m_fold_samp_input_a3m
@@ -135,49 +196,105 @@ class AFClaSeqPipeline:
                 else:
                     self.logger.error(f"Neither configured input ({self.config.m_fold_sampling.m_fold_samp_input_a3m}) nor source A3M ({self.config.general.source_a3m}) found")
                     return False
-            
+
             # Get number of rounds from configuration
             num_rounds = self.config.m_fold_sampling.rounds
-            self.logger.info(f"Running M-fold sampling for {num_rounds} rounds")
-            
-            all_successful = True
-            
-            # Run M-fold sampling for each round
+            self.logger.info(f"Preparing {num_rounds} rounds for ultra-parallel job submission")
+
+            # ===== PHASE 1: PREPARE ALL ROUNDS (NO JOB SUBMISSION) =====
+            self.logger.info("Phase 1: Preparing all rounds (creating directories and A3M files)")
+
+            all_preparation_successful = True
+
             for round_num in range(1, num_rounds + 1):
-                self.logger.info(f"Starting M-fold sampling round {round_num}/{num_rounds}")
-                
+                self.logger.info(f"Preparing round {round_num}/{num_rounds}")
+
                 # Create round-specific directory
                 round_base_dir = Path(self.config.general.base_dir) / "01_m_fold_sampling" / f"round_{round_num}"
                 round_base_dir.mkdir(exist_ok=True, parents=True)
-                
-                # Create sampler instance for this round
+
+                # Create sampler instance WITHOUT slurm_submitter (no job submission)
                 sampler = MFoldSampler(
                     input_a3m=input_a3m,
                     m_fold_sampling_base_dir=str(round_base_dir),
                     group_size=self.config.m_fold_sampling.m_fold_group_size,
                     coverage_threshold=self.config.general.coverage_threshold,
                     random_select_num_seqs=self.config.m_fold_sampling.m_fold_random_select,
-                    slurm_submitter=self.slurm_submitter,
-                    random_seed=self.config.general.random_seed + round_num,  # Use different seed for each round
+                    slurm_submitter=None,  # KEY: No job submission during preparation
+                    random_seed=self.config.general.random_seed + round_num,  # Different seed per round
                     max_workers=self.config.slurm.max_workers,
                     logger=self.logger,
-                    default_pdb=self.config.general.default_pdb  # Optional for backward compatibility
+                    default_pdb=self.config.general.default_pdb
                 )
-                
-                # Run the sampling process for this round
-                round_success = sampler.run()
-                
-                if not round_success:
-                    self.logger.error(f"Error in M-fold sampling round {round_num}")
-                    all_successful = False
-            
-            if all_successful:
-                self.logger.info(f"Completed all {num_rounds} rounds of M-fold sampling successfully")
-            else:
-                self.logger.warning(f"Completed M-fold sampling with some errors")
-                
-            return all_successful
-            
+
+                # Run preparation only (no job submission)
+                prep_success = sampler.run()
+
+                if not prep_success:
+                    self.logger.error(f"Error preparing round {round_num}")
+                    all_preparation_successful = False
+
+            if not all_preparation_successful:
+                self.logger.error("Failed to prepare some rounds")
+                return False
+
+            # ===== PHASE 2: COLLECT ALL SAMPLING DIRECTORIES FROM ALL ROUNDS =====
+            self.logger.info("Phase 2: Collecting all sampling directories from all rounds")
+
+            all_job_folders = []
+            all_job_ids = []
+
+            # Truncate protein name to keep job names concise (max 8 chars for protein part)
+            protein_name = self.config.general.protein_name
+            protein_prefix = protein_name[:8] if len(protein_name) > 8 else protein_name
+
+            for round_num in range(1, num_rounds + 1):
+                round_base_dir = Path(self.config.general.base_dir) / "01_m_fold_sampling" / f"round_{round_num}"
+                sampling_dir = round_base_dir / "01_sampling"
+
+                if not sampling_dir.exists():
+                    self.logger.warning(f"Sampling directory not found for round {round_num}: {sampling_dir}")
+                    continue
+
+                # Get all sampling_XX directories in this round (sorted for consistent ordering)
+                sampling_subdirs = sorted([d for d in os.listdir(sampling_dir) if d.startswith('sampling_')])
+
+                for sampling_subdir in sampling_subdirs:
+                    sampling_path = sampling_dir / sampling_subdir
+                    all_job_folders.append(str(sampling_path))
+
+                    # Create unique job ID: <protein>_r<round>_s<sampling>
+                    # Example: KaiB_r1_s1, KaiB_r2_s3, Protein_r1_s10
+                    sampling_num = sampling_subdir.replace('sampling_', '')
+                    job_id = f"{protein_prefix}_r{round_num}_s{sampling_num}"
+                    all_job_ids.append(job_id)
+
+            if not all_job_folders:
+                self.logger.error("No sampling directories found across any rounds")
+                return False
+
+            self.logger.info(f"Collected {len(all_job_folders)} sampling directories across {num_rounds} rounds")
+            self.logger.info(f"Average sampling directories per round: {len(all_job_folders) / num_rounds:.1f}")
+
+            # ===== PHASE 3: SUBMIT ALL JOBS AT ONCE (LIMITED BY MAX_WORKERS) =====
+            max_workers = self.config.slurm.max_workers
+            self.logger.info(f"Phase 3: Submitting ALL {len(all_job_folders)} jobs to SLURM")
+            self.logger.info(f"Concurrent worker limit: {max_workers} jobs at a time")
+
+            if len(all_job_folders) > max_workers:
+                batches = (len(all_job_folders) + max_workers - 1) // max_workers
+                self.logger.info(f"Jobs will be processed in approximately {batches} batches")
+
+            self.slurm_submitter.process_folders_concurrently(
+                folders=all_job_folders,
+                job_ids=all_job_ids,
+                max_workers=max_workers
+            )
+
+            self.logger.info(f"✓ Completed all {num_rounds} rounds of M-fold sampling with ultra-parallel submission")
+            self.logger.info(f"✓ Total jobs processed: {len(all_job_folders)}")
+            return True
+
         except Exception as e:
             self.logger.error(f"Error in M-fold sampling: {str(e)}", exc_info=True)
             return False
@@ -484,59 +601,57 @@ class AFClaSeqPipeline:
             
             all_successful = True
             
-            # Get selected metrics using the new explicit metric selection system  
+            # Get selected metrics using the new explicit metric selection system
             from af_claseq.m_fold_sampling_voting.config import get_selected_metrics
-            selected_metrics = get_selected_metrics(self.config.general)
-            
-            if not selected_metrics:
+            all_available_metrics = get_selected_metrics(self.config.general)
+
+            if not all_available_metrics:
                 # Fall back to all filter criteria if no explicit selection
-                selected_metrics = [criterion.get('name') for criterion in filter_criteria if criterion.get('name')]
-            
+                all_available_metrics = [criterion.get('name') for criterion in filter_criteria if criterion.get('name')]
+
+            # Apply metric filtering based on metrics_to_process
+            selected_metrics = self._filter_metrics_to_process(all_available_metrics)
+
             # Process each selected metric separately
-            for i, criterion_name in enumerate(selected_metrics):
+            for criterion_name in selected_metrics:
                 if not criterion_name:
                     self.logger.warning("Invalid metric name found, skipping")
                     continue
-                
-                self.logger.info(f"Processing recompilation and prediction for selected metric: {criterion_name}")
-                
+
+                self.logger.info(f"Processing recompilation and prediction for: {criterion_name}")
+
                 # Create criterion-specific output directory
                 criterion_output_dir = base_output_dir / criterion_name
                 criterion_output_dir.mkdir(exist_ok=True)
-                
+
                 # Get voting results for this criterion
                 voting_results = base_dir / f"02_voting/{criterion_name}/voting_results.csv"
                 raw_votes_json = base_dir / f"02_voting/{criterion_name}/raw_sequence_votes.json"
-                
+
                 if not voting_results.exists():
                     self.logger.error(f"Voting results not found for criterion: {criterion_name}")
                     all_successful = False
                     continue
-                
-                # Determine bin numbers for this criterion
+
+                # Determine bin numbers by matching metric name
                 bin_numbers = None
-                if len(filter_criteria) == 1:
-                    # Single criterion case - use the default bin_numbers
+                if criterion_name == self.config.recompile_predict.metric_name_1:
                     bin_numbers = self.config.recompile_predict.bin_numbers_1
+                elif criterion_name == self.config.recompile_predict.metric_name_2:
+                    bin_numbers = self.config.recompile_predict.bin_numbers_2
                 else:
-                    # Multiple criteria case - match criterion name with metric names
-                    if criterion_name == self.config.recompile_predict.metric_name_1:
-                        bin_numbers = self.config.recompile_predict.bin_numbers_1
-                    elif criterion_name == self.config.recompile_predict.metric_name_2:
-                        bin_numbers = self.config.recompile_predict.bin_numbers_2
-                    else:
-                        # Fall back to default bin_numbers if no match found
-                        bin_numbers = self.config.recompile_predict.bin_numbers_1
-                
+                    # Fallback to bin_numbers_1
+                    self.logger.warning(f"No bin numbers specified for '{criterion_name}', using bin_numbers_1")
+                    bin_numbers = self.config.recompile_predict.bin_numbers_1
+
                 # If bin_numbers not specified, report error and skip this criterion
                 if not bin_numbers:
                     self.logger.error(f"No bin numbers specified for criterion: {criterion_name}. Please specify bin_numbers_1 in the recompile_predict section of your configuration file.")
                     all_successful = False
                     continue
-                
-                # Create sequence recompiler for this criterion
-                # Determine which metric colors to use based on criterion index
-                colors = self.config.general.metric1_color if i == 0 else self.config.general.metric2_color
+
+                # Get metric colors by name (not index)
+                colors = self._get_metric_colors(criterion_name)
                 
                 recompiler = SequenceRecompiler(
                     output_dir=criterion_output_dir,
@@ -619,19 +734,22 @@ class AFClaSeqPipeline:
             base_dir = Path(self.config.general.base_dir)
             base_output_dir = os.path.join(self.config.general.base_dir, "04_plots")
             os.makedirs(base_output_dir, exist_ok=True)
-            
+
             all_successful = True
-            
-            # Get selected metrics using the new explicit metric selection system  
+
+            # Get selected metrics using the new explicit metric selection system
             from af_claseq.m_fold_sampling_voting.config import get_selected_metrics
-            selected_metrics = get_selected_metrics(self.config.general)
-            
-            if not selected_metrics:
+            all_available_metrics = get_selected_metrics(self.config.general)
+
+            if not all_available_metrics:
                 # Fall back to all filter criteria if no explicit selection
-                selected_metrics = [criterion.get('name') for criterion in filter_criteria if criterion.get('name')]
-            
+                all_available_metrics = [criterion.get('name') for criterion in filter_criteria if criterion.get('name')]
+
+            # Apply metric filtering based on metrics_to_process
+            selected_metrics = self._filter_metrics_to_process(all_available_metrics)
+
             # Process each selected metric separately
-            for i, criterion_name in enumerate(selected_metrics):
+            for criterion_name in selected_metrics:
                 if not criterion_name:
                     self.logger.warning("Invalid metric name found, skipping")
                     continue
@@ -651,13 +769,15 @@ class AFClaSeqPipeline:
                     continue
                 
                 # Create plotting configuration
-                # Use metric1_color for prediction and metric2_color for control (or vice versa based on design)
+                # Get metric colors by name (not index)
+                colors = self._get_metric_colors(criterion_name)
+
                 plot_config = {
                     'base_dir': recompile_dir,
                     'output_dir': criterion_output_dir,
                     'config_file': self.config.general.config_file,
-                    'color_prediction': self.config.general.metric1_color[0] if i == 0 else self.config.general.metric2_color[0],
-                    'color_control': self.config.general.metric1_color[1] if i == 0 else self.config.general.metric2_color[1],
+                    'color_prediction': colors[0],
+                    'color_control': colors[1],
                     'metric1_min': self.config.pure_sequence_plotting.metric1_min,
                     'metric1_max': self.config.pure_sequence_plotting.metric1_max,
                     'metric2_min': self.config.pure_sequence_plotting.metric2_min,
