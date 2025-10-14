@@ -17,23 +17,6 @@ A comprehensive bioinformatics toolkit for phylogenetically-guided protein struc
 - **Smart Grouping**: Optimized sequence group generation avoiding small remainders
 - **Comprehensive Analysis**: Statistical analysis and visualization of prediction results
 
-## 📋 Requirements
-
-### System Dependencies
-- Python 3.11
-- SLURM workload manager
-- FastTree (for phylogenetic analysis)
-- ColabFold environment
-
-### Python Dependencies
-```bash
-pip install ete3 biopython numpy pandas matplotlib seaborn pyyaml
-```
-
-### Hardware Requirements
-- GPU access for ColabFold structure prediction
-- Sufficient storage for large sequence datasets
-- Multi-core CPU for phylogenetic tree construction
 
 ## 🛠️ Installation
 
