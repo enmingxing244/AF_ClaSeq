@@ -9,7 +9,7 @@ af_cluster_compar*/
 pyrightconfig.json
 example/KaiB_demo/m_fold_sampling_voting
 read_code/
-
+source_data_cp.sh
 CASP*
 af_claseq.egg-info/
 
