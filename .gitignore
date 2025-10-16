@@ -12,6 +12,6 @@ read_code/
 source_data_cp.sh
 CASP*
 af_claseq.egg-info/
-
+*zip
 setup.py
 pipeline_test/
