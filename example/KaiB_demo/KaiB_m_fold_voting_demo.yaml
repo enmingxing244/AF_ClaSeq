@@ -103,9 +103,9 @@ sequence_voting:
 # ============================================================================
 recompile_predict:
   # Bin selection for recompilation
-  bin_numbers_1: [51]        # Bin numbers for first metric
-  bin_numbers_2: [39]        # Bin numbers for second metric (if applicable)
-  combine_bins: false            # Whether to combine bins
+  bin_numbers_1: [51,52]        # Bin numbers for first metric
+  bin_numbers_2: [37,38,39,40,41]        # Bin numbers for second metric (if applicable)
+  combine_bins: true            # Whether to combine bins
   
   # Metric mapping (should match filter criteria names)
   metric_name_1: "2qke_tmscore"     # Name of first metric

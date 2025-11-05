@@ -93,6 +93,66 @@ AF_ClaSeq provides four main workflows for protein structure prediction and sequ
 
 ---
 
+## 🚀 Quick Start: KaiB Demo
+
+We provide a complete demonstration using the KaiB protein (a fold-switching protein with two known conformational states) to help you get started quickly.
+
+### For SLURM Cluster Users
+
+If you're running on a SLURM cluster with GPU access, use the example configuration:
+
+```bash
+# M-Fold Sampling & Voting workflow example
+python scripts/run_m_fold_sampling_voting.py example/KaiB_demo/KaiB_m_fold_voting_demo.yaml
+```
+
+This demonstrates the complete M-Fold Sampling & Voting pipeline on a real protein system.
+
+### For Local Multi-GPU Workstation Users
+
+If you have a local workstation with multiple GPUs but **no SLURM**, we provide an **interactive Jupyter notebook** that runs the same pipeline using direct GPU parallelization:
+
+```bash
+# Navigate to the demo directory
+cd example/KaiB_demo
+
+# Launch Jupyter notebook
+jupyter notebook KaiB_mfold_demo.ipynb
+```
+
+**Features of the notebook:**
+- ✅ **No SLURM required** - runs directly on your local GPUs
+- ✅ **Multi-GPU support** - automatically distributes jobs across available GPUs
+- ✅ **Interactive execution** - step-by-step walkthrough with visualizations
+- ✅ **Pre-computed results** - can skip computation and explore analysis directly
+
+### Pre-computed Results
+
+To run the demo without GPU computation (for exploring analysis and visualization only), download the pre-computed results:
+
+**Download**: [KaiB Demo Pre-computed Results](https://drive.google.com/file/d/1XcMJ-yIbOlk7CoSmMC9ewydrBifhhVBc/view?usp=share_link) *(tarball archive)*
+
+Extract the tarball in the demo directory:
+```bash
+mv m_fold_sampling_voting.tar.gz example/KaiB_demo
+cd example/KaiB_demo
+tar -xzf m_fold_sampling_voting.tar.gz
+```
+
+This provides all intermediate results from all pipeline stages, allowing you to explore the analysis and plotting without running predictions.
+
+### Additional Configuration Examples
+
+The `example/config_examples/` directory contains template configurations for all workflows:
+- `divide_and_conquer_config.yaml` - Phylogenetic clustering workflow
+- `leave_one_out_config.yaml` - Cross-validation workflow
+- `m_fold_config_run2.yaml` - M-Fold sampling workflow
+- `occurrence_voting.yaml` - Occurrence voting workflow
+
+Copy and modify these templates for your own protein systems.
+
+---
+
 ## Workflow 1: Divide-and-Conquer
 
 **When to use**: You have a large MSA (>100 sequences) and want to predict structures systematically.
