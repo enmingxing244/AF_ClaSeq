@@ -89,7 +89,7 @@ m_fold_sampling:
 # STAGE 02: SEQUENCE VOTING CONFIGURATION
 # ============================================================================
 sequence_voting:
-  vote_threshold: 0
+  vote_threshold: 0.15
   vote_min_value: 0.4
   vote_max_value: 1
   vote_figsize: [10, 5]

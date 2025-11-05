@@ -103,7 +103,8 @@ If you're running on a SLURM cluster with GPU access, use the example configurat
 
 ```bash
 # M-Fold Sampling & Voting workflow example
-python scripts/run_m_fold_sampling_voting.py example/KaiB_demo/KaiB_m_fold_voting_demo.yaml
+cd example/KaiB_demo
+python ../../scripts/run_m_fold_sampling_voting.py KaiB_m_fold_voting_demo.yaml 
 ```
 
 This demonstrates the complete M-Fold Sampling & Voting pipeline on a real protein system.
@@ -116,8 +117,8 @@ If you have a local workstation with multiple GPUs but **no SLURM**, we provide 
 # Navigate to the demo directory
 cd example/KaiB_demo
 
-# Launch Jupyter notebook
-jupyter notebook KaiB_mfold_demo.ipynb
+# Then launch Jupyter notebook
+
 ```
 
 **Features of the notebook:**
