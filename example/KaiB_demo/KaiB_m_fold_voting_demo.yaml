@@ -75,6 +75,7 @@ m_fold_sampling:
   m_fold_figsize: [10, 5]
   m_fold_show_bin_lines: true
   
+  
   # Plot axis configuration
   m_fold_count_min: 0.8
   m_fold_count_max: 6000
