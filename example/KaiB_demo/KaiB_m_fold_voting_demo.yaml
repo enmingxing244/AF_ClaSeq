@@ -26,16 +26,16 @@ general:
 # SLURM CONFIGURATION
 # ============================================================================
 slurm:
-  conda_env_path: "/fs/ess/PAA0203/xing244/.conda/envs/colabfold"
-  slurm_account: "PAA0203"
+  conda_env_path: "your_conda_env_path"
+  slurm_account: "your_slurm_account"
   slurm_output: "/dev/null"
   slurm_error: "/dev/null"
   slurm_nodes: 1
   slurm_gpus_per_task: 1
   slurm_tasks: 1
   slurm_cpus_per_task: 8
-  slurm_time: "01:00:00"
-  slurm_partition: "nextgen"
+  slurm_time: "00:10:00"
+  slurm_partition: "your_partition"
   max_workers: 200
 
 # ============================================================================
@@ -43,10 +43,10 @@ slurm:
 # ============================================================================
 pipeline_control:
   stages:
-    # - "01_M_FOLD_SAMPLING_RUN"   # Run M-fold sampling
+    - "01_M_FOLD_SAMPLING_RUN"   # Run M-fold sampling
     - "01_M_FOLD_SAMPLING_PLOT"  # Plot M-fold sampling results
     - "02_VOTING_RUN"            # Run sequence voting
-    # - "03_RECOMPILE_PREDICT_RUN" # Recompile and predict structures
+    - "03_RECOMPILE_PREDICT_RUN" # Recompile and predict structures
     - "04_PURE_SEQ_PLOT_RUN"     # Generate pure sequence plots
   check_interval: 10  # Interval (seconds) to check job status
 

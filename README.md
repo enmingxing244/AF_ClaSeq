@@ -412,7 +412,7 @@ cp base_dir/results/significant_impact_sequences.a3m input_for_occurrence_voting
 2. ✅ ColabFold environment
 3. ✅ Reference PDB structures
 4. ✅ Structure analysis config JSON
-5. ✅ Patience - this workflow can take days!
+
 
 **Important**: This workflow runs in **stages**. You control which stages run via the config file, not command-line arguments.
 
