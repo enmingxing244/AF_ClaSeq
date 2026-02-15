@@ -1,0 +1,141 @@
+# Column Shuffle Pipeline Configuration Template
+#
+# This file provides a template for configuring the column shuffle pipeline.
+# Replace all paths with your actual file locations.
+
+general:
+  # Protein name (used for output naming)
+  protein_name: "ProteinName"
+
+  # Base output directory (all results will be saved here)
+  base_dir: "/fs/ess/PAA0203/xing244/AF_ClaSeq/results_updated/ProteinName/column_shuffle"
+
+  # Path to structure metrics JSON config file
+  # This file defines which structural metrics to calculate (TM-score, RMSD, etc.)
+  config_file: "/fs/ess/PAA0203/xing244/AF_ClaSeq/configs/protein_metrics.json"
+
+  # Random seed for reproducibility
+  random_seed: 42
+
+  # Use composite metrics (if defined in config_file)
+  use_composite_metrics: false
+
+  # State 1 inputs
+  state1_pdb: "/path/to/state1.pdb"
+  state1_a3m: "/path/to/state1.a3m"
+  state1_name: "state1"  # Name for this conformational state
+
+  # State 2 inputs
+  state2_pdb: "/path/to/state2.pdb"
+  state2_a3m: "/path/to/state2.a3m"
+  state2_name: "state2"  # Name for this conformational state
+
+  # Column shuffle parameters
+  num_shuffles: 20  # Number of shuffled MSA replicates to generate per state
+  contact_threshold: 0.8  # Threshold for identifying unique contact pairs
+  sigmoid_center: 8.0  # Distance (Å) at which sigmoid normalization = 0.5
+  sigmoid_steepness: 1.0  # Steepness of sigmoid normalization
+  min_sequence_separation: 10  # Minimum residue separation for contact pairs
+  unique_pair_residue_range: null  # Optional [start, end] range to filter unique pairs (e.g., [1, 100]), null = no filtering
+
+# SLURM job submission configuration
+slurm:
+  # Path to ColabFold conda environment
+  conda_env_path: "/fs/ess/PAA0203/xing244/.conda/envs/colabfold"
+
+  # SLURM account
+  slurm_account: "PAA0203"
+
+  # SLURM partition
+  slurm_partition: "nextgen"
+
+  # Time limit per job (HH:MM:SS)
+  slurm_time: "01:00:00"
+
+  # Resources per job
+  slurm_nodes: 1
+  slurm_gpus_per_task: 1
+  slurm_cpus_per_task: 8
+
+  # Maximum number of concurrent jobs
+  max_workers: 200
+
+  # ColabFold prediction parameters
+  num_models: 5          # Number of ranked models to output per prediction
+  num_seeds: 8           # Number of random initializations (increases diversity)
+
+  # SLURM output/error files (use /dev/null to discard)
+  slurm_output: "/dev/null"
+  slurm_error: "/dev/null"
+
+  # Number of tasks
+  slurm_tasks: 1
+
+# Plotting configuration
+plotting:
+  # Metric names (must match columns in structure analysis CSV)
+  metric1_name: "state1_tmscore"  # X-axis metric
+  metric2_name: "state2_tmscore"  # Y-axis metric
+
+  # Color gradients for metrics (start and end colors)
+  metric1_color: ["#F2E7F1", "#AD7BAF"]  # Light to dark purple
+  metric2_color: ["#AFD2D0", "#468F8B"]  # Light to dark teal
+
+  # Axis limits (metric1 = X-axis, metric2 = Y-axis)
+  metric1_min: 0.4
+  metric1_max: 1.0
+  metric2_min: 0.4
+  metric2_max: 1.0
+
+  # Axis ticks (optional - leave out for automatic ticks)
+  metric1_ticks: [0.4, 0.6, 0.8, 1.0]
+  metric2_ticks: [0.4, 0.6, 0.8, 1.0]
+
+
+# Example configuration for KaiB protein:
+#
+# general:
+#   protein_name: "KaiB"
+#   base_dir: "/fs/ess/PAA0203/xing244/AF_ClaSeq/results_updated/KaiB/column_shuffle_test"
+#   config_file: "/fs/ess/PAA0203/xing244/AF_ClaSeq/results_updated/KaiB/configs/config_2qke_5jyt_tmscore.json"
+#   random_seed: 42
+#
+#   state1_pdb: "/fs/ess/PAA0203/xing244/AF_ClaSeq/references/KaiB/2qkeE.pdb"
+#   state1_a3m: "/fs/ess/PAA0203/xing244/AF_ClaSeq/results_updated/KaiB/msas/2qke_sampling.a3m"
+#   state1_name: "fold_switched"
+#
+#   state2_pdb: "/fs/ess/PAA0203/xing244/AF_ClaSeq/references/KaiB/5jytA.pdb"
+#   state2_a3m: "/fs/ess/PAA0203/xing244/AF_ClaSeq/results_updated/KaiB/msas/5jyt_sampling.a3m"
+#   state2_name: "ground_state"
+#
+#   num_shuffles: 20
+#   contact_threshold: 0.8
+#   sigmoid_center: 8.0
+#   sigmoid_steepness: 1.0
+#   min_sequence_separation: 10
+#
+# slurm:
+#   conda_env_path: "/fs/ess/PAA0203/xing244/.conda/envs/colabfold"
+#   slurm_account: "PAA0203"
+#   slurm_partition: "nextgen"
+#   slurm_time: "01:00:00"
+#   slurm_nodes: 1
+#   slurm_gpus_per_task: 1
+#   slurm_cpus_per_task: 8
+#   max_workers: 200
+#   num_models: 5
+#   num_seeds: 8
+#   slurm_output: "/dev/null"
+#   slurm_error: "/dev/null"
+#
+# plotting:
+#   metric1_name: "2qke_tmscore"
+#   metric2_name: "5jyt_tmscore"
+#   metric1_color: ["#F2E7F1", "#AD7BAF"]
+#   metric2_color: ["#AFD2D0", "#468F8B"]
+#   metric1_min: 0.4
+#   metric1_max: 1.0
+#   metric2_min: 0.4
+#   metric2_max: 1.0
+#   metric1_ticks: [0.4, 0.6, 0.8, 1.0]
+#   metric2_ticks: [0.4, 0.6, 0.8, 1.0]

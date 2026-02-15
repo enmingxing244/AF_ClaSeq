@@ -147,7 +147,9 @@ class SlurmJobSubmitter:
             "colabfold_batch",
             "--num-recycle", str(self.num_recycle),
             "--num-models", str(config['num_models']),
-            "--num-seeds", str(config['num_seeds'])
+            "--num-seeds", str(config['num_seeds']),
+            # "--templates" , "--custom-template-path",
+            # "/fs/ess/PAA0203/xing244/AF_ClaSeq/results_updated/BCCIP/deepmsa_default/finalMSAs-alpha/template_test/template"
         ]
         
         if 'random_seed' in config:
