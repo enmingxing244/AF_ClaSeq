@@ -20,7 +20,7 @@ from functools import partial
 
 # Use existing AF_ClaSeq utilities (priority order: utils > m_fold_sampling_voting)
 from af_claseq.utils.structure_analysis import StructureAnalyzer, load_filter_modes
-from af_claseq.utils.slurm_utils import SlurmJobSubmitter
+from af_claseq.utils.executor_factory import create_executor
 from af_claseq.utils.sequence_processing import read_a3m_to_dict, write_a3m
 from af_claseq.utils.logging_utils import get_logger
 from af_claseq.utils.exceptions import WorkflowError
@@ -211,23 +211,36 @@ class LeaveOneOutManager:
         except Exception as e:
             raise WorkflowError(f"Failed to load structure analysis config: {e}")
 
-    def _initialize_job_submitter(self) -> SlurmJobSubmitter:
-        """Initialize SLURM job submitter with configuration"""
-        slurm_config = self.config.slurm
+    def _initialize_job_submitter(self):
+        """Initialize job executor (SLURM or local GPU) from configuration"""
+        raw_config = {}
+        if self.config.slurm is not None:
+            slurm_config = self.config.slurm
+            raw_config['slurm'] = {
+                'conda_env_path': slurm_config.conda_env_path,
+                'slurm_account': slurm_config.account,
+                'slurm_partition': slurm_config.partition,
+                'slurm_time': slurm_config.time,
+                'slurm_cpus_per_task': slurm_config.cpus,
+            }
+            extra_kwargs = {
+                'num_models': slurm_config.num_models,
+                'num_seeds': slurm_config.num_seeds,
+                'job_name_prefix': "loo",
+            }
+        elif self.config.local_gpu is not None:
+            raw_config['local_gpu'] = {
+                'cuda_visible_devices': self.config.local_gpu.cuda_visible_devices,
+            }
+            extra_kwargs = {
+                'num_models': 5,
+                'num_seeds': 1,
+                'job_name_prefix': "loo",
+            }
+        else:
+            raise ValueError("No execution mode configured (need 'slurm' or 'local_gpu')")
 
-        # Initialize for batch prediction mode (directory-based ColabFold)
-        submitter = SlurmJobSubmitter(
-            conda_env_path=slurm_config.conda_env_path,
-            slurm_account=slurm_config.account,
-            slurm_partition=slurm_config.partition,
-            slurm_time=slurm_config.time,
-            slurm_cpus_per_task=slurm_config.cpus,
-            num_models=slurm_config.num_models,
-            num_seeds=slurm_config.num_seeds,
-            job_name_prefix="loo"
-        )
-
-        return submitter
+        return create_executor(raw_config, **extra_kwargs)
 
     def run_complete_workflow(self) -> Dict[str, Any]:
         """

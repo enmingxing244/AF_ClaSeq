@@ -11,7 +11,7 @@ import logging
 from pathlib import Path
 from typing import List, Dict, Tuple, Optional, Union, Any
 
-from af_claseq.utils.slurm_utils import SlurmJobSubmitter
+from af_claseq.utils.executor_factory import create_executor
 
 
 class PureSequenceAF2Prediction:
@@ -35,7 +35,7 @@ class PureSequenceAF2Prediction:
         """
         self.config = config
         self.logger = logger or self._setup_logger()
-        self.submitter = self._init_slurm_submitter()
+        self.submitter = self._init_executor()
         self.job_configs = {}
         
         # Convert bin_numbers to list if it's a single integer
@@ -56,33 +56,43 @@ class PureSequenceAF2Prediction:
             
         return logger
     
-    def _init_slurm_submitter(self) -> SlurmJobSubmitter:
-        """Initialize the SLURM job submitter with configuration options."""
+    def _init_executor(self):
+        """Initialize the job executor (SLURM or local GPU) from configuration."""
         # Extract job name prefix from base directory if not specified
         job_prefix = self.config.get('job_name_prefix')
         if not job_prefix:
             base_dir = Path(self.config['pure_seq_pred_base_dir'])
             try:
-                # Convert Path to parts safely
                 base_path_parts = base_dir.parts
                 results_idx = list(base_path_parts).index('results')
                 job_prefix = base_path_parts[results_idx + 1] if results_idx + 1 < len(base_path_parts) else "fold"
             except (ValueError, AttributeError, IndexError):
                 job_prefix = "fold"
                 self.logger.warning("Could not extract job prefix from pure_seq_pred_base_dir path, using default: 'fold'")
-        
-        return SlurmJobSubmitter(
-            conda_env_path=self.config['conda_env_path'],
-            slurm_account=self.config['slurm_account'],
-            slurm_output=self.config['slurm_output'],
-            slurm_error=self.config['slurm_error'],
-            slurm_nodes=self.config['slurm_nodes'],
-            slurm_gpus_per_task=self.config['slurm_gpus_per_task'],
-            slurm_tasks=self.config['slurm_tasks'],
-            slurm_cpus_per_task=self.config['slurm_cpus_per_task'],
-            slurm_time=self.config['slurm_time'],
-            slurm_partition=self.config['slurm_partition'],
-            check_interval=self.config['check_interval'],
+
+        # Build raw_config dict for the factory
+        raw_config = {}
+        if 'cuda_visible_devices' in self.config:
+            raw_config['local_gpu'] = {
+                'cuda_visible_devices': self.config['cuda_visible_devices'],
+            }
+        else:
+            raw_config['slurm'] = {
+                'conda_env_path': self.config['conda_env_path'],
+                'slurm_account': self.config['slurm_account'],
+                'slurm_output': self.config['slurm_output'],
+                'slurm_error': self.config['slurm_error'],
+                'slurm_nodes': self.config['slurm_nodes'],
+                'slurm_gpus_per_task': self.config['slurm_gpus_per_task'],
+                'slurm_tasks': self.config['slurm_tasks'],
+                'slurm_cpus_per_task': self.config['slurm_cpus_per_task'],
+                'slurm_time': self.config['slurm_time'],
+                'slurm_partition': self.config['slurm_partition'],
+            }
+
+        return create_executor(
+            raw_config,
+            check_interval=self.config.get('check_interval', 60),
             job_name_prefix=job_prefix,
             prediction_num_model=self.config['prediction_num_model'],
             prediction_num_seed=self.config['prediction_num_seed']

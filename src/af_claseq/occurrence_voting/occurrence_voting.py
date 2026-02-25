@@ -19,7 +19,7 @@ from typing import Dict, List, Tuple, Any
 from collections import Counter, defaultdict
 
 # Use existing AF_ClaSeq utilities
-from af_claseq.utils.slurm_utils import SlurmJobSubmitter
+from af_claseq.utils.executor_factory import create_executor
 from af_claseq.utils.plotting_manager import create_2d_scatter_plot, plot_1d_distribution, create_joint_plot, save_ai_compatible_plot
 from af_claseq.utils.sequence_processing import read_a3m_to_dict, write_a3m
 from af_claseq.utils.logging_utils import get_logger
@@ -68,25 +68,34 @@ class OccurrenceVotingManager:
         self.logger.info(f"Initialized OccurrenceVotingManager for protein: {config.general.protein_name}")
         self.logger.info(f"Output directory: {self.output_dir}")
 
-    def _initialize_job_submitter(self) -> SlurmJobSubmitter:
-        """Initialize SLURM job submitter with configuration"""
-        slurm_config = self.config.slurm
+    def _initialize_job_submitter(self):
+        """Initialize job executor (SLURM or local GPU) from configuration"""
         structure_config = self.config.structure_prediction
+        raw_config = {}
 
-        # Initialize for batch prediction mode
-        submitter = SlurmJobSubmitter(
-            conda_env_path=slurm_config.conda_env_path,
-            slurm_account=slurm_config.account,
-            slurm_partition=slurm_config.partition,
-            slurm_time=slurm_config.time,
-            slurm_cpus_per_task=slurm_config.cpus,
+        if self.config.slurm is not None:
+            slurm_config = self.config.slurm
+            raw_config['slurm'] = {
+                'conda_env_path': slurm_config.conda_env_path,
+                'slurm_account': slurm_config.account,
+                'slurm_partition': slurm_config.partition,
+                'slurm_time': slurm_config.time,
+                'slurm_cpus_per_task': slurm_config.cpus,
+            }
+        elif self.config.local_gpu is not None:
+            raw_config['local_gpu'] = {
+                'cuda_visible_devices': self.config.local_gpu.cuda_visible_devices,
+            }
+        else:
+            raise ValueError("No execution mode configured (need 'slurm' or 'local_gpu')")
+
+        return create_executor(
+            raw_config,
             num_models=structure_config.num_models,
             num_seeds=structure_config.num_seeds,
             num_recycle=structure_config.num_recycle,
             job_name_prefix="occ_vote"
         )
-
-        return submitter
 
     def run_complete_workflow(self) -> Dict[str, Any]:
         """

@@ -14,7 +14,7 @@ from pathlib import Path
 from typing import Dict, Any, List
 
 # Import modules from AF-ClaSeq
-from af_claseq.utils.slurm_utils import SlurmJobSubmitter
+from af_claseq.utils.executor_factory import create_executor
 from af_claseq.utils.structure_analysis import StructureAnalyzer
 from af_claseq.utils.sequence_processing import filter_a3m_by_coverage, write_a3m
 from af_claseq.m_fold_sampling_voting.m_fold_sampling import MFoldSampler
@@ -41,7 +41,7 @@ class AFClaSeqPipeline:
         
         # Initialize core components
         self.structure_analyzer = StructureAnalyzer()
-        self.slurm_submitter = self._init_slurm_submitter()
+        self.executor = self._init_executor()
         
         # Load filter configuration
         self.filter_config = self._load_filter_config()
@@ -71,19 +71,28 @@ class AFClaSeqPipeline:
         with open(self.config.general.config_file, 'r') as f:
             return json.load(f)
     
-    def _init_slurm_submitter(self) -> SlurmJobSubmitter:
-        """Initialize SLURM job submitter with configuration parameters"""
-        return SlurmJobSubmitter(
-            conda_env_path=self.config.slurm.conda_env_path,
-            slurm_account=self.config.slurm.slurm_account,
-            slurm_output=self.config.slurm.slurm_output,
-            slurm_error=self.config.slurm.slurm_error,
-            slurm_nodes=self.config.slurm.slurm_nodes,
-            slurm_gpus_per_task=self.config.slurm.slurm_gpus_per_task,
-            slurm_tasks=self.config.slurm.slurm_tasks,
-            slurm_cpus_per_task=self.config.slurm.slurm_cpus_per_task,
-            slurm_time=self.config.slurm.slurm_time,
-            slurm_partition=self.config.slurm.slurm_partition,
+    def _init_executor(self):
+        """Initialize job executor (SLURM or local GPU) from configuration"""
+        raw_config = {}
+        if self.config.slurm is not None:
+            raw_config['slurm'] = {
+                'conda_env_path': self.config.slurm.conda_env_path,
+                'slurm_account': self.config.slurm.slurm_account,
+                'slurm_output': self.config.slurm.slurm_output,
+                'slurm_error': self.config.slurm.slurm_error,
+                'slurm_nodes': self.config.slurm.slurm_nodes,
+                'slurm_gpus_per_task': self.config.slurm.slurm_gpus_per_task,
+                'slurm_tasks': self.config.slurm.slurm_tasks,
+                'slurm_cpus_per_task': self.config.slurm.slurm_cpus_per_task,
+                'slurm_time': self.config.slurm.slurm_time,
+                'slurm_partition': self.config.slurm.slurm_partition,
+            }
+        if self.config.local_gpu is not None:
+            raw_config['local_gpu'] = {
+                'cuda_visible_devices': self.config.local_gpu.cuda_visible_devices,
+            }
+        return create_executor(
+            raw_config,
             check_interval=self.config.pipeline_control.check_interval,
             job_name_prefix=self.config.general.protein_name,
             num_models=self.config.general.num_models,
@@ -213,7 +222,7 @@ class AFClaSeqPipeline:
                 round_base_dir = Path(self.config.general.base_dir) / "01_m_fold_sampling" / f"round_{round_num}"
                 round_base_dir.mkdir(exist_ok=True, parents=True)
 
-                # Create sampler instance WITHOUT slurm_submitter (no job submission)
+                # Create sampler instance WITHOUT executor (no job submission)
                 sampler = MFoldSampler(
                     input_a3m=input_a3m,
                     m_fold_sampling_base_dir=str(round_base_dir),
@@ -222,7 +231,7 @@ class AFClaSeqPipeline:
                     random_select_num_seqs=self.config.m_fold_sampling.m_fold_random_select,
                     slurm_submitter=None,  # KEY: No job submission during preparation
                     random_seed=self.config.general.random_seed + round_num,  # Different seed per round
-                    max_workers=self.config.slurm.max_workers,
+                    max_workers=max_workers,
                     logger=self.logger,
                     default_pdb=self.config.general.default_pdb
                 )
@@ -277,15 +286,19 @@ class AFClaSeqPipeline:
             self.logger.info(f"Average sampling directories per round: {len(all_job_folders) / num_rounds:.1f}")
 
             # ===== PHASE 3: SUBMIT ALL JOBS AT ONCE (LIMITED BY MAX_WORKERS) =====
-            max_workers = self.config.slurm.max_workers
-            self.logger.info(f"Phase 3: Submitting ALL {len(all_job_folders)} jobs to SLURM")
+            if self.config.slurm is not None:
+                max_workers = self.config.slurm.max_workers
+            else:
+                gpu_count = len(self.config.local_gpu.cuda_visible_devices.split(","))
+                max_workers = gpu_count
+            self.logger.info(f"Phase 3: Submitting ALL {len(all_job_folders)} jobs")
             self.logger.info(f"Concurrent worker limit: {max_workers} jobs at a time")
 
             if len(all_job_folders) > max_workers:
                 batches = (len(all_job_folders) + max_workers - 1) // max_workers
                 self.logger.info(f"Jobs will be processed in approximately {batches} batches")
 
-            self.slurm_submitter.process_folders_concurrently(
+            self.executor.process_folders_concurrently(
                 folders=all_job_folders,
                 job_ids=all_job_ids,
                 max_workers=max_workers
@@ -674,22 +687,27 @@ class AFClaSeqPipeline:
                     'pure_seq_pred_base_dir': criterion_output_dir,
                     'bin_numbers': bin_numbers,
                     'combine_bins': self.config.recompile_predict.combine_bins,
-                    'conda_env_path': self.config.slurm.conda_env_path,
-                    'slurm_account': self.config.slurm.slurm_account,
-                    'slurm_output': self.config.slurm.slurm_output,
-                    'slurm_error': self.config.slurm.slurm_error,
-                    'slurm_nodes': self.config.slurm.slurm_nodes,
-                    'slurm_gpus_per_task': self.config.slurm.slurm_gpus_per_task,
-                    'slurm_tasks': self.config.slurm.slurm_tasks,
-                    'slurm_cpus_per_task': self.config.slurm.slurm_cpus_per_task,
-                    'slurm_time': self.config.slurm.slurm_time,
-                    'slurm_partition': self.config.slurm.slurm_partition,
                     'prediction_num_model': self.config.recompile_predict.prediction_num_model,
                     'prediction_num_seed': self.config.recompile_predict.prediction_num_seed,
                     'check_interval': self.config.pipeline_control.check_interval,
-                    'max_workers': self.config.slurm.max_workers,
                     'job_name_prefix': f"{self.config.general.protein_name}_{criterion_name}"
                 }
+                if self.config.slurm is not None:
+                    prediction_config.update({
+                        'conda_env_path': self.config.slurm.conda_env_path,
+                        'slurm_account': self.config.slurm.slurm_account,
+                        'slurm_output': self.config.slurm.slurm_output,
+                        'slurm_error': self.config.slurm.slurm_error,
+                        'slurm_nodes': self.config.slurm.slurm_nodes,
+                        'slurm_gpus_per_task': self.config.slurm.slurm_gpus_per_task,
+                        'slurm_tasks': self.config.slurm.slurm_tasks,
+                        'slurm_cpus_per_task': self.config.slurm.slurm_cpus_per_task,
+                        'slurm_time': self.config.slurm.slurm_time,
+                        'slurm_partition': self.config.slurm.slurm_partition,
+                        'max_workers': self.config.slurm.max_workers,
+                    })
+                elif self.config.local_gpu is not None:
+                    prediction_config['cuda_visible_devices'] = self.config.local_gpu.cuda_visible_devices
                 
                 # Create and run predictor
                 predictor = PureSequenceAF2Prediction(

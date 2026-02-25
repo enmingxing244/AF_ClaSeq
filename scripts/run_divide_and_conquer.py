@@ -26,7 +26,7 @@ from af_claseq.divide_and_conquer import (
 )
 from af_claseq.divide_and_conquer.utils import setup_logging, load_config, find_files_with_pattern
 from af_claseq.utils.exceptions import WorkflowError, ValidationError
-from af_claseq.utils.slurm_utils import SlurmJobSubmitter
+from af_claseq.utils.executor_factory import create_executor
 
 
 class WorkflowOrchestrator:
@@ -106,14 +106,26 @@ class WorkflowOrchestrator:
         # Extract configuration parameters
         colabfold_config = self.config.get('colabfold', {})
         slurm_config = self.config.get('slurm', {})
+        local_gpu_config = self.config.get('local_gpu', {})
 
-        # Initialize SlurmJobSubmitter with ColabFold parameters
-        slurm_submitter = SlurmJobSubmitter(
-            conda_env_path=colabfold_config.get('conda_env', 'colabfold'),
-            slurm_account=slurm_config.get('account', 'PAA0203'),
-            slurm_partition=slurm_config.get('partition', 'nextgen'),
-            slurm_time=slurm_config.get('time', '00:30:00'),
-            slurm_cpus_per_task=slurm_config.get('cpus', 8),
+        # Build raw_config for executor factory
+        raw_config = {}
+        if local_gpu_config:
+            raw_config['local_gpu'] = local_gpu_config
+        elif slurm_config:
+            raw_config['slurm'] = {
+                'conda_env_path': colabfold_config.get('conda_env', 'colabfold'),
+                'slurm_account': slurm_config.get('account', 'PAA0203'),
+                'slurm_partition': slurm_config.get('partition', 'nextgen'),
+                'slurm_time': slurm_config.get('time', '00:30:00'),
+                'slurm_cpus_per_task': slurm_config.get('cpus', 8),
+            }
+        else:
+            raise ValueError("Config must have either 'slurm' or 'local_gpu' section.")
+
+        # Initialize executor via factory
+        executor = create_executor(
+            raw_config,
             job_name_prefix="cf",
             num_models=colabfold_config.get('num_models', 1),
             num_seeds=colabfold_config.get('num_seeds', 1),
@@ -156,9 +168,9 @@ class WorkflowOrchestrator:
         self.logger.info(f"Processing {len(valid_dirs)} directories concurrently")
         self.logger.info(f"Failed preparations: {len(failed_prep)}")
 
-        # Use SlurmJobSubmitter's high-level concurrent processing method
+        # Use executor's high-level concurrent processing method
         max_workers = colabfold_config.get('max_concurrent_jobs', 90)
-        slurm_submitter.process_folders_concurrently(
+        executor.process_folders_concurrently(
             folders=valid_dirs,
             job_ids=job_ids,
             max_workers=max_workers

@@ -134,6 +134,12 @@ class SlurmConfig:
 
 
 @dataclass
+class LocalGPUConfig:
+    """Local GPU execution configuration"""
+    cuda_visible_devices: str
+
+
+@dataclass
 class OccurrenceVotingConfig:
     """Complete occurrence voting workflow configuration"""
     general: GeneralConfig
@@ -142,7 +148,8 @@ class OccurrenceVotingConfig:
     structure_analysis: StructureAnalysisConfig
     filtering: FilteringConfig
     voting: VotingConfig
-    slurm: SlurmConfig
+    slurm: Optional[SlurmConfig] = None
+    local_gpu: Optional[LocalGPUConfig] = None
     plotting: PlottingConfig = None
 
     @classmethod
@@ -158,9 +165,23 @@ class OccurrenceVotingConfig:
         with open(yaml_path, 'r') as f:
             config_data = yaml.safe_load(f)
 
-        # Validate required sections
-        required_sections = ['general', 'sampling', 'structure_analysis', 'filtering', 'slurm']
-        for section in required_sections:
+        # Validate execution mode: exactly one of slurm or local_gpu
+        has_slurm = 'slurm' in config_data and config_data['slurm'] is not None
+        has_local_gpu = 'local_gpu' in config_data and config_data['local_gpu'] is not None
+
+        if has_slurm and has_local_gpu:
+            raise ValueError(
+                "Config error: Cannot specify both 'slurm' and 'local_gpu' sections. "
+                "Please choose one execution mode."
+            )
+        if not has_slurm and not has_local_gpu:
+            raise ValueError(
+                "Config error: Must specify either 'slurm' or 'local_gpu' section "
+                "to define the execution mode."
+            )
+
+        # Validate other required sections
+        for section in ['general', 'sampling', 'structure_analysis', 'filtering']:
             if section not in config_data:
                 raise ValueError(f"Missing required configuration section: {section}")
 
@@ -169,7 +190,8 @@ class OccurrenceVotingConfig:
         sampling_config = SamplingConfig(**config_data['sampling'])
         structure_analysis_config = StructureAnalysisConfig(**config_data['structure_analysis'])
         filtering_config = FilteringConfig(**config_data['filtering'])
-        slurm_config = SlurmConfig(**config_data['slurm'])
+        slurm_config = SlurmConfig(**config_data['slurm']) if has_slurm else None
+        local_gpu_config = LocalGPUConfig(**config_data['local_gpu']) if has_local_gpu else None
 
         # Optional sections with defaults
         structure_prediction_data = config_data.get('structure_prediction', {})
@@ -196,6 +218,7 @@ class OccurrenceVotingConfig:
             filtering=filtering_config,
             voting=voting_config,
             slurm=slurm_config,
+            local_gpu=local_gpu_config,
             plotting=plotting_config
         )
 

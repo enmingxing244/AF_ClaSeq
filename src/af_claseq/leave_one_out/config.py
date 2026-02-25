@@ -62,6 +62,12 @@ class SlurmConfig:
 
 
 @dataclass
+class LocalGPUConfig:
+    """Local GPU execution configuration"""
+    cuda_visible_devices: str
+
+
+@dataclass
 class PlottingConfig:
     """Plotting configuration for impact visualization"""
     output_dir: Optional[str] = None  # If None, will use base_dir/leave_one_out/plots
@@ -75,7 +81,8 @@ class WorkflowConfig:
     """Complete workflow configuration"""
     general: GeneralConfig
     leave_one_out: LeaveOneOutConfig
-    slurm: SlurmConfig
+    slurm: Optional[SlurmConfig] = None
+    local_gpu: Optional[LocalGPUConfig] = None
     plotting: PlottingConfig = field(default_factory=PlottingConfig)
 
     @classmethod
@@ -91,16 +98,31 @@ class WorkflowConfig:
         with open(yaml_path, 'r') as f:
             config_data = yaml.safe_load(f)
 
-        # Validate required sections
-        required_sections = ['general', 'leave_one_out', 'slurm']
-        for section in required_sections:
+        # Validate execution mode: exactly one of slurm or local_gpu
+        has_slurm = 'slurm' in config_data and config_data['slurm'] is not None
+        has_local_gpu = 'local_gpu' in config_data and config_data['local_gpu'] is not None
+
+        if has_slurm and has_local_gpu:
+            raise ValueError(
+                "Config error: Cannot specify both 'slurm' and 'local_gpu' sections. "
+                "Please choose one execution mode."
+            )
+        if not has_slurm and not has_local_gpu:
+            raise ValueError(
+                "Config error: Must specify either 'slurm' or 'local_gpu' section "
+                "to define the execution mode."
+            )
+
+        # Validate other required sections
+        for section in ['general', 'leave_one_out']:
             if section not in config_data:
                 raise ValueError(f"Missing required configuration section: {section}")
 
         # Create configuration objects
         general_config = GeneralConfig(**config_data['general'])
         loo_config = LeaveOneOutConfig(**config_data['leave_one_out'])
-        slurm_config = SlurmConfig(**config_data['slurm'])
+        slurm_config = SlurmConfig(**config_data['slurm']) if has_slurm else None
+        local_gpu_config = LocalGPUConfig(**config_data['local_gpu']) if has_local_gpu else None
 
         # Optional plotting config
         plotting_data = config_data.get('plotting', {})
@@ -114,6 +136,7 @@ class WorkflowConfig:
             general=general_config,
             leave_one_out=loo_config,
             slurm=slurm_config,
+            local_gpu=local_gpu_config,
             plotting=plotting_config
         )
 

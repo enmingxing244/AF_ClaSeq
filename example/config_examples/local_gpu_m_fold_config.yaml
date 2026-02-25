@@ -1,0 +1,123 @@
+# ============================================================================
+# LOCAL GPU MODE — M-fold Sampling & Voting Configuration
+# ============================================================================
+# This config uses local multi-GPU execution instead of SLURM.
+# The 'local_gpu' section replaces the 'slurm' section.
+# Both sections CANNOT coexist in the same config file.
+# ============================================================================
+
+# ============================================================================
+# GENERAL CONFIGURATION
+# ============================================================================
+general:
+  source_a3m: "/path/to/source/alignment.a3m"
+
+  base_dir: "/path/to/m_fold/output_directory"
+  config_file: "/path/to/structure/analysis/config.json"
+  protein_name: "YourProtein"
+
+  # General parameters
+  coverage_threshold: 0.5
+  num_models: 1
+  random_seed: 42
+  num_bins: 30
+
+  # Plotting colors (applied across all stages)
+  metric1_color:  ["#F2E7F1","#AD7BAF"]
+  metric2_color:   ["#AFD2D0","#468F8B"]
+
+  use_composite_metrics: false
+  metric1_name: "2qke_tmscore"
+  metric2_name: "5jyt_tmscore"
+
+# ============================================================================
+# LOCAL GPU CONFIGURATION (mutually exclusive with slurm)
+# ============================================================================
+# Assumes colabfold_batch is already in PATH.
+# Each GPU runs one ColabFold job at a time.
+# Number of concurrent jobs = number of GPUs listed.
+local_gpu:
+  cuda_visible_devices: "0,1,2,3"   # Comma-separated GPU IDs to use
+
+# ============================================================================
+# PIPELINE CONTROL
+# ============================================================================
+pipeline_control:
+  stages:
+    - "01_M_FOLD_SAMPLING_RUN"
+    - "01_M_FOLD_SAMPLING_PLOT"
+    - "02_VOTING_RUN"
+    - "03_RECOMPILE_PREDICT_RUN"
+    - "04_PURE_SEQ_PLOT_RUN"
+  check_interval: 60
+
+# ============================================================================
+# STAGE 01: M-FOLD SAMPLING CONFIGURATION
+# ============================================================================
+m_fold_sampling:
+  m_fold_samp_input_a3m: "/path/to/source/alignment.a3m"
+
+  m_fold_group_size: 10
+  m_fold_random_select: null
+  rounds: 3
+
+  m_fold_plddt_threshold: 0
+
+  m_fold_log_scale: true
+  m_fold_gradient_ascending: true
+  m_fold_linear_gradient: false
+  m_fold_figsize: [10, 5]
+  m_fold_show_bin_lines: true
+
+  m_fold_count_min: 0.8
+  m_fold_count_max: 6000
+  m_fold_metric1_min: 0.4
+  m_fold_metric1_max: 1
+  m_fold_metric2_min: 0.4
+  m_fold_metric2_max: 1
+  m_fold_metric1_ticks: [0.4, 0.6, 0.8, 1.0]
+  m_fold_metric2_ticks: [0.4, 0.6, 0.8, 1.0]
+
+# ============================================================================
+# STAGE 02: SEQUENCE VOTING CONFIGURATION
+# ============================================================================
+sequence_voting:
+  vote_threshold: 0.18
+  vote_min_value: 0.4
+  vote_max_value: 1
+  vote_figsize: [10, 5]
+  vote_y_min: 0.8
+  vote_y_max: 1000
+  vote_x_ticks: [1, 10, 20, 30]
+  use_focused_bins: true
+
+# ============================================================================
+# STAGE 03: RECOMPILE & PREDICTION CONFIGURATION
+# ============================================================================
+recompile_predict:
+  bin_numbers_1: [26]
+  bin_numbers_2: [9]
+  combine_bins: false
+
+  metric_name_1: "2qke_tmscore"
+  metric_name_2: "5jyt_tmscore"
+
+  prediction_num_model: 5
+  prediction_num_seed: 8
+
+# ============================================================================
+# STAGE 04: PURE SEQUENCE PLOTTING CONFIGURATION
+# ============================================================================
+pure_sequence_plotting:
+  plddt_threshold: 0
+  figsize: [10, 5]
+  dpi: 600
+
+  metric1_min: 0.4
+  metric1_max: 1.0
+  metric2_min: 0.4
+  metric2_max: 1.0
+  metric1_ticks: [0.4, 0.6, 0.8, 1.0]
+  metric2_ticks: [0.4, 0.6, 0.8, 1.0]
+
+  max_workers: 8

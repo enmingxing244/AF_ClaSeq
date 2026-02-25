@@ -48,6 +48,12 @@ class SlurmConfig:
 
 
 @dataclass
+class LocalGPUConfig:
+    """Local GPU execution configuration"""
+    cuda_visible_devices: str
+
+
+@dataclass
 class PipelineControlConfig:
     """Pipeline control options"""
     stages: List[str] = field(default_factory=lambda: [
@@ -135,12 +141,13 @@ class PureSequencePlottingConfig:
 class PipelineConfig:
     """Complete pipeline configuration"""
     general: GeneralConfig
-    slurm: SlurmConfig
     pipeline_control: PipelineControlConfig
     m_fold_sampling: MFoldSamplingConfig
     sequence_voting: SequenceVotingConfig
     recompile_predict: RecompilePredictConfig
     pure_sequence_plotting: PureSequencePlottingConfig
+    slurm: Optional[SlurmConfig] = None
+    local_gpu: Optional[LocalGPUConfig] = None
 
 
 def get_selected_metrics(general_config: GeneralConfig) -> List[str]:
@@ -231,24 +238,40 @@ def validate_metric_names(general_config: GeneralConfig) -> None:
 def load_pipeline_config(yaml_input: str) -> PipelineConfig:
     """
     Load configuration from YAML file and create config objects
-    
+
     Args:
         yaml_input: Path to YAML configuration file with pipeline parameters
-        
+
     Returns:
         PipelineConfig object with all configuration options
     """
     with open(yaml_input, 'r') as f:
         yaml_config = yaml.safe_load(f)
-    
+
+    # Validate execution mode: exactly one of slurm or local_gpu
+    has_slurm = 'slurm' in yaml_config and yaml_config['slurm'] is not None
+    has_local_gpu = 'local_gpu' in yaml_config and yaml_config['local_gpu'] is not None
+
+    if has_slurm and has_local_gpu:
+        raise ValueError(
+            "Config error: Cannot specify both 'slurm' and 'local_gpu' sections. "
+            "Please choose one execution mode."
+        )
+    if not has_slurm and not has_local_gpu:
+        raise ValueError(
+            "Config error: Must specify either 'slurm' or 'local_gpu' section "
+            "to define the execution mode."
+        )
+
     # Create individual config objects
     general_config = GeneralConfig(**yaml_config.get('general', {}))
-    
+
     # Validate metric names if specified
     if general_config.metric1_name or general_config.metric2_name:
         validate_metric_names(general_config)
-    
-    slurm_config = SlurmConfig(**yaml_config.get('slurm', {}))
+
+    slurm_config = SlurmConfig(**yaml_config['slurm']) if has_slurm else None
+    local_gpu_config = LocalGPUConfig(**yaml_config['local_gpu']) if has_local_gpu else None
     pipeline_control_config = PipelineControlConfig(**yaml_config.get('pipeline_control', {}))
     m_fold_sampling_config = MFoldSamplingConfig(**yaml_config.get('m_fold_sampling', {}))
     sequence_voting_config = SequenceVotingConfig(**yaml_config.get('sequence_voting', {}))
@@ -259,6 +282,7 @@ def load_pipeline_config(yaml_input: str) -> PipelineConfig:
     return PipelineConfig(
         general=general_config,
         slurm=slurm_config,
+        local_gpu=local_gpu_config,
         pipeline_control=pipeline_control_config,
         m_fold_sampling=m_fold_sampling_config,
         sequence_voting=sequence_voting_config,
