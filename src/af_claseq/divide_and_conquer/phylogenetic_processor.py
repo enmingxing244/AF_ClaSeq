@@ -175,7 +175,7 @@ class PhylogeneticProcessor:
             f"--cpus-per-task={cpus}",
             f"--time={slurm_config.get('fasttree_time', '01:00:00')}",
             f"--partition={slurm_config.get('partition', 'nextgen')}",
-            f"--memory={slurm_config.get('memory', '32G')}",
+            f"--mem={slurm_config.get('memory', '32G')}",
             "--wrap", fasttree_cmd
         ]
 
@@ -211,6 +211,8 @@ class PhylogeneticProcessor:
 
         except subprocess.CalledProcessError as e:
             error_msg = f"FastTree SLURM job submission failed: {e}"
+            if e.stderr:
+                error_msg += f"\nsbatch stderr: {e.stderr}"
             self.logger.error(error_msg)
             raise WorkflowError(error_msg)
 
