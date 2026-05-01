@@ -6,6 +6,7 @@ Handles FastTree execution and phylogenetic clade-based sequence splitting.
 import os
 import sys
 import subprocess
+import time
 from pathlib import Path
 from typing import Dict, Any, List, Tuple, Optional
 from collections import OrderedDict
@@ -139,58 +140,83 @@ class PhylogeneticProcessor:
     
     def run_fasttree(self, a3m_file: str) -> str:
         """
-        Run FastTree to generate phylogenetic tree.
-        
+        Run FastTree as a SLURM job to generate phylogenetic tree.
+
         Args:
             a3m_file: Path to preprocessed A3M file
-            
+
         Returns:
             Path to generated tree file
         """
         self.logger.info("Running FastTree for phylogenetic tree construction...")
-        
+
         validate_file_exists(a3m_file, "Preprocessed A3M file")
-        
-        # Prepare output file in working directory
+
         file_stem = Path(a3m_file).stem
         tree_file = os.path.join(self.working_dir, f"{file_stem}.nwk")
-        
-        # FastTree command
-        cmd = [self.fasttree_binary, a3m_file]
-        
-        self.logger.info(f"FastTree command: {' '.join(cmd)} > {tree_file}")
-        
+        stderr_file = os.path.join(self.working_dir, f"{file_stem}_fasttree.log")
+
+        slurm_config = self.config.get('slurm', {})
+        cpus = slurm_config.get('cpus', 8)
+
+        fasttree_cmd = (
+            f"export OMP_NUM_THREADS={cpus} && "
+            f"{self.fasttree_binary} {a3m_file} > {tree_file} 2> {stderr_file}"
+        )
+
+        sbatch_cmd = [
+            "sbatch",
+            f"--account={slurm_config.get('account', 'PAA0203')}",
+            f"--job-name=fasttree_{file_stem}",
+            "--output=/dev/null",
+            "--error=/dev/null",
+            "--nodes=1",
+            "--ntasks=1",
+            f"--cpus-per-task={cpus}",
+            f"--time={slurm_config.get('fasttree_time', '01:00:00')}",
+            f"--partition={slurm_config.get('partition', 'nextgen')}",
+            f"--memory={slurm_config.get('memory', '32G')}",
+            "--wrap", fasttree_cmd
+        ]
+
+        self.logger.info(f"Submitting FastTree SLURM job: {fasttree_cmd}")
+
         try:
-            # Run FastTree and capture output
-            with open(tree_file, 'w') as output_file:
-                result = subprocess.run(
-                    cmd,
-                    stdout=output_file,
-                    stderr=subprocess.PIPE,
-                    text=True,
-                    check=True
+            result = subprocess.run(sbatch_cmd, capture_output=True, text=True, check=True)
+            job_id = result.stdout.strip().split()[-1]
+            self.logger.info(f"FastTree SLURM job submitted: {job_id}")
+
+            while True:
+                squeue_result = subprocess.run(
+                    ["squeue", "-j", job_id], capture_output=True, text=True
                 )
-            
-            # Check if tree file was created and is not empty
+                if job_id not in squeue_result.stdout:
+                    break
+                time.sleep(30)
+
+            self.logger.info(f"FastTree job {job_id} completed")
+
             if not os.path.exists(tree_file) or os.path.getsize(tree_file) == 0:
-                raise WorkflowError(f"FastTree failed to generate tree file: {tree_file}")
-            
+                error_msg = f"FastTree failed to generate tree file: {tree_file}"
+                if os.path.exists(stderr_file):
+                    with open(stderr_file, 'r') as f:
+                        error_msg += f"\nFastTree log:\n{f.read()}"
+                raise WorkflowError(error_msg)
+
             self.logger.info(f"FastTree completed successfully")
             self.logger.info(f"Tree file generated: {tree_file}")
-            
-            # Log any warnings from FastTree stderr
-            if result.stderr:
-                self.logger.warning(f"FastTree stderr: {result.stderr}")
-            
+            self.logger.info(f"FastTree log saved to: {stderr_file}")
+
             return tree_file
-            
+
         except subprocess.CalledProcessError as e:
-            error_msg = f"FastTree execution failed: {e}"
-            if e.stderr:
-                error_msg += f"\nStderr: {e.stderr}"
+            error_msg = f"FastTree SLURM job submission failed: {e}"
             self.logger.error(error_msg)
             raise WorkflowError(error_msg)
-        
+
+        except WorkflowError:
+            raise
+
         except Exception as e:
             error_msg = f"Unexpected error running FastTree: {e}"
             self.logger.error(error_msg)

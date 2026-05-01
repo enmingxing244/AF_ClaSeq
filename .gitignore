@@ -18,3 +18,4 @@ setup.py
 pipeline_test/
 *samrun.yaml
 m_fold_sampling_voting.tar.gz
+logs/
