@@ -8,6 +8,7 @@ This module provides classes to:
 """
 
 import os
+import math
 import logging
 import json
 import pandas as pd
@@ -22,6 +23,49 @@ from pathlib import Path
 from af_claseq.utils.structure_analysis import StructureAnalyzer
 from af_claseq.utils.logging_utils import get_logger
 from af_claseq.utils.plotting_manager import save_ai_compatible_plot
+
+
+def _resolve_bin_params(
+    values: List[float],
+    metric_bin_cfg: Optional[Any],
+    num_bins_fallback: int,
+    min_override: Optional[float],
+    max_override: Optional[float],
+) -> Tuple[float, float, int]:
+    """Resolve (min_val, max_val, n_bins) from per-metric config or legacy fallbacks.
+
+    Priority for min/max:
+      1. metric_bin_cfg.min / .max (unit-based mode — required when bin_width is set)
+      2. min_override / max_override (legacy per-call overrides)
+      3. data min/max (legacy default)
+
+    Priority for n_bins:
+      1. metric_bin_cfg.compute_num_bins() if bin_width is set
+      2. num_bins_fallback (legacy integer)
+    """
+    if metric_bin_cfg is not None and metric_bin_cfg.min is not None:
+        min_val = metric_bin_cfg.min
+    elif min_override is not None:
+        min_val = min_override
+    else:
+        min_val = float(min(values))
+
+    if metric_bin_cfg is not None and metric_bin_cfg.max is not None:
+        max_val = metric_bin_cfg.max
+    elif max_override is not None:
+        max_val = max_override
+    else:
+        max_val = float(max(values))
+
+    if max_val <= min_val:
+        max_val = min_val + 1.0
+
+    if metric_bin_cfg is not None and metric_bin_cfg.bin_width is not None:
+        n_bins = metric_bin_cfg.compute_num_bins()
+    else:
+        n_bins = num_bins_fallback
+
+    return min_val, max_val, n_bins
 
 
 class VotingAnalyzer:
@@ -243,21 +287,23 @@ class VotingAnalyzer:
         else:
             return list(range(indices_spec['start'], indices_spec['end'] + 1))
     
-    def create_1d_metric_bins(self, 
-                           results: Dict[str, Dict[str, float]], 
-                           metric_name: str, 
+    def create_1d_metric_bins(self,
+                           results: Dict[str, Dict[str, float]],
+                           metric_name: str,
                            num_bins: int = 20,
                            min_value: Optional[float] = None,
-                           max_value: Optional[float] = None) -> Tuple[np.ndarray, Dict[str, int]]:
+                           max_value: Optional[float] = None,
+                           metric_bin_cfg: Optional[Any] = None) -> Tuple[np.ndarray, Dict[str, int]]:
         """Create 1D bins for a specific metric and assign PDBs to bins.
-        
+
         Args:
             results: Dictionary mapping PDB IDs to their metric values
             metric_name: Name of the metric to bin
-            num_bins: Number of bins to create
-            min_value: Optional minimum value for binning range. If None, uses min of data
-            max_value: Optional maximum value for binning range. If None, uses max of data
-            
+            num_bins: Number of bins to create (fallback when metric_bin_cfg not set)
+            min_value: Optional minimum value for binning range
+            max_value: Optional maximum value for binning range
+            metric_bin_cfg: Optional MetricBinConfig for unit-based binning
+
         Returns:
             Tuple containing:
             - Array of bin edges
@@ -265,30 +311,24 @@ class VotingAnalyzer:
         """
         if not results:
             raise ValueError("No results provided for binning")
-            
+
         metric_values = [metrics[metric_name] for metrics in results.values() if metric_name in metrics]
         if not metric_values:
             raise ValueError(f"No valid values found for metric {metric_name}. Check if metric calculation succeeded.")
-            
-        # Use provided min/max if given, otherwise use data min/max
-        min_val = min_value if min_value is not None else min(metric_values)
-        max_val = max_value if max_value is not None else max(metric_values)
-        
-        # Validate values are within range if min/max were provided
-        if min_value is not None:
-            assert all(v >= min_value for v in metric_values), f"Some {metric_name} values are below minimum {min_value}"
-        if max_value is not None:
-            assert all(v <= max_value for v in metric_values), f"Some {metric_name} values are above maximum {max_value}"
-            
-        bins = np.linspace(min_val, max_val, num_bins + 1)
-        
-        # Assign each PDB to a bin
+
+        min_val, max_val, n_bins = _resolve_bin_params(
+            metric_values, metric_bin_cfg, num_bins, min_value, max_value
+        )
+
+        bins = np.linspace(min_val, max_val, n_bins + 1)
+
         pdb_bins = {}
         for pdb, metrics in results.items():
             if metric_name in metrics:
-                bin_idx = np.digitize(metrics[metric_name], bins) - 1
+                v = float(np.clip(metrics[metric_name], min_val, max_val))
+                bin_idx = int(np.clip(np.digitize(v, bins) - 1, 0, n_bins - 1))
                 pdb_bins[pdb] = bin_idx
-            
+
         return bins, pdb_bins
     
     def create_focused_1d_bins(self,
@@ -296,16 +336,18 @@ class VotingAnalyzer:
                              metric_name: str,
                              num_bins: int,
                              min_value: Optional[float] = None,
-                             max_value: Optional[float] = None) -> Tuple[np.ndarray, Dict[str, int]]:
+                             max_value: Optional[float] = None,
+                             metric_bin_cfg: Optional[Any] = None) -> Tuple[np.ndarray, Dict[str, int]]:
         """Create 1D bins with focus range, assigning outliers to edge bins.
-        
+
         Args:
             results: Dictionary mapping PDB IDs to their metric values
             metric_name: Name of the metric to bin
             num_bins: Number of bins to create within focus range
             min_value: Minimum value of focus range (optional)
             max_value: Maximum value of focus range (optional)
-            
+            metric_bin_cfg: Optional MetricBinConfig for unit-based binning
+
         Returns:
             Tuple containing:
             - Array of bin edges including outlier bins
@@ -313,64 +355,63 @@ class VotingAnalyzer:
         """
         if not results:
             raise ValueError("No results provided for binning")
-            
+
         metric_values = [metrics[metric_name] for metrics in results.values() if metric_name in metrics]
         if not metric_values:
             raise ValueError(f"No valid values found for metric {metric_name}")
-            
-        # Use provided min/max if given, otherwise use data min/max
-        min_val = min_value if min_value is not None else min(metric_values)
-        max_val = max_value if max_value is not None else max(metric_values)
-        
-        # Create bins within focus range
-        focus_bins = np.linspace(min_val, max_val, num_bins + 1)
-        
-        # Add edge bins for outliers
+
+        min_val, max_val, n_bins = _resolve_bin_params(
+            metric_values, metric_bin_cfg, num_bins, min_value, max_value
+        )
+
+        focus_bins = np.linspace(min_val, max_val, n_bins + 1)
         bins = np.concatenate([[float('-inf')], focus_bins, [float('inf')]])
-        
-        # Assign each PDB to a bin
+
         pdb_bins = {}
         for pdb, metrics in results.items():
             if metric_name in metrics:
                 value = metrics[metric_name]
                 if value < min_val:
-                    pdb_bins[pdb] = 0  # Below focus range
+                    pdb_bins[pdb] = 0
                 elif value > max_val:
-                    pdb_bins[pdb] = num_bins + 1  # Above focus range
+                    pdb_bins[pdb] = n_bins + 1
                 else:
-                    # Within focus range - subtract 1 to account for the below-range bin
-                    bin_idx = np.digitize(value, focus_bins) 
+                    bin_idx = np.digitize(value, focus_bins)
                     pdb_bins[pdb] = bin_idx
-                    
+
         return bins, pdb_bins
 
     def create_2d_metric_bins(self,
                             results: Dict[str, Dict[str, float]],
                             metric_names: List[str],
-                            num_bins: int = 10) -> Tuple[List[np.ndarray], Dict[str, Tuple[int, int]]]:
+                            num_bins: int = 10,
+                            metric_bin_cfgs: Optional[Dict[str, Any]] = None) -> Tuple[List[np.ndarray], Dict[str, Tuple[int, int]]]:
         """Create 2D bins using two metrics and assign PDBs to 2D bin coordinates."""
         if not results or len(metric_names) != 2:
             raise ValueError("Need results and exactly two metric names for 2D binning")
 
         metric1_name, metric2_name = metric_names
-        
-        # Get values for both metrics
+        cfgs = metric_bin_cfgs or {}
+
         metric1_values = [metrics[metric1_name] for metrics in results.values() if metric1_name in metrics]
         metric2_values = [metrics[metric2_name] for metrics in results.values() if metric2_name in metrics]
-        
+
         if not metric1_values or not metric2_values:
             raise ValueError("No valid values found for one or both metrics")
 
-        # Create bins for each dimension
-        bins1 = np.linspace(min(metric1_values), max(metric1_values), num_bins + 1)
-        bins2 = np.linspace(min(metric2_values), max(metric2_values), num_bins + 1)
+        min1, max1, n1 = _resolve_bin_params(metric1_values, cfgs.get(metric1_name), num_bins, None, None)
+        min2, max2, n2 = _resolve_bin_params(metric2_values, cfgs.get(metric2_name), num_bins, None, None)
 
-        # Assign each PDB to a 2D bin coordinate
+        bins1 = np.linspace(min1, max1, n1 + 1)
+        bins2 = np.linspace(min2, max2, n2 + 1)
+
         pdb_bins = {}
         for pdb, metrics in results.items():
             if metric1_name in metrics and metric2_name in metrics:
-                bin_idx1 = np.digitize(metrics[metric1_name], bins1) - 1
-                bin_idx2 = np.digitize(metrics[metric2_name], bins2) - 1
+                v1 = float(np.clip(metrics[metric1_name], min1, max1))
+                v2 = float(np.clip(metrics[metric2_name], min2, max2))
+                bin_idx1 = int(np.clip(np.digitize(v1, bins1) - 1, 0, n1 - 1))
+                bin_idx2 = int(np.clip(np.digitize(v2, bins2) - 1, 0, n2 - 1))
                 pdb_bins[pdb] = (bin_idx1, bin_idx2)
 
         return [bins1, bins2], pdb_bins
@@ -378,33 +419,39 @@ class VotingAnalyzer:
     def create_3d_metric_bins(self,
                             results: Dict[str, Dict[str, float]],
                             metric_names: List[str],
-                            num_bins: int = 10) -> Tuple[List[np.ndarray], Dict[str, Tuple[int, int, int]]]:
+                            num_bins: int = 10,
+                            metric_bin_cfgs: Optional[Dict[str, Any]] = None) -> Tuple[List[np.ndarray], Dict[str, Tuple[int, int, int]]]:
         """Create 3D bins using three metrics and assign PDBs to 3D bin coordinates."""
         if not results or len(metric_names) != 3:
             raise ValueError("Need results and exactly three metric names for 3D binning")
 
         metric1_name, metric2_name, metric3_name = metric_names
-        
-        # Get values for all three metrics
+        cfgs = metric_bin_cfgs or {}
+
         metric1_values = [metrics[metric1_name] for metrics in results.values() if metric1_name in metrics]
         metric2_values = [metrics[metric2_name] for metrics in results.values() if metric2_name in metrics]
         metric3_values = [metrics[metric3_name] for metrics in results.values() if metric3_name in metrics]
-        
+
         if not metric1_values or not metric2_values or not metric3_values:
             raise ValueError("No valid values found for one or more metrics")
 
-        # Create bins for each dimension
-        bins1 = np.linspace(min(metric1_values), max(metric1_values), num_bins + 1)
-        bins2 = np.linspace(min(metric2_values), max(metric2_values), num_bins + 1)
-        bins3 = np.linspace(min(metric3_values), max(metric3_values), num_bins + 1)
+        min1, max1, n1 = _resolve_bin_params(metric1_values, cfgs.get(metric1_name), num_bins, None, None)
+        min2, max2, n2 = _resolve_bin_params(metric2_values, cfgs.get(metric2_name), num_bins, None, None)
+        min3, max3, n3 = _resolve_bin_params(metric3_values, cfgs.get(metric3_name), num_bins, None, None)
 
-        # Assign each PDB to a 3D bin coordinate
+        bins1 = np.linspace(min1, max1, n1 + 1)
+        bins2 = np.linspace(min2, max2, n2 + 1)
+        bins3 = np.linspace(min3, max3, n3 + 1)
+
         pdb_bins = {}
         for pdb, metrics in results.items():
             if all(m in metrics for m in metric_names):
-                bin_idx1 = np.digitize(metrics[metric1_name], bins1) - 1
-                bin_idx2 = np.digitize(metrics[metric2_name], bins2) - 1
-                bin_idx3 = np.digitize(metrics[metric3_name], bins3) - 1
+                v1 = float(np.clip(metrics[metric1_name], min1, max1))
+                v2 = float(np.clip(metrics[metric2_name], min2, max2))
+                v3 = float(np.clip(metrics[metric3_name], min3, max3))
+                bin_idx1 = int(np.clip(np.digitize(v1, bins1) - 1, 0, n1 - 1))
+                bin_idx2 = int(np.clip(np.digitize(v2, bins2) - 1, 0, n2 - 1))
+                bin_idx3 = int(np.clip(np.digitize(v3, bins3) - 1, 0, n3 - 1))
                 pdb_bins[pdb] = (bin_idx1, bin_idx2, bin_idx3)
 
         return [bins1, bins2, bins3], pdb_bins
@@ -596,7 +643,9 @@ class SequenceVotingPlotter:
         y_min: Optional[float] = None,
         y_max: Optional[float] = None,
         x_ticks: Optional[List[int]] = None,
-        num_bins: Optional[int] = None
+        num_bins: Optional[int] = None,
+        bin_edges: Optional[np.ndarray] = None,
+        unit_label: Optional[str] = None,
     ):
         """Initialize the plotter with configuration parameters."""
         self.results_file = results_file
@@ -608,6 +657,8 @@ class SequenceVotingPlotter:
         self.y_max = y_max
         self.x_ticks = x_ticks
         self.num_bins = num_bins
+        self.bin_edges = bin_edges
+        self.unit_label = unit_label
         self.logger = get_logger(__name__)
         
         # Configure matplotlib for publication-quality plots
@@ -728,13 +779,24 @@ class SequenceVotingPlotter:
         for bin_edge in bins:
             plt.axvline(x=bin_edge - 0.5, color='gray', linestyle='--', alpha=0.5)
 
-        plt.xlabel('Bin Assignment')
         plt.ylabel('Count')
         plt.xlim(0.5, num_bins + 0.5)
 
-        # Set custom x ticks if provided, otherwise use all bins
-        if self.x_ticks is not None:
-            plt.xticks(self.x_ticks)
+        if self.bin_edges is not None and len(self.bin_edges) > 1:
+            n_edge_bins = len(self.bin_edges) - 1
+            tick_step = max(1, n_edge_bins // 6)
+            tick_indices = list(range(0, n_edge_bins, tick_step))
+            if (n_edge_bins - 1) not in tick_indices:
+                tick_indices.append(n_edge_bins - 1)
+            tick_positions = [i + 1 for i in tick_indices]
+            tick_labels = [f"{self.bin_edges[i]:.2f}" for i in tick_indices]
+            plt.xticks(tick_positions, tick_labels, rotation=45, ha='right')
+            xlabel = self.unit_label if self.unit_label else 'Metric Value'
+            plt.xlabel(xlabel)
+        else:
+            plt.xlabel('Bin Assignment')
+            if self.x_ticks is not None:
+                plt.xticks(self.x_ticks)
 
         # Set y-axis limits
         ax = plt.gca()
@@ -778,17 +840,18 @@ class SequenceVotingRunner:
         use_focused_bins: bool = False,
         precomputed_metrics: Optional[str] = None,
         plddt_threshold: float = 0,
-        filter_criterion: Optional[str] = None
+        filter_criterion: Optional[str] = None,
+        metric_bin_cfg: Optional[Any] = None
     ):
         """
         Initialize the voting runner with configuration parameters.
-        
+
         Args:
             sampling_dir: Directory containing sampling results
             source_msa: Path to source MSA file
             config_path: Path to configuration JSON file
             output_dir: Output directory for voting results
-            num_bins: Number of bins for voting
+            num_bins: Number of bins for voting (fallback when metric_bin_cfg not set)
             max_workers: Maximum number of concurrent workers
             vote_threshold: Threshold for vote filtering (0-1)
             min_value: Minimum value for metric binning range
@@ -797,6 +860,7 @@ class SequenceVotingRunner:
             precomputed_metrics: Path to precomputed metrics CSV file or directory
             plddt_threshold: pLDDT threshold for filtering structures
             filter_criterion: Specific filter criterion name to process
+            metric_bin_cfg: Optional MetricBinConfig for unit-based binning
         """
         self.sampling_dir = sampling_dir
         self.source_msa = source_msa
@@ -811,6 +875,7 @@ class SequenceVotingRunner:
         self.precomputed_metrics = precomputed_metrics
         self.plddt_threshold = plddt_threshold
         self.filter_criterion = filter_criterion
+        self.metric_bin_cfg = metric_bin_cfg
         
         # Initialize output directories
         self.voting_dir = self.output_dir
@@ -929,7 +994,8 @@ class SequenceVotingRunner:
                     criterion_name,
                     self.num_bins,
                     self.min_value,
-                    self.max_value
+                    self.max_value,
+                    metric_bin_cfg=self.metric_bin_cfg
                 )
             else:
                 bins, pdb_bins = self.analyzer.create_1d_metric_bins(
@@ -937,7 +1003,8 @@ class SequenceVotingRunner:
                     criterion_name,
                     num_bins=self.num_bins,
                     min_value=self.min_value,
-                    max_value=self.max_value
+                    max_value=self.max_value,
+                    metric_bin_cfg=self.metric_bin_cfg
                 )
             
             # Get sequence votes

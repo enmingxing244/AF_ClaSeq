@@ -10,6 +10,8 @@ import os
 import sys
 import logging
 import json
+import numpy as np
+import pandas as pd
 from pathlib import Path
 from typing import Dict, Any, List
 
@@ -520,9 +522,13 @@ class AFClaSeqPipeline:
                 criterion_output_dir = voting_dir / criterion_name
                 criterion_output_dir.mkdir(exist_ok=True)
 
+                # Resolve per-metric bin config (unit-based binning)
+                from af_claseq.m_fold_sampling_voting.config import get_metric_bin_config
+                metric_bin_cfg = get_metric_bin_config(self.config.sequence_voting, criterion_name)
+
                 # Create voting runner instance for this criterion
                 voting_runner = SequenceVotingRunner(
-                    sampling_dir=m_fold_sampling_dir,  # Updated to use the base m-fold directory
+                    sampling_dir=m_fold_sampling_dir,
                     source_msa=self.config.general.source_a3m,
                     config_path=self.config.general.config_file,
                     output_dir=criterion_output_dir,
@@ -534,19 +540,30 @@ class AFClaSeqPipeline:
                     use_focused_bins=self.config.sequence_voting.use_focused_bins,
                     precomputed_metrics=base_dir / "01_m_fold_sampling/csv",
                     plddt_threshold=self.config.m_fold_sampling.m_fold_plddt_threshold,
-                    filter_criterion=criterion_name
+                    filter_criterion=criterion_name,
+                    metric_bin_cfg=metric_bin_cfg,
                 )
 
                 # Run voting analysis for this criterion
                 results_file = voting_runner.run()
-                
+
                 if results_file:
                     results_files.append((criterion_name, results_file))
 
+                    # Determine actual bin count (may differ from general.num_bins when using bin_width)
+                    _vdf = pd.read_csv(results_file)
+                    actual_num_bins = int(_vdf['Bin_Assignment'].max()) + 1 if 'Bin_Assignment' in _vdf.columns else self.config.general.num_bins
+
+                    # Resolve bin edges and unit label for physical-unit axis
+                    bin_edges = None
+                    unit_label = None
+                    if metric_bin_cfg is not None and metric_bin_cfg.bin_width is not None:
+                        bin_edges = np.linspace(metric_bin_cfg.min, metric_bin_cfg.max, actual_num_bins + 1)
+                        unit_label = metric_bin_cfg.unit_label
+
                     # Create plotter for visualization
-                    # Determine which metric colors to use based on criterion index
                     colors = self.config.general.metric1_color if i == 0 else self.config.general.metric2_color
-                    
+
                     plotter = SequenceVotingPlotter(
                         results_file=results_file,
                         output_dir=criterion_output_dir,
@@ -555,8 +572,10 @@ class AFClaSeqPipeline:
                         figsize=self.config.sequence_voting.vote_figsize,
                         y_min=self.config.sequence_voting.vote_y_min,
                         y_max=self.config.sequence_voting.vote_y_max,
-                        x_ticks=self.config.sequence_voting.vote_x_ticks, 
-                        num_bins=self.config.general.num_bins,
+                        x_ticks=self.config.sequence_voting.vote_x_ticks,
+                        num_bins=actual_num_bins,
+                        bin_edges=bin_edges,
+                        unit_label=unit_label,
                     )
 
                     # Plot voting distributions
@@ -650,20 +669,24 @@ class AFClaSeqPipeline:
                     all_successful = False
                     continue
 
+                # Derive actual bin count from voting results (handles unit-based binning)
+                _vdf = pd.read_csv(voting_results)
+                actual_num_bins = int(_vdf['Bin_Assignment'].max()) + 1 if 'Bin_Assignment' in _vdf.columns else self.config.general.num_bins
+
                 # Get metric colors by name (not index)
                 colors = self._get_metric_colors(criterion_name)
-                
+
                 recompiler = SequenceRecompiler(
                     output_dir=criterion_output_dir,
                     source_msa=source_msa,
                     voting_results=voting_results,
                     bin_numbers=bin_numbers,
-                    num_total_bins=self.config.general.num_bins,
+                    num_total_bins=actual_num_bins,
                     initial_color=colors[0],
                     combine_bins=self.config.recompile_predict.combine_bins,
                     raw_votes_json=raw_votes_json if raw_votes_json.exists() else None,
                     logger=self.logger,
-                    default_pdb=self.config.general.default_pdb  # Optional for backward compatibility
+                    default_pdb=self.config.general.default_pdb
                 )
                 
                 # Recompile sequences

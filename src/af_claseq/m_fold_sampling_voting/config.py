@@ -5,10 +5,43 @@ This module provides dataclasses for different configuration sections
 and functions to load configuration from YAML files.
 """
 
+import math
 import yaml
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional, Any, Tuple, Union
 from af_claseq.utils.plotting_manager import COLORS
+
+
+@dataclass
+class MetricBinConfig:
+    """Per-metric binning parameters for unit-based binning.
+
+    When bin_width is set, min and max are required — the total number of bins
+    is computed as ceil((max - min) / bin_width).
+    When bin_width is None, falls back to the global num_bins count.
+    """
+    bin_width: Optional[float] = None
+    min: Optional[float] = None
+    max: Optional[float] = None
+    unit_label: Optional[str] = None
+
+    def __post_init__(self):
+        if self.bin_width is not None:
+            if self.bin_width <= 0:
+                raise ValueError(f"bin_width must be positive, got {self.bin_width}")
+            if self.min is None or self.max is None:
+                raise ValueError(
+                    "When bin_width is specified, both 'min' and 'max' are required. "
+                    "Please define the metric range explicitly."
+                )
+            if self.max <= self.min:
+                raise ValueError(f"max ({self.max}) must be greater than min ({self.min})")
+
+    def compute_num_bins(self) -> Optional[int]:
+        """Compute the number of bins from bin_width and range. Returns None if bin_width not set."""
+        if self.bin_width is None:
+            return None
+        return max(1, math.ceil((self.max - self.min) / self.bin_width))
 
 @dataclass
 class GeneralConfig:
@@ -94,6 +127,7 @@ class SequenceVotingConfig:
     vote_y_max: Optional[float] = None
     vote_x_ticks: Optional[List[int]] = None
     use_focused_bins: bool = False
+    metric_bin_configs: Dict[str, Any] = field(default_factory=dict)
     
 
 @dataclass
@@ -265,3 +299,13 @@ def load_pipeline_config(yaml_input: str) -> PipelineConfig:
         recompile_predict=recompile_predict_config,
         pure_sequence_plotting=pure_sequence_plotting_config
     )
+
+
+def get_metric_bin_config(voting_config: SequenceVotingConfig, metric_name: str) -> Optional[MetricBinConfig]:
+    """Look up the MetricBinConfig for a given metric name, or None if not configured."""
+    raw = voting_config.metric_bin_configs.get(metric_name)
+    if raw is None:
+        return None
+    if isinstance(raw, MetricBinConfig):
+        return raw
+    return MetricBinConfig(**{k: v for k, v in raw.items() if k in MetricBinConfig.__dataclass_fields__})
