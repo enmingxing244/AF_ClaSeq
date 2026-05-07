@@ -44,6 +44,8 @@ class PureSeqPlotConfig:
     figsize: Tuple[int, int] = (15, 7)
     dpi: int = PLOT_PARAMS['dpi']
     max_workers: int = 8
+    metric1_label: Optional[str] = None
+    metric2_label: Optional[str] = None
 
 
 def create_pure_seq_plot_config_from_dict(config_dict: Dict[str, Any]) -> PureSeqPlotConfig:
@@ -227,7 +229,9 @@ class PureSequencePlotter:
                             x_ticks=self.config.metric1_ticks,
                             y_ticks=self.config.metric2_ticks,
                             title=None,
-                            logger=self.logger
+                            logger=self.logger,
+                            x_label=self.config.metric1_label,
+                            y_label=self.config.metric2_label,
                         )
                         
                         # Save metrics to CSV

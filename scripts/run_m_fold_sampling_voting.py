@@ -826,7 +826,9 @@ class AFClaSeqPipeline:
                     'plddt_threshold': self.config.pure_sequence_plotting.plddt_threshold,
                     'figsize': self.config.pure_sequence_plotting.figsize,
                     'dpi': self.config.pure_sequence_plotting.dpi,
-                    'max_workers': self.config.slurm.max_workers
+                    'max_workers': self.config.slurm.max_workers,
+                    'metric1_label': self.config.general.metric1_label,
+                    'metric2_label': self.config.general.metric2_label,
                 }
                 
                 # Create and run plotter
