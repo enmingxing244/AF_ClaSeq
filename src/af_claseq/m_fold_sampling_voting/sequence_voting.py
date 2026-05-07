@@ -508,22 +508,20 @@ class VotingAnalyzer:
     def _collect_a3m_files(self, sampling_base_dir: str) -> List[Tuple[str, str]]:
         """Collect A3M files and their corresponding PDB files from single or multi-round sampling."""
         a3m_files = []
-        
-        # Check if we have a rounds-based directory structure
+
         round_dirs = [d for d in os.listdir(sampling_base_dir) if d.startswith('round_')]
-        
+
         if round_dirs:
-            # Multi-round structure
             self.logger.info(f"Found {len(round_dirs)} sampling rounds")
             for round_dir in round_dirs:
                 round_path = os.path.join(sampling_base_dir, round_dir)
                 sampling_path = os.path.join(round_path, '01_sampling')
-                
+
                 if os.path.exists(sampling_path):
                     sampling_dirs = [d for d in os.listdir(sampling_path) if d.startswith('sampling_')]
-                    
+
                     for sampling_dir in sampling_dirs:
-                        dir_path = os.path.join(sampling_path, sampling_dir)
+                        dir_path = os.path.realpath(os.path.join(sampling_path, sampling_dir))
                         for group_file in os.listdir(dir_path):
                             if group_file.endswith('.a3m'):
                                 a3m_path = os.path.join(dir_path, group_file)
@@ -533,11 +531,10 @@ class VotingAnalyzer:
                                 if os.path.exists(pdb_file):
                                     a3m_files.append((a3m_path, pdb_file))
         else:
-            # Single round structure (flat directory)
             sampling_dirs = [d for d in os.listdir(sampling_base_dir) if d.startswith('sampling_')]
-            
+
             for sampling_dir in sampling_dirs:
-                dir_path = os.path.join(sampling_base_dir, sampling_dir)
+                dir_path = os.path.realpath(os.path.join(sampling_base_dir, sampling_dir))
                 for a3m_file in os.listdir(dir_path):
                     if a3m_file.endswith('.a3m'):
                         a3m_path = os.path.join(dir_path, a3m_file)

@@ -497,8 +497,8 @@ class AFClaSeqPipeline:
             voting_dir = base_dir / "02_voting"
             voting_dir.mkdir(exist_ok=True)
             
-            # Use the correct path for m-fold sampling directory
-            m_fold_sampling_dir = base_dir / "01_m_fold_sampling"
+            # Resolve symlinks so PDB paths match precomputed CSVs
+            m_fold_sampling_dir = Path(os.path.realpath(base_dir / "01_m_fold_sampling"))
             
             results_files = []
             
@@ -538,7 +538,7 @@ class AFClaSeqPipeline:
                     min_value=self.config.sequence_voting.vote_min_value,
                     max_value=self.config.sequence_voting.vote_max_value,
                     use_focused_bins=self.config.sequence_voting.use_focused_bins,
-                    precomputed_metrics=base_dir / "01_m_fold_sampling/csv",
+                    precomputed_metrics=Path(os.path.realpath(base_dir / "01_m_fold_sampling/csv")),
                     plddt_threshold=self.config.m_fold_sampling.m_fold_plddt_threshold,
                     filter_criterion=criterion_name,
                     metric_bin_cfg=metric_bin_cfg,
