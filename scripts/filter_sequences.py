@@ -95,6 +95,13 @@ Examples:
     )
     
     parser.add_argument(
+        '--query_a3m',
+        help='Path to A3M file containing the query sequence (first entry). '
+             'If provided, the query is prepended to the output. '
+             'If not provided, the query is auto-extracted from the first filtered A3M file.'
+    )
+
+    parser.add_argument(
         '--combine_method',
         choices=['all', 'any'],
         default='all',
@@ -319,11 +326,16 @@ def pdb_to_a3m_path(pdb_path: str) -> str:
     return os.path.splitext(pdb_path)[0] + '.a3m'
 
 
-def collect_sequences(pdb_paths: List[str], verbose: bool = False) -> Dict[str, str]:
-    """Collect unique non-query sequences from A3M files corresponding to PDB paths."""
+def collect_sequences(pdb_paths: List[str], verbose: bool = False) -> Tuple[Tuple[str, str], Dict[str, str]]:
+    """Collect unique non-query sequences from A3M files corresponding to PDB paths.
+
+    Returns:
+        Tuple of (query_header, query_sequence) and dict of unique non-query sequences.
+    """
     unique_sequences = {}
     sequence_set = set()  # For duplicate detection
     missing_files = []
+    query_entry = None
 
     logger.info(f"Collecting sequences from {len(pdb_paths)} A3M files...")
 
@@ -348,9 +360,14 @@ def collect_sequences(pdb_paths: List[str], verbose: bool = False) -> Dict[str, 
                     logger.warning(f"No sequences in {a3m_path}")
                 continue
 
-            # Skip query sequence (first) and collect others
             sequence_items = list(sequences_dict.items())
-            non_query_sequences = sequence_items[1:]  # Skip first (query)
+
+            # Capture query from the first successfully read A3M
+            if query_entry is None:
+                query_entry = sequence_items[0]
+
+            # Skip query sequence (first) and collect others
+            non_query_sequences = sequence_items[1:]
 
             sequences_added = 0
             for header, sequence in non_query_sequences:
@@ -379,7 +396,7 @@ def collect_sequences(pdb_paths: List[str], verbose: bool = False) -> Dict[str, 
                 logger.warning(f"... and {len(missing_files)-5} more")
 
     logger.info(f"Collected {len(unique_sequences)} unique sequences")
-    return unique_sequences
+    return query_entry, unique_sequences
 
 
 def write_filter_log(log_path: str, csv_file: str, filter_type: str, filter_details: str,
@@ -478,14 +495,34 @@ def main():
                 logger.info(f"  ... and {len(pdb_paths)-10} more")
 
         # Collect sequences from corresponding A3M files
-        sequences = collect_sequences(pdb_paths, args.verbose)
+        query_entry, sequences = collect_sequences(pdb_paths, args.verbose)
 
         if not sequences:
             logger.warning("No sequences were collected!")
             return
 
+        # Resolve query sequence: explicit --query_a3m takes priority, else auto-extracted
+        if args.query_a3m:
+            query_seqs = read_a3m_to_dict(args.query_a3m)
+            if not query_seqs:
+                logger.error(f"No sequences found in query A3M: {args.query_a3m}")
+                return
+            q_header, q_seq = list(query_seqs.items())[0]
+            logger.info(f"Query sequence from --query_a3m: {q_header}")
+        elif query_entry:
+            q_header, q_seq = query_entry
+            logger.info(f"Query sequence auto-extracted: {q_header}")
+        else:
+            logger.error("No query sequence found. Provide --query_a3m.")
+            return
+
+        # Prepend query sequence to output
+        output_sequences = {q_header: q_seq}
+        output_sequences.update(sequences)
+        logger.info(f"Output: 1 query + {len(sequences)} enriched sequences = {len(output_sequences)} total")
+
         # Write combined A3M file using existing utility
-        write_a3m(sequences, args.output)
+        write_a3m(output_sequences, args.output)
 
         # Generate log file path (same directory as output, with .log extension)
         output_path = Path(args.output)
@@ -499,7 +536,7 @@ def main():
             filter_details=filter_details,
             total_structures=len(df),
             filtered_structures=len(filtered_df),
-            sequences_written=len(sequences),
+            sequences_written=len(output_sequences),
             output_path=args.output,
             metrics_summary=metrics_summary
         )
@@ -508,7 +545,7 @@ def main():
         logger.info("FILTERING COMPLETED SUCCESSFULLY")
         logger.info("=" * 60)
         logger.info(f"Structures filtered: {len(filtered_df)} out of {len(df)}")
-        logger.info(f"Unique sequences collected: {len(sequences)}")
+        logger.info(f"Unique sequences collected: {len(output_sequences)} (1 query + {len(sequences)} enriched)")
         logger.info(f"Output A3M file: {args.output}")
         logger.info(f"Filter log file: {log_path}")
         logger.info("=" * 60)
