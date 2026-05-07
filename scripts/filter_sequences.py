@@ -46,6 +46,16 @@ Examples:
   python filter_sequences.py results.csv \\
     --top_n 6xr6_composite_rmsd:100:min \\
     --output top_100_sequences.a3m
+
+  # Percentile selection: bottom 5%% by RMSD (lowest values)
+  python filter_sequences.py results.csv \\
+    --percentile "6nc7_rmsd:5:min" \\
+    --output bottom_5pct.a3m
+
+  # Percentile selection: top 10%% by TM-score (highest values)
+  python filter_sequences.py results.csv \\
+    --percentile "6nc7_tmscore:10:max" "6nc9_tmscore:10:max" \\
+    --output top_10pct.a3m
         """
     )
     
@@ -64,11 +74,18 @@ Examples:
         help='Metric criteria in format "metric_name>value" or "metric_name<value" (e.g., "5jyt_tmscore>0.8" "2qke_tmscore<0.5")'
     )
     
-    # Top-N selection  
+    # Top-N selection
     filter_group.add_argument(
         '--top_n',
         nargs='+',
         help='Top-N selection in format "metric_name:N:direction" where direction is "max" or "min" (e.g., "5jyt_tmscore:100:max" "2qke_tmscore:50:min")'
+    )
+
+    # Percentile selection
+    filter_group.add_argument(
+        '--percentile',
+        nargs='+',
+        help='Percentile selection in format "metric_name:P:direction" where P is the percentile (1-99) and direction is "max" (top P%%) or "min" (bottom P%%) (e.g., "6nc7_rmsd:5:min" selects bottom 5%% by RMSD)'
     )
     
     parser.add_argument(
@@ -228,6 +245,67 @@ def filter_structures_top_n(
     return filtered_df
 
 
+def parse_percentile(percentile_list: List[str]) -> List[Tuple[str, float, str]]:
+    """Parse percentile strings into (metric, percentile, direction) tuples."""
+    parsed = []
+
+    for spec in percentile_list:
+        parts = spec.split(':')
+        if len(parts) != 3:
+            raise ValueError(f"Invalid percentile format (expected metric:P:direction): {spec}")
+
+        metric, pct_str, direction = [part.strip() for part in parts]
+
+        try:
+            pct = float(pct_str)
+            if not (0 < pct < 100):
+                raise ValueError()
+        except ValueError:
+            raise ValueError(f"Percentile must be a number between 0 and 100 (exclusive): {spec}")
+
+        if direction not in ['max', 'min']:
+            raise ValueError(f"Invalid direction (must be 'max' or 'min'): {direction}")
+
+        parsed.append((metric, pct, direction))
+
+    return parsed
+
+
+def filter_structures_percentile(
+    df: pd.DataFrame,
+    percentile_specs: List[Tuple[str, float, str]]
+) -> pd.DataFrame:
+    """Filter structures by percentile selection (union of all percentile selections).
+
+    For direction='min': selects structures in the bottom P% (lowest values).
+    For direction='max': selects structures in the top P% (highest values).
+    """
+    metrics = [spec[0] for spec in percentile_specs]
+    missing_metrics = [m for m in metrics if m not in df.columns]
+    if missing_metrics:
+        raise ValueError(f"Metrics not found in CSV: {missing_metrics}")
+
+    all_selected_indices = set()
+
+    for metric, pct, direction in percentile_specs:
+        if direction == 'min':
+            threshold = df[metric].quantile(pct / 100)
+            selected = df[df[metric] <= threshold]
+            logger.info(f"Percentile: bottom {pct}% of {metric} (threshold={threshold:.4f})")
+        else:
+            threshold = df[metric].quantile(1 - pct / 100)
+            selected = df[df[metric] >= threshold]
+            logger.info(f"Percentile: top {pct}% of {metric} (threshold={threshold:.4f})")
+
+        logger.info(f"Selected {len(selected)} structures from {metric}")
+        all_selected_indices.update(selected.index)
+
+    filtered_df = df.loc[list(all_selected_indices)].copy()
+    logger.info(f"Combined selection: {len(filtered_df)} unique structures out of {len(df)} total")
+
+    return filtered_df
+
+
 def pdb_to_a3m_path(pdb_path: str) -> str:
     """Convert PDB path to corresponding A3M path."""
     pdb_path = str(pdb_path)
@@ -362,12 +440,18 @@ def main():
             metrics_used = [criterion[0] for criterion in criteria]
             filter_type = "criteria"
             filter_details = f"Criteria: {args.criteria}, Combine method: {args.combine_method}"
-        else:
+        elif args.top_n:
             top_n_specs = parse_top_n(args.top_n)
             filtered_df = filter_structures_top_n(df, top_n_specs)
             metrics_used = [spec[0] for spec in top_n_specs]
             filter_type = "top_n"
             filter_details = f"Top-N selection: {args.top_n}"
+        else:
+            percentile_specs = parse_percentile(args.percentile)
+            filtered_df = filter_structures_percentile(df, percentile_specs)
+            metrics_used = [spec[0] for spec in percentile_specs]
+            filter_type = "percentile"
+            filter_details = f"Percentile selection: {args.percentile}"
 
         if len(filtered_df) == 0:
             logger.warning("No structures meet the filtering criteria!")
