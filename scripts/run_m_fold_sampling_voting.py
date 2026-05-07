@@ -366,9 +366,7 @@ class AFClaSeqPipeline:
                 from af_claseq.m_fold_sampling_voting.config import get_metric_bin_config
                 mbc = get_metric_bin_config(self.config.sequence_voting, metric_name)
                 n_bins = mbc.compute_num_bins() if mbc is not None and mbc.bin_width is not None else self.config.general.num_bins
-                x_label = metric_name
-                if mbc is not None and mbc.unit_label:
-                    x_label = f"{metric_name} ({mbc.unit_label})"
+                x_label = self.config.general.metric1_label or metric_name
 
                 plot_m_fold_sampling_1d(
                     results_dir=all_results_dirs,
@@ -428,10 +426,11 @@ class AFClaSeqPipeline:
                     mbc = get_metric_bin_config(self.config.sequence_voting, metric_name)
                     n_bins = mbc.compute_num_bins() if mbc is not None and mbc.bin_width is not None else self.config.general.num_bins
 
-                    # Build x-axis label with unit if available
-                    x_label = metric_name
-                    if mbc is not None and mbc.unit_label:
-                        x_label = f"{metric_name} ({mbc.unit_label})"
+                    # Use custom label from config, fall back to metric name
+                    if i == 0:
+                        x_label = self.config.general.metric1_label or metric_name
+                    else:
+                        x_label = self.config.general.metric2_label or metric_name
 
                     plot_m_fold_sampling_1d(
                         results_dir=all_results_dirs,
@@ -461,7 +460,7 @@ class AFClaSeqPipeline:
                 # Generate 2D plot
                 self.logger.info(f"Generating 2D plot for combined criteria: {metric_names[0]} vs {metric_names[1]}")
                 plot_m_fold_sampling_2d(
-                    results_dir=all_results_dirs,  # Pass list of all round directories
+                    results_dir=all_results_dirs,
                     metric_name1=metric_names[0],
                     metric_name2=metric_names[1],
                     output_dir=output_dir,
@@ -474,7 +473,9 @@ class AFClaSeqPipeline:
                     x_ticks=self.config.m_fold_sampling.m_fold_metric1_ticks,
                     y_ticks=self.config.m_fold_sampling.m_fold_metric2_ticks,
                     plddt_threshold=self.config.m_fold_sampling.m_fold_plddt_threshold,
-                    logger=self.logger
+                    logger=self.logger,
+                    x_label=self.config.general.metric1_label,
+                    y_label=self.config.general.metric2_label,
                 )
 
             elif num_criteria > 2:

@@ -486,7 +486,7 @@ def plot_1d_distribution(
             plt.axvline(x=bin_edge, color='gray', linestyle='--', alpha=0.5)
 
     plt.xlabel(x_label if x_label else metric_name)
-    plt.ylabel('Count')
+    plt.ylabel('Structure Counts\n(Log Scaled)' if log_scale else 'Structure Counts')
 
     # Set y-axis limits for log scale
     if log_scale:
@@ -531,7 +531,9 @@ def create_2d_scatter_plot(
     title: Optional[str] = None,
     threshold_x: Optional[float] = None,
     threshold_y: Optional[float] = None,
-    logger: Optional[Any] = None
+    logger: Optional[Any] = None,
+    x_label: Optional[str] = None,
+    y_label: Optional[str] = None,
 ) -> str:
     """
     Create a 2D scatter plot with the specified parameters.
@@ -596,8 +598,8 @@ def create_2d_scatter_plot(
 
     cbar = plt.colorbar(scatter, label=f'{color_metric.replace("plddt", "pLDDT")} Score')
     cbar.solids.set_rasterized(True)
-    plt.xlabel(metric_name1)
-    plt.ylabel(metric_name2)
+    plt.xlabel(x_label if x_label else metric_name1)
+    plt.ylabel(y_label if y_label else metric_name2)
     
     if title:
         plt.title(title)
@@ -827,7 +829,9 @@ def plot_m_fold_sampling_2d(
     y_ticks: Optional[List[float]] = None,
     plddt_threshold: float = 0,
     include_joint_plot: bool = True,
-    logger: Optional[Any] = None
+    logger: Optional[Any] = None,
+    x_label: Optional[str] = None,
+    y_label: Optional[str] = None,
 ) -> List[str]:
     """
     Plot 2D sampling distribution for M-fold sampling metrics.
@@ -885,9 +889,11 @@ def plot_m_fold_sampling_2d(
         y_max=y_max,
         x_ticks=x_ticks,
         y_ticks=y_ticks,
-        logger=log
+        logger=log,
+        x_label=x_label,
+        y_label=y_label,
     ))
-    
+
     # Create scatter plots for local_pLDDT coloring if available
     if 'local_plddt' in results_df.columns:
         plot_paths.append(create_2d_scatter_plot(
@@ -902,7 +908,9 @@ def plot_m_fold_sampling_2d(
             y_max=y_max,
             x_ticks=x_ticks,
             y_ticks=y_ticks,
-            logger=log
+            logger=log,
+            x_label=x_label,
+            y_label=y_label,
         ))
     # Create joint plots if requested
     if include_joint_plot:

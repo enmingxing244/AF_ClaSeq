@@ -772,8 +772,8 @@ class SequenceVotingPlotter:
         for bin_edge in bins:
             plt.axvline(x=bin_edge - 0.5, color='gray', linestyle='--', alpha=0.5)
 
-        plt.xlabel('Bin Assignment')
-        plt.ylabel('Count')
+        plt.xlabel('Sequence Voting Bin Index')
+        plt.ylabel('Sequence Counts\n(Log Scaled)')
         plt.xlim(0.5, num_bins + 0.5)
 
         if self.x_ticks is not None:

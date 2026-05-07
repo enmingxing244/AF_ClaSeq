@@ -23,7 +23,6 @@ class MetricBinConfig:
     bin_width: Optional[float] = None
     min: Optional[float] = None
     max: Optional[float] = None
-    unit_label: Optional[str] = None
 
     def __post_init__(self):
         if self.bin_width is not None:
@@ -62,6 +61,8 @@ class GeneralConfig:
     use_composite_metrics: bool = False
     metric1_name: Optional[str] = None
     metric2_name: Optional[str] = None
+    metric1_label: Optional[str] = None
+    metric2_label: Optional[str] = None
 
 
 @dataclass
