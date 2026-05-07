@@ -370,7 +370,8 @@ def plot_1d_distribution(
     y_min: Optional[float] = None,
     y_max: Optional[float] = None,
     x_ticks: Optional[List[float]] = None,
-    logger: Optional[Any] = None
+    logger: Optional[Any] = None,
+    x_label: Optional[str] = None,
 ) -> str:
     """
     Create 1D distribution plot for a specific metric.
@@ -484,7 +485,7 @@ def plot_1d_distribution(
         for bin_edge in bin_edges:
             plt.axvline(x=bin_edge, color='gray', linestyle='--', alpha=0.5)
 
-    plt.xlabel(f'{metric_name}')
+    plt.xlabel(x_label if x_label else metric_name)
     plt.ylabel('Count')
 
     # Set y-axis limits for log scale
@@ -736,7 +737,8 @@ def plot_m_fold_sampling_1d(
     figsize: Tuple[float, float] = (10, 5),
     show_bin_lines: bool = False,
     logger: Optional[Any] = None,
-    metric_colors: Optional[Dict[str, List[str]]] = None  # New parameter for metric-specific colors
+    metric_colors: Optional[Dict[str, List[str]]] = None,
+    x_label: Optional[str] = None,
 ) -> List[str]:
     """
     Plot 1D sampling distribution for M-fold sampling metrics.
@@ -804,7 +806,8 @@ def plot_m_fold_sampling_1d(
         y_min=y_min,
         y_max=y_max,
         x_ticks=x_ticks,
-        logger=log
+        logger=log,
+        x_label=x_label,
     )
     
     return [plot_path]

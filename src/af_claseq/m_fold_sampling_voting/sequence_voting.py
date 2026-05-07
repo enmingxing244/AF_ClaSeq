@@ -641,8 +641,6 @@ class SequenceVotingPlotter:
         y_max: Optional[float] = None,
         x_ticks: Optional[List[int]] = None,
         num_bins: Optional[int] = None,
-        bin_edges: Optional[np.ndarray] = None,
-        unit_label: Optional[str] = None,
     ):
         """Initialize the plotter with configuration parameters."""
         self.results_file = results_file
@@ -654,8 +652,6 @@ class SequenceVotingPlotter:
         self.y_max = y_max
         self.x_ticks = x_ticks
         self.num_bins = num_bins
-        self.bin_edges = bin_edges
-        self.unit_label = unit_label
         self.logger = get_logger(__name__)
         
         # Configure matplotlib for publication-quality plots
@@ -776,24 +772,12 @@ class SequenceVotingPlotter:
         for bin_edge in bins:
             plt.axvline(x=bin_edge - 0.5, color='gray', linestyle='--', alpha=0.5)
 
+        plt.xlabel('Bin Assignment')
         plt.ylabel('Count')
         plt.xlim(0.5, num_bins + 0.5)
 
-        if self.bin_edges is not None and len(self.bin_edges) > 1:
-            n_edge_bins = len(self.bin_edges) - 1
-            tick_step = max(1, n_edge_bins // 6)
-            tick_indices = list(range(0, n_edge_bins, tick_step))
-            if (n_edge_bins - 1) not in tick_indices:
-                tick_indices.append(n_edge_bins - 1)
-            tick_positions = [i + 1 for i in tick_indices]
-            tick_labels = [f"{self.bin_edges[i]:.2f}" for i in tick_indices]
-            plt.xticks(tick_positions, tick_labels, rotation=45, ha='right')
-            xlabel = self.unit_label if self.unit_label else 'Metric Value'
-            plt.xlabel(xlabel)
-        else:
-            plt.xlabel('Bin Assignment')
-            if self.x_ticks is not None:
-                plt.xticks(self.x_ticks)
+        if self.x_ticks is not None:
+            plt.xticks(self.x_ticks)
 
         # Set y-axis limits
         ax = plt.gca()

@@ -363,8 +363,15 @@ class AFClaSeqPipeline:
                     metric_name: self.config.general.metric1_color
                 }
 
+                from af_claseq.m_fold_sampling_voting.config import get_metric_bin_config
+                mbc = get_metric_bin_config(self.config.sequence_voting, metric_name)
+                n_bins = mbc.compute_num_bins() if mbc is not None and mbc.bin_width is not None else self.config.general.num_bins
+                x_label = metric_name
+                if mbc is not None and mbc.unit_label:
+                    x_label = f"{metric_name} ({mbc.unit_label})"
+
                 plot_m_fold_sampling_1d(
-                    results_dir=all_results_dirs,  # Pass list of all round directories
+                    results_dir=all_results_dirs,
                     metric_name=metric_name,
                     output_dir=output_dir,
                     csv_dir=csv_dir,
@@ -377,14 +384,15 @@ class AFClaSeqPipeline:
                     y_max=self.config.m_fold_sampling.m_fold_count_max,
                     x_ticks=self.config.m_fold_sampling.m_fold_metric1_ticks,
                     log_scale=self.config.m_fold_sampling.m_fold_log_scale,
-                    n_plot_bins=self.config.general.num_bins,
+                    n_plot_bins=n_bins,
                     gradient_ascending=self.config.m_fold_sampling.m_fold_gradient_ascending,
                     linear_gradient=self.config.m_fold_sampling.m_fold_linear_gradient,
                     plddt_threshold=self.config.m_fold_sampling.m_fold_plddt_threshold,
                     figsize=self.config.m_fold_sampling.m_fold_figsize,
                     show_bin_lines=self.config.m_fold_sampling.m_fold_show_bin_lines,
                     logger=self.logger,
-                    metric_colors=metric_colors
+                    metric_colors=metric_colors,
+                    x_label=x_label,
                 )
 
             elif num_criteria == 2:
@@ -402,9 +410,9 @@ class AFClaSeqPipeline:
                 }
 
                 # Generate 1D plots for each criterion
+                from af_claseq.m_fold_sampling_voting.config import get_metric_bin_config
                 for i, metric_name in enumerate(metric_names):
                     self.logger.info(f"Generating 1D plot for {metric_name}")
-                    # Use metric1 parameters for first criterion, metric2 for second
                     if i == 0:
                         metric_min = self.config.m_fold_sampling.m_fold_metric1_min
                         metric_max = self.config.m_fold_sampling.m_fold_metric1_max
@@ -416,8 +424,17 @@ class AFClaSeqPipeline:
                         metric_ticks = self.config.m_fold_sampling.m_fold_metric2_ticks
                         colors = self.config.general.metric2_color
 
+                    # Use per-metric bin count from metric_bin_configs if available
+                    mbc = get_metric_bin_config(self.config.sequence_voting, metric_name)
+                    n_bins = mbc.compute_num_bins() if mbc is not None and mbc.bin_width is not None else self.config.general.num_bins
+
+                    # Build x-axis label with unit if available
+                    x_label = metric_name
+                    if mbc is not None and mbc.unit_label:
+                        x_label = f"{metric_name} ({mbc.unit_label})"
+
                     plot_m_fold_sampling_1d(
-                        results_dir=all_results_dirs,  # Pass list of all round directories
+                        results_dir=all_results_dirs,
                         metric_name=metric_name,
                         output_dir=output_dir,
                         csv_dir=csv_dir,
@@ -430,14 +447,15 @@ class AFClaSeqPipeline:
                         y_max=self.config.m_fold_sampling.m_fold_count_max,
                         x_ticks=metric_ticks,
                         log_scale=self.config.m_fold_sampling.m_fold_log_scale,
-                        n_plot_bins=self.config.general.num_bins,
+                        n_plot_bins=n_bins,
                         gradient_ascending=self.config.m_fold_sampling.m_fold_gradient_ascending,
                         linear_gradient=self.config.m_fold_sampling.m_fold_linear_gradient,
                         plddt_threshold=self.config.m_fold_sampling.m_fold_plddt_threshold,
                         figsize=self.config.m_fold_sampling.m_fold_figsize,
                         show_bin_lines=self.config.m_fold_sampling.m_fold_show_bin_lines,
                         logger=self.logger,
-                        metric_colors=metric_colors
+                        metric_colors=metric_colors,
+                        x_label=x_label,
                     )
 
                 # Generate 2D plot
@@ -554,14 +572,7 @@ class AFClaSeqPipeline:
                     _vdf = pd.read_csv(results_file)
                     actual_num_bins = int(_vdf['Bin_Assignment'].max()) + 1 if 'Bin_Assignment' in _vdf.columns else self.config.general.num_bins
 
-                    # Resolve bin edges and unit label for physical-unit axis
-                    bin_edges = None
-                    unit_label = None
-                    if metric_bin_cfg is not None and metric_bin_cfg.bin_width is not None:
-                        bin_edges = np.linspace(metric_bin_cfg.min, metric_bin_cfg.max, actual_num_bins + 1)
-                        unit_label = metric_bin_cfg.unit_label
-
-                    # Create plotter for visualization
+                    # Create plotter for visualization (x-axis = bin index)
                     colors = self.config.general.metric1_color if i == 0 else self.config.general.metric2_color
 
                     plotter = SequenceVotingPlotter(
@@ -574,8 +585,6 @@ class AFClaSeqPipeline:
                         y_max=self.config.sequence_voting.vote_y_max,
                         x_ticks=self.config.sequence_voting.vote_x_ticks,
                         num_bins=actual_num_bins,
-                        bin_edges=bin_edges,
-                        unit_label=unit_label,
                     )
 
                     # Plot voting distributions
