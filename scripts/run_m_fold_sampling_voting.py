@@ -568,9 +568,11 @@ class AFClaSeqPipeline:
                 if results_file:
                     results_files.append((criterion_name, results_file))
 
-                    # Determine actual bin count (may differ from general.num_bins when using bin_width)
-                    _vdf = pd.read_csv(results_file)
-                    actual_num_bins = int(_vdf['Bin_Assignment'].max()) + 1 if 'Bin_Assignment' in _vdf.columns else self.config.general.num_bins
+                    # Determine total bin count from config (not from CSV max, which is only the highest occupied bin)
+                    if metric_bin_cfg is not None and metric_bin_cfg.bin_width is not None:
+                        actual_num_bins = metric_bin_cfg.compute_num_bins()
+                    else:
+                        actual_num_bins = self.config.general.num_bins
 
                     # Create plotter for visualization (x-axis = bin index)
                     colors = self.config.general.metric1_color if i == 0 else self.config.general.metric2_color
@@ -678,9 +680,13 @@ class AFClaSeqPipeline:
                     all_successful = False
                     continue
 
-                # Derive actual bin count from voting results (handles unit-based binning)
-                _vdf = pd.read_csv(voting_results)
-                actual_num_bins = int(_vdf['Bin_Assignment'].max()) + 1 if 'Bin_Assignment' in _vdf.columns else self.config.general.num_bins
+                # Determine total bin count from config
+                from af_claseq.m_fold_sampling_voting.config import get_metric_bin_config
+                mbc = get_metric_bin_config(self.config.sequence_voting, criterion_name)
+                if mbc is not None and mbc.bin_width is not None:
+                    actual_num_bins = mbc.compute_num_bins()
+                else:
+                    actual_num_bins = self.config.general.num_bins
 
                 # Get metric colors by name (not index)
                 colors = self._get_metric_colors(criterion_name)
