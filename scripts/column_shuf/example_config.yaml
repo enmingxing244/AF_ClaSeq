@@ -38,6 +38,10 @@ general:
   min_sequence_separation: 10  # Minimum residue separation for contact pairs
   unique_pair_residue_range: null  # Optional [start, end] range to filter unique pairs (e.g., [1, 100]), null = no filtering
 
+  # Chain IDs in PDB structures (used for interaction validation)
+  state1_chain_id: "A"  # Chain ID for state1 PDB (default: "A")
+  state2_chain_id: "A"  # Chain ID for state2 PDB (default: "A")
+
 # SLURM job submission configuration
 slurm:
   # Path to ColabFold conda environment
