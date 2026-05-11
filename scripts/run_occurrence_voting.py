@@ -93,52 +93,6 @@ Configuration file should contain:
     return parser.parse_args()
 
 
-def validate_configuration(config_file: str) -> bool:
-    """
-    Validate configuration file and dependencies.
-
-    Args:
-        config_file: Path to configuration file
-
-    Returns:
-        True if configuration is valid, False otherwise
-    """
-    logger = get_logger("config_validation")
-
-    try:
-        logger.info("Validating configuration...")
-
-        # Load configuration
-        config = load_config(config_file)
-
-        # Validation is performed during config loading
-        logger.info("✓ Configuration file loaded successfully")
-        logger.info(f"✓ Source A3M file: {config.general.source_a3m}")
-        logger.info(f"✓ Base directory: {config.general.base_dir}")
-        logger.info(f"✓ Sampling: {config.sampling.num_groups} groups of {config.sampling.group_size} sequences")
-        logger.info(f"✓ Filtering: {config.filtering.metric_name} {config.filtering.cutoff_method} {config.filtering.cutoff_value}")
-
-        # Additional validations
-        if config.sampling.num_groups <= 0:
-            logger.error("num_groups must be positive")
-            return False
-
-        if config.sampling.group_size <= 0:
-            logger.error("group_size must be positive")
-            return False
-
-        if config.voting.top_n_sequences <= 0:
-            logger.error("top_n_sequences must be positive")
-            return False
-
-        logger.info("✓ All configuration parameters are valid")
-        return True
-
-    except Exception as e:
-        logger.error(f"Configuration validation failed: {e}")
-        return False
-
-
 def display_workflow_summary(config):
     """Display a summary of the workflow configuration"""
     logger = get_logger("workflow_summary")
@@ -181,53 +135,35 @@ def display_workflow_summary(config):
     logger.info("=" * 70)
 
 
-def setup_logging(config_file: str) -> logging.Logger:
-    """Set up logging for occurrence voting workflow"""
-    # Load config to get base directory
-    config = load_config(config_file)
-    base_dir = Path(config.general.base_dir)
-
-    # Create logs directory
-    log_dir = base_dir / "logs"
-    log_dir.mkdir(exist_ok=True, parents=True)
-
-    log_file = log_dir / "occurrence_voting.log"
-
-    # Set up the root logger for the whole package
-    return setup_logger(
-        name="af_claseq",  # Root logger for the package
-        log_file=log_file,
-        level=logging.INFO,
-        propagate=False,  # Root logger doesn't propagate
-        add_console_handler=True
-    )
-
-
 def main():
     """Main execution function"""
     args = parse_arguments()
 
-    # Setup logging (must be done before using any loggers)
     try:
-        setup_logging(args.config_file)
+        # Load config once — used for logging setup, validation, and workflow
+        config = load_config(args.config_file)
+
+        # Setup logging using loaded config
+        base_dir = Path(config.general.base_dir)
+        log_dir = base_dir / "logs"
+        log_dir.mkdir(exist_ok=True, parents=True)
+        setup_logger(
+            name="af_claseq",
+            log_file=log_dir / "occurrence_voting.log",
+            level=logging.INFO,
+            propagate=False,
+            add_console_handler=True
+        )
         logger = get_logger("run_occurrence_voting")
         logger.info("Starting Occurrence Voting workflow...")
     except Exception as e:
-        print(f"Failed to setup logging: {e}")
+        print(f"Failed to load config or setup logging: {e}")
         return 1
 
     try:
-        # Validate configuration
-        if not validate_configuration(args.config_file):
-            logger.error("Configuration validation failed. Exiting.")
-            return 1
-
         if args.validate_only:
             logger.info("Configuration validation completed successfully.")
             return 0
-
-        # Load configuration
-        config = load_config(args.config_file)
 
         # Display workflow summary
         display_workflow_summary(config)
