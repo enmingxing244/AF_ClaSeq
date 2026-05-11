@@ -305,7 +305,8 @@ class AFClaSeqPipeline:
             # Import plotting functions directly
             from af_claseq.utils.plotting_manager import (
                 plot_m_fold_sampling_1d,
-                plot_m_fold_sampling_2d
+                plot_m_fold_sampling_2d,
+                load_results_df,
             )
 
             # Setup directories
@@ -388,20 +389,26 @@ class AFClaSeqPipeline:
                 )
 
             elif num_criteria == 2:
-                # Two criteria - generate both 1D plots for each criterion and 2D plots
                 self.logger.info("Two filter criteria detected - generating 1D plots for each criterion and 2D plots")
 
-                # Get metric names using the new explicit metric selection system
                 from af_claseq.m_fold_sampling_voting.config import get_selected_metrics
                 metric_names = get_selected_metrics(self.config.general)
-                
-                # Create metric colors dictionary mapping metric names to their colors
+
                 metric_colors = {
                     metric_names[0]: self.config.general.metric1_color,
                     metric_names[1]: self.config.general.metric2_color
                 }
 
-                # Generate 1D plots for each criterion
+                self.logger.info(f"Computing metrics for {metric_names} in a single pass")
+                combined_df = load_results_df(
+                    results_dir=all_results_dirs,
+                    metric_names=metric_names,
+                    csv_dir=str(csv_dir),
+                    config_file=self.config.general.config_file,
+                    plddt_threshold=self.config.m_fold_sampling.m_fold_plddt_threshold,
+                    logger=self.logger,
+                )
+
                 from af_claseq.m_fold_sampling_voting.config import get_metric_bin_config
                 for i, metric_name in enumerate(metric_names):
                     self.logger.info(f"Generating 1D plot for {metric_name}")
@@ -410,21 +417,18 @@ class AFClaSeqPipeline:
                         metric_max = self.config.m_fold_sampling.m_fold_metric1_max
                         metric_ticks = self.config.m_fold_sampling.m_fold_metric1_ticks
                         colors = self.config.general.metric1_color
+                        x_label = self.config.general.metric1_label or metric_name
                     else:
                         metric_min = self.config.m_fold_sampling.m_fold_metric2_min
                         metric_max = self.config.m_fold_sampling.m_fold_metric2_max
                         metric_ticks = self.config.m_fold_sampling.m_fold_metric2_ticks
                         colors = self.config.general.metric2_color
+                        x_label = self.config.general.metric2_label or metric_name
 
-                    # Use per-metric bin count from metric_bin_configs if available
                     mbc = get_metric_bin_config(self.config.general, metric_name)
                     n_bins = mbc.compute_num_bins() if mbc is not None and mbc.bin_width is not None else 30
 
-                    # Use custom label from config, fall back to metric name
-                    if i == 0:
-                        x_label = self.config.general.metric1_label or metric_name
-                    else:
-                        x_label = self.config.general.metric2_label or metric_name
+                    metric_df = combined_df.dropna(subset=[metric_name])
 
                     plot_m_fold_sampling_1d(
                         results_dir=all_results_dirs,
@@ -449,9 +453,9 @@ class AFClaSeqPipeline:
                         logger=self.logger,
                         metric_colors=metric_colors,
                         x_label=x_label,
+                        results_df=metric_df,
                     )
 
-                # Generate 2D plot
                 self.logger.info(f"Generating 2D plot for combined criteria: {metric_names[0]} vs {metric_names[1]}")
                 plot_m_fold_sampling_2d(
                     results_dir=all_results_dirs,
@@ -470,6 +474,7 @@ class AFClaSeqPipeline:
                     logger=self.logger,
                     x_label=self.config.general.metric1_label,
                     y_label=self.config.general.metric2_label,
+                    results_df=combined_df,
                 )
 
             elif num_criteria > 2:

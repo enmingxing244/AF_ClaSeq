@@ -739,10 +739,11 @@ def plot_m_fold_sampling_1d(
     logger: Optional[Any] = None,
     metric_colors: Optional[Dict[str, List[str]]] = None,
     x_label: Optional[str] = None,
+    results_df: Optional[pd.DataFrame] = None,
 ) -> List[str]:
     """
     Plot 1D sampling distribution for M-fold sampling metrics.
-    
+
     Args:
         results_dir: Directory or list of directories containing M-fold sampling results
         metric_name: Name of the metric to plot
@@ -764,21 +765,22 @@ def plot_m_fold_sampling_1d(
         figsize: Figure size (width, height)
         show_bin_lines: Show vertical lines at bin boundaries
         logger: Optional logger
-        
+        results_df: Pre-loaded DataFrame to skip metric computation (optional)
+
     Returns:
         List of paths to saved plots
     """
     log = logger or get_logger(__name__)
-    
-    # Load results DataFrame - now handling multiple directories
-    results_df = load_results_df(
-        results_dir=results_dir,
-        metric_names=[metric_name],
-        csv_dir=csv_dir,
-        config_file=config_file,
-        plddt_threshold=plddt_threshold,
-        logger=log
-    )
+
+    if results_df is None:
+        results_df = load_results_df(
+            results_dir=results_dir,
+            metric_names=[metric_name],
+            csv_dir=csv_dir,
+            config_file=config_file,
+            plddt_threshold=plddt_threshold,
+            logger=log
+        )
     
     # Check if metric-specific colors are provided
     if metric_colors and metric_name in metric_colors:
@@ -830,11 +832,12 @@ def plot_m_fold_sampling_2d(
     logger: Optional[Any] = None,
     x_label: Optional[str] = None,
     y_label: Optional[str] = None,
+    results_df: Optional[pd.DataFrame] = None,
 ) -> List[str]:
     """
     Plot 2D sampling distribution for M-fold sampling metrics.
-    
-    This function is a convenience wrapper around the more general plotting 
+
+    This function is a convenience wrapper around the more general plotting
     functions, specifically for M-fold sampling analysis.
 
     Args:
@@ -853,21 +856,22 @@ def plot_m_fold_sampling_2d(
         plddt_threshold: pLDDT threshold for filtering structures
         include_joint_plot: Whether to create joint plots with marginal distributions
         logger: Optional logger to use
-        
+        results_df: Pre-loaded DataFrame to skip metric computation (optional)
+
     Returns:
         List of paths to saved plots
     """
     log = logger or get_logger(__name__)
-    
-    # Load results DataFrame - now handling multiple directories
-    results_df = load_results_df(
-        results_dir=results_dir,
-        metric_names=[metric_name1, metric_name2],
-        csv_dir=csv_dir,
-        config_file=config_file,
-        plddt_threshold=plddt_threshold,
-        logger=log
-    )
+
+    if results_df is None:
+        results_df = load_results_df(
+            results_dir=results_dir,
+            metric_names=[metric_name1, metric_name2],
+            csv_dir=csv_dir,
+            config_file=config_file,
+            plddt_threshold=plddt_threshold,
+            logger=log
+        )
     
     # Sort by pLDDT to have points with higher pLDDT on top
     results_df = results_df.sort_values('plddt', ascending=True)
