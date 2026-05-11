@@ -56,12 +56,6 @@ Configuration file should contain:
     )
 
     parser.add_argument(
-        '--resume',
-        action='store_true',
-        help='Resume workflow from last completed step (if applicable)'
-    )
-
-    parser.add_argument(
         '--analysis-only',
         action='store_true',
         help='Run only impact analysis (skip group creation and ColabFold jobs)'
@@ -322,9 +316,6 @@ def main():
         if args.analysis_only:
             logger.info("Running analysis-only mode (skipping group creation and ColabFold jobs)...")
             results = run_analysis_only(loo_manager)
-        elif args.resume:
-            logger.info("Resume functionality not implemented yet. Running full workflow.")
-            results = loo_manager.run_complete_workflow()
         else:
             logger.info("Starting complete leave-one-out workflow...")
             results = loo_manager.run_complete_workflow()

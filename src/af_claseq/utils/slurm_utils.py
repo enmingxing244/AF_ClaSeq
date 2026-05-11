@@ -408,9 +408,34 @@ class SlurmJobSubmitter:
                 
                 return state_mapping.get(state_str, JobState.UNKNOWN)
             else:
-                # Job not in queue, check if it completed
-                return JobState.COMPLETED
-                
+                # Job not in squeue — use sacct to determine actual terminal state
+                try:
+                    sacct_result = subprocess.run(
+                        ["sacct", "-j", str(job_id), "--format=State", "--noheader", "--parsable2"],
+                        capture_output=True, text=True, timeout=30
+                    )
+                    if sacct_result.returncode == 0 and sacct_result.stdout.strip():
+                        sacct_state = sacct_result.stdout.strip().split('\n')[0].strip()
+                        sacct_mapping = {
+                            'COMPLETED': JobState.COMPLETED,
+                            'FAILED': JobState.FAILED,
+                            'CANCELLED': JobState.CANCELLED,
+                            'TIMEOUT': JobState.TIMEOUT,
+                            'OUT_OF_MEMORY': JobState.FAILED,
+                            'NODE_FAIL': JobState.FAILED,
+                        }
+                        mapped = sacct_mapping.get(sacct_state)
+                        if mapped:
+                            return mapped
+                        if sacct_state.startswith('CANCELLED'):
+                            return JobState.CANCELLED
+                        logger.warning(f"Unknown sacct state for job {job_id}: {sacct_state}")
+                        return JobState.UNKNOWN
+                except Exception as sacct_err:
+                    logger.warning(f"sacct lookup failed for job {job_id}: {sacct_err}")
+                # If sacct also fails, report unknown rather than assuming completed
+                return JobState.UNKNOWN
+
         except Exception as e:
             logger.error(f"Error checking job state for {job_id}: {e}")
             return JobState.UNKNOWN

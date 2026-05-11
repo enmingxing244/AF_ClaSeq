@@ -237,21 +237,23 @@ class MFoldSampler:
         """
         os.makedirs(output_dir, exist_ok=True)
         sequences = read_a3m_to_dict(input_a3m)
-        
-        headers = list(sequences.keys())
-        random.shuffle(headers)
-        
+
+        # Exclude query (first sequence) from sampling — it gets prepended separately
+        all_headers = list(sequences.keys())
+        non_query_headers = all_headers[1:]
+        random.shuffle(non_query_headers)
+
         if random_select_num_seqs is not None:
-            headers = headers[:random_select_num_seqs]
-        
-        shuffled_sequences = {h: sequences[h] for h in headers}
-        
+            non_query_headers = non_query_headers[:random_select_num_seqs]
+
+        shuffled_sequences = {h: sequences[h] for h in non_query_headers}
+
         groups = MFoldSampler._split_into_groups(shuffled_sequences, group_size)
-        
+
         for i, group in enumerate(groups, 1):
             output_file = os.path.join(output_dir, f'group_{i}.a3m')
             write_a3m(group, output_file, source_a3m=input_a3m, prepend_query=True)
-        
+
         return len(groups)
     
     @staticmethod
@@ -282,8 +284,11 @@ class MFoldSampler:
                 if j != i:
                     group_path = os.path.join(init_dir, group)
                     group_sequences = read_a3m_to_dict(group_path)
-                    all_sequences.update(group_sequences)
-            
+                    # Skip query (first entry) — it was prepended by write_a3m
+                    items = list(group_sequences.items())
+                    for h, s in items[1:]:
+                        all_sequences[h] = s
+
             headers = list(all_sequences.keys())
             random.shuffle(headers)
             shuffled_sequences = {h: all_sequences[h] for h in headers}

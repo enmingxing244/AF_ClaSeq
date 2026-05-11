@@ -638,8 +638,9 @@ class LeaveOneOutManager:
             sequence = result['left_out_sequence']
             impact = result['impact_score']
 
-            # Enhance header with impact information
-            enhanced_header = f"{header} [impact={impact:.3f}]"
+            # Enhance header with impact info using underscore (spaces cause
+            # header truncation when re-read by read_a3m_to_dict)
+            enhanced_header = f"{header}_impact={impact:.3f}"
             significant_sequences[enhanced_header] = sequence
 
         # Save A3M file
