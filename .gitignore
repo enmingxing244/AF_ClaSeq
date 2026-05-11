@@ -4,6 +4,7 @@ __pycache__/
 .trash
 result*/
 test*/
+!tests/
 xtc/
 zenodo*
 af_cluster_compar*/
