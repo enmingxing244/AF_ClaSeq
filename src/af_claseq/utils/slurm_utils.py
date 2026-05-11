@@ -339,7 +339,7 @@ class SlurmJobSubmitter:
             f"--cpus-per-task={self.slurm_cpus_per_task}",
             f"--time={self.slurm_time}",
             f"--partition={self.slurm_partition}",
-            f"--memory={memory}"
+            f"--mem={memory}"
         ]
         
         if gres:

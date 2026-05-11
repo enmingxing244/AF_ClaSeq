@@ -56,9 +56,9 @@ def get_monophyletic_clades(tree, min_size=3, max_size=None):
             processed_nodes.add(node)
 
         else:  # size < min_size
-            # Too small - store for adjacency merging
+            # Too small - store for adjacency merging (do NOT add to processed_nodes
+            # yet — merge_small_clades needs to find merge candidates among unprocessed nodes)
             small_nodes.append(node)
-            processed_nodes.add(node)
 
     def calculate_sibling_distance(node1, node2):
         """Calculate phylogenetic distance between sibling nodes"""
@@ -100,6 +100,7 @@ def get_monophyletic_clades(tree, min_size=3, max_size=None):
                 continue
 
             merge_candidate = find_best_merge_candidate(small_node)
+            processed_nodes.add(small_node)
 
             if merge_candidate:
                 # Merge the small node with its best candidate
@@ -197,9 +198,8 @@ def get_monophyletic_clades_with_stats(tree, min_size=3, max_size=100):
             processed_nodes.add(node)
 
         else:  # size < min_size
-            # Too small
+            # Too small — store for merging (do NOT add to processed_nodes yet)
             small_nodes.append(node)
-            processed_nodes.add(node)
             print(f"{'  ' * depth}◦ Too small ({size} < {min_size}), marking for merge")
 
     def merge_with_stats():
@@ -209,6 +209,7 @@ def get_monophyletic_clades_with_stats(tree, min_size=3, max_size=100):
         for small_node in small_nodes:
             if small_node in processed_nodes:
                 continue
+            processed_nodes.add(small_node)
 
             small_size = len(small_node.get_leaves())
             parent = small_node.up

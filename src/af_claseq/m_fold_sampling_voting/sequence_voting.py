@@ -600,7 +600,7 @@ class VotingAnalyzer:
             if pdb_file in pdb_bins:
                 try:
                     with open(a3m_path) as f:
-                        headers = [line.strip()[1:].split('\t')[0] for line in f if line.startswith('>')]
+                        headers = [line.strip()[1:].split()[0] for line in f if line.startswith('>')]
                         
                     for header in headers:
                         if header in source_headers:

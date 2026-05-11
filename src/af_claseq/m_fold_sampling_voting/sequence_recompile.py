@@ -244,7 +244,7 @@ class SequenceRecompiler:
         # Extract sequences for selected bin headers
         bin_seqs = []
         for header, seq in sequences.items():
-            if header[1:] in header_set:  # Remove '>' from header for comparison
+            if header.lstrip('>') in header_set:
                 bin_seqs.append(f"{header}\n{seq}\n")
         
         # Write compiled sequences with query first
