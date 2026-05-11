@@ -474,7 +474,7 @@ class SlurmJobSubmitter:
             for job_id in remaining_jobs:
                 state = self.get_job_state(job_id)
                 
-                if state in [JobState.COMPLETED, JobState.FAILED, JobState.CANCELLED, JobState.TIMEOUT]:
+                if state in [JobState.COMPLETED, JobState.FAILED, JobState.CANCELLED, JobState.TIMEOUT, JobState.UNKNOWN]:
                     completed_jobs[job_id] = state
                     jobs_to_remove.append(job_id)
                     
