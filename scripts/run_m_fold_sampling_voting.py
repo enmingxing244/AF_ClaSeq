@@ -364,8 +364,8 @@ class AFClaSeqPipeline:
                 }
 
                 from af_claseq.m_fold_sampling_voting.config import get_metric_bin_config
-                mbc = get_metric_bin_config(self.config.sequence_voting, metric_name)
-                n_bins = mbc.compute_num_bins() if mbc is not None and mbc.bin_width is not None else self.config.general.num_bins
+                mbc = get_metric_bin_config(self.config.general, metric_name)
+                n_bins = mbc.compute_num_bins() if mbc is not None and mbc.bin_width is not None else 30
                 x_label = self.config.general.metric1_label or metric_name
 
                 plot_m_fold_sampling_1d(
@@ -423,8 +423,8 @@ class AFClaSeqPipeline:
                         colors = self.config.general.metric2_color
 
                     # Use per-metric bin count from metric_bin_configs if available
-                    mbc = get_metric_bin_config(self.config.sequence_voting, metric_name)
-                    n_bins = mbc.compute_num_bins() if mbc is not None and mbc.bin_width is not None else self.config.general.num_bins
+                    mbc = get_metric_bin_config(self.config.general, metric_name)
+                    n_bins = mbc.compute_num_bins() if mbc is not None and mbc.bin_width is not None else 30
 
                     # Use custom label from config, fall back to metric name
                     if i == 0:
@@ -543,7 +543,7 @@ class AFClaSeqPipeline:
 
                 # Resolve per-metric bin config (unit-based binning)
                 from af_claseq.m_fold_sampling_voting.config import get_metric_bin_config
-                metric_bin_cfg = get_metric_bin_config(self.config.sequence_voting, criterion_name)
+                metric_bin_cfg = get_metric_bin_config(self.config.general, criterion_name)
 
                 # Create voting runner instance for this criterion
                 voting_runner = SequenceVotingRunner(
@@ -551,13 +551,13 @@ class AFClaSeqPipeline:
                     source_msa=self.config.general.source_a3m,
                     config_path=self.config.general.config_file,
                     output_dir=criterion_output_dir,
-                    num_bins=self.config.general.num_bins,
+                    num_bins=30,
                     max_workers=self.config.slurm.max_workers,
                     vote_threshold=self.config.sequence_voting.vote_threshold,
                     min_value=self.config.sequence_voting.vote_min_value,
                     max_value=self.config.sequence_voting.vote_max_value,
                     use_focused_bins=self.config.sequence_voting.use_focused_bins,
-                    precomputed_metrics=Path(os.path.realpath(base_dir / "01_m_fold_sampling/csv")),
+                    precomputed_metrics=str(os.path.realpath(base_dir / "01_m_fold_sampling/csv")),
                     plddt_threshold=self.config.m_fold_sampling.m_fold_plddt_threshold,
                     filter_criterion=criterion_name,
                     metric_bin_cfg=metric_bin_cfg,
@@ -573,7 +573,7 @@ class AFClaSeqPipeline:
                     if metric_bin_cfg is not None and metric_bin_cfg.bin_width is not None:
                         actual_num_bins = metric_bin_cfg.compute_num_bins()
                     else:
-                        actual_num_bins = self.config.general.num_bins
+                        actual_num_bins = 30
 
                     # Create plotter for visualization (x-axis = bin index)
                     colors = self.config.general.metric1_color if i == 0 else self.config.general.metric2_color
@@ -683,11 +683,11 @@ class AFClaSeqPipeline:
 
                 # Determine total bin count from config
                 from af_claseq.m_fold_sampling_voting.config import get_metric_bin_config
-                mbc = get_metric_bin_config(self.config.sequence_voting, criterion_name)
+                mbc = get_metric_bin_config(self.config.general, criterion_name)
                 if mbc is not None and mbc.bin_width is not None:
                     actual_num_bins = mbc.compute_num_bins()
                 else:
-                    actual_num_bins = self.config.general.num_bins
+                    actual_num_bins = 30
 
                 # Get metric colors by name (not index)
                 colors = self._get_metric_colors(criterion_name)

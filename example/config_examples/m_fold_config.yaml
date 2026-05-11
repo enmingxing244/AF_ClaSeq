@@ -12,8 +12,7 @@ general:
   coverage_threshold: 0.5
   num_models: 1
   random_seed: 42
-  num_bins: 30
-  
+
   # Plotting colors (applied across all stages)
   metric1_color:  ["#F2E7F1","#AD7BAF"] # For 5jyt
   metric2_color:   ["#AFD2D0","#468F8B"] # For 2qke 

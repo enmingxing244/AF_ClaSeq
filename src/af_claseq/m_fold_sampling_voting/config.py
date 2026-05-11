@@ -18,7 +18,7 @@ class MetricBinConfig:
 
     When bin_width is set, min and max are required — the total number of bins
     is computed as ceil((max - min) / bin_width).
-    When bin_width is None, falls back to the global num_bins count.
+    When bin_width is None, falls back to a default bin count of 30.
     """
     bin_width: Optional[float] = None
     min: Optional[float] = None
@@ -53,7 +53,6 @@ class GeneralConfig:
     coverage_threshold: float = 0.8
     num_models: int = 1
     random_seed: int = 42
-    num_bins: int = 30
     metric1_color: List[str] = field(default_factory=lambda: ["#87CEEB", "#FFFFFF"])  # [start, end] color gradient for metric 1
     metric2_color: List[str] = field(default_factory=lambda: ["#FFB6C1", "#8B0000"])  # [start, end] color gradient for metric 2
     
@@ -63,6 +62,7 @@ class GeneralConfig:
     metric2_name: Optional[str] = None
     metric1_label: Optional[str] = None
     metric2_label: Optional[str] = None
+    metric_bin_configs: Dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass
@@ -128,7 +128,6 @@ class SequenceVotingConfig:
     vote_y_max: Optional[float] = None
     vote_x_ticks: Optional[List[int]] = None
     use_focused_bins: bool = False
-    metric_bin_configs: Dict[str, Any] = field(default_factory=dict)
     
 
 @dataclass
@@ -302,9 +301,9 @@ def load_pipeline_config(yaml_input: str) -> PipelineConfig:
     )
 
 
-def get_metric_bin_config(voting_config: SequenceVotingConfig, metric_name: str) -> Optional[MetricBinConfig]:
+def get_metric_bin_config(general_config: GeneralConfig, metric_name: str) -> Optional[MetricBinConfig]:
     """Look up the MetricBinConfig for a given metric name, or None if not configured."""
-    raw = voting_config.metric_bin_configs.get(metric_name)
+    raw = general_config.metric_bin_configs.get(metric_name)
     if raw is None:
         return None
     if isinstance(raw, MetricBinConfig):

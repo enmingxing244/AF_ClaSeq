@@ -107,6 +107,13 @@ Examples:
         default='all',
         help='For multiple metrics: "all" (AND logic) or "any" (OR logic). Default: all'
     )
+
+    parser.add_argument(
+        '--min_occurrence',
+        type=int,
+        default=1,
+        help='Minimum number of times a sequence must appear across filtered A3M files to be kept. Default: 1 (no filtering)'
+    )
     
     parser.add_argument(
         '--verbose',
@@ -326,18 +333,28 @@ def pdb_to_a3m_path(pdb_path: str) -> str:
     return os.path.splitext(pdb_path)[0] + '.a3m'
 
 
-def collect_sequences(pdb_paths: List[str], verbose: bool = False) -> Tuple[Tuple[str, str], Dict[str, str]]:
+def collect_sequences(pdb_paths: List[str], verbose: bool = False,
+                      min_occurrence: int = 1) -> Tuple[Tuple[str, str], Dict[str, str]]:
     """Collect unique non-query sequences from A3M files corresponding to PDB paths.
 
+    Args:
+        pdb_paths: List of PDB file paths to find corresponding A3M files
+        verbose: Enable verbose logging
+        min_occurrence: Minimum number of A3M files a sequence must appear in to be kept
+
     Returns:
-        Tuple of (query_header, query_sequence) and dict of unique non-query sequences.
+        Tuple of (query_header, query_sequence) and dict of filtered unique sequences.
     """
-    unique_sequences = {}
-    sequence_set = set()  # For duplicate detection
+    from collections import Counter
+
+    seq_counts = Counter()
+    seq_to_header = {}
     missing_files = []
     query_entry = None
 
     logger.info(f"Collecting sequences from {len(pdb_paths)} A3M files...")
+    if min_occurrence > 1:
+        logger.info(f"Minimum occurrence threshold: {min_occurrence}")
 
     for i, pdb_path in enumerate(pdb_paths, 1):
         a3m_path = pdb_to_a3m_path(pdb_path)
@@ -352,7 +369,6 @@ def collect_sequences(pdb_paths: List[str], verbose: bool = False) -> Tuple[Tupl
             continue
 
         try:
-            # Read A3M file using existing utility
             sequences_dict = read_a3m_to_dict(a3m_path)
 
             if not sequences_dict:
@@ -362,25 +378,18 @@ def collect_sequences(pdb_paths: List[str], verbose: bool = False) -> Tuple[Tupl
 
             sequence_items = list(sequences_dict.items())
 
-            # Capture query from the first successfully read A3M
             if query_entry is None:
                 query_entry = sequence_items[0]
 
-            # Skip query sequence (first) and collect others
             non_query_sequences = sequence_items[1:]
 
-            sequences_added = 0
+            seen_in_this_file = set()
             for header, sequence in non_query_sequences:
-                # Check for duplicates using sequence content
-                if sequence not in sequence_set:
-                    sequence_set.add(sequence)
-                    # Create unique header to avoid conflicts
-                    unique_header = f"{header}_{len(unique_sequences):06d}"
-                    unique_sequences[unique_header] = sequence
-                    sequences_added += 1
-
-            if verbose:
-                logger.info(f"Added {sequences_added} unique sequences")
+                if sequence not in seen_in_this_file:
+                    seen_in_this_file.add(sequence)
+                    seq_counts[sequence] += 1
+                    if sequence not in seq_to_header:
+                        seq_to_header[sequence] = header
 
         except Exception as e:
             if verbose:
@@ -390,12 +399,27 @@ def collect_sequences(pdb_paths: List[str], verbose: bool = False) -> Tuple[Tupl
     if missing_files:
         logger.warning(f"{len(missing_files)} A3M files were not found")
         if verbose:
-            for missing_file in missing_files[:5]:  # Show first 5
+            for missing_file in missing_files[:5]:
                 logger.warning(f"Missing: {missing_file}")
             if len(missing_files) > 5:
                 logger.warning(f"... and {len(missing_files)-5} more")
 
-    logger.info(f"Collected {len(unique_sequences)} unique sequences")
+    total_unique = len(seq_counts)
+    unique_sequences = {}
+    for sequence, count in seq_counts.items():
+        if count >= min_occurrence:
+            header = seq_to_header[sequence]
+            unique_sequences[header] = sequence
+
+    logger.info(f"Total unique sequences found: {total_unique}")
+    if min_occurrence > 1:
+        logger.info(f"Sequences with >= {min_occurrence} occurrences: {len(unique_sequences)}")
+        max_count = max(seq_counts.values()) if seq_counts else 0
+        logger.info(f"Occurrence distribution: max={max_count}, "
+                     f">=2: {sum(1 for c in seq_counts.values() if c >= 2)}, "
+                     f">=5: {sum(1 for c in seq_counts.values() if c >= 5)}, "
+                     f">=10: {sum(1 for c in seq_counts.values() if c >= 10)}")
+
     return query_entry, unique_sequences
 
 
@@ -495,7 +519,8 @@ def main():
                 logger.info(f"  ... and {len(pdb_paths)-10} more")
 
         # Collect sequences from corresponding A3M files
-        query_entry, sequences = collect_sequences(pdb_paths, args.verbose)
+        query_entry, sequences = collect_sequences(pdb_paths, args.verbose,
+                                                     min_occurrence=args.min_occurrence)
 
         if not sequences:
             logger.warning("No sequences were collected!")

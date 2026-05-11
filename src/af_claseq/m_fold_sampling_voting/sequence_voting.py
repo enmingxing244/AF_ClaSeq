@@ -218,8 +218,8 @@ class VotingAnalyzer:
             if 'PDB' not in row:
                 continue
                 
-            pdb_path = row['PDB']
-            
+            pdb_path = os.path.realpath(row['PDB'])
+
             # Skip if pLDDT is below threshold
             if 'plddt' in row and row['plddt'] <= plddt_threshold:
                 continue
