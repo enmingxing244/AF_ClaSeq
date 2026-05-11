@@ -246,9 +246,6 @@ def main():
             batches_info = voting_manager.sampler.create_random_groups()
             sampling_summary = voting_manager._get_batches_summary(batches_info)
 
-            # Save batch info for potential resume
-            voting_manager._save_batches_info(batches_info)
-
             logger.info("Sampling completed successfully!")
             logger.info(f"Created {sampling_summary['total_groups_created']} groups in {sampling_summary['total_batches_created']} batches")
             logger.info(f"Output directory: {sampling_summary['batches_directory']}")

@@ -854,60 +854,54 @@ class AFClaSeqPipeline:
             self.logger.error(f"Error in pure sequence plotting: {str(e)}", exc_info=True)
             return False
         
-    def run(self) -> None:
-        """Run the pipeline with selected stages"""
+    def run(self) -> bool:
+        """Run the pipeline with selected stages. Returns True on success."""
         self.print_welcome()
-        
+
         self.logger.info("=== AF-ClaSeq PIPELINE STARTED ===")
         self.logger.info(f"Configuration loaded from YAML file")
-        
+
         stages_to_run = self.config.pipeline_control.stages
-        pipeline_success = True
-        
+
         try:
-            
+
             # Stage 01: M-fold Sampling
             if "01_M_FOLD_SAMPLING_RUN" in stages_to_run:
                 if not self.run_m_fold_sampling():
                     self.logger.error("Stopping pipeline due to failure in stage 01_M_FOLD_SAMPLING_RUN")
-                    pipeline_success = False
-                    return
+                    return False
 
             if "01_M_FOLD_SAMPLING_PLOT" in stages_to_run:
                 if not self.plot_m_fold_sampling():
                     self.logger.error("Stopping pipeline due to failure in stage 01_M_FOLD_SAMPLING_PLOT")
-                    pipeline_success = False
-                    return
+                    return False
 
             # Stage 02: Sequence Voting
             if "02_VOTING_RUN" in stages_to_run:
                 if not self.run_sequence_voting():
                     self.logger.error("Stopping pipeline due to failure in stage 02_VOTING_RUN")
-                    pipeline_success = False
-                    return
+                    return False
 
             # Stage 03: Recompilation & Prediction
             if "03_RECOMPILE_PREDICT_RUN" in stages_to_run:
                 if not self.run_recompile_and_predict():
                     self.logger.error("Stopping pipeline due to failure in stage 03_RECOMPILE_PREDICT_RUN")
-                    pipeline_success = False
-                    return
+                    return False
 
             # Stage 04: Pure Sequence Plotting
             if "04_PURE_SEQ_PLOT_RUN" in stages_to_run:
                 if not self.run_pure_sequence_plotting():
                     self.logger.error("Stopping pipeline due to failure in stage 04_PURE_SEQ_PLOT_RUN")
-                    pipeline_success = False
-                    return
-            
-            if pipeline_success:
-                self.logger.info("=== AF-ClaSEQ PIPELINE COMPLETED SUCCESSFULLY ===")
-                self.logger.info("All requested stages executed without errors")
-                self.logger.info("Results are ready for analysis in the output directories")
-            
+                    return False
+
+            self.logger.info("=== AF-ClaSEQ PIPELINE COMPLETED SUCCESSFULLY ===")
+            self.logger.info("All requested stages executed without errors")
+            self.logger.info("Results are ready for analysis in the output directories")
+            return True
+
         except Exception as e:
             self.logger.error(f"Unhandled error in pipeline: {str(e)}", exc_info=True)
-            sys.exit(1)
+            return False
 
 
 def main():
@@ -924,7 +918,9 @@ def main():
     
     # Initialize and run the pipeline
     pipeline = AFClaSeqPipeline(yaml_input)
-    pipeline.run()
+    success = pipeline.run()
+    if not success:
+        sys.exit(1)
 
 
 if __name__ == "__main__":

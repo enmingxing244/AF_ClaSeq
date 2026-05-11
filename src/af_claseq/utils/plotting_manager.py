@@ -246,37 +246,35 @@ def calculate_metric_values(
         composite_metrics=requested_composites
     )
     
-    # Extract and combine data
-    data = {
-        'PDB': results_df['PDB'],
-        'plddt': results_df['plddt'].dropna()
-    }
-    
-    # Add local_plddt if available
+    # Extract and combine data — collect columns without per-column dropna,
+    # then dropna on the assembled DataFrame to remove rows consistently
+    columns = ['PDB', 'plddt']
     if 'local_plddt' in results_df.columns:
-        data['local_plddt'] = results_df['local_plddt'].dropna()
-    
-    # Add metrics for requested criteria
+        columns.append('local_plddt')
+
+    metric_columns = []
     for criterion in filter_criteria:
         metric_name = criterion.get('name')
         if metric_name in results_df.columns:
-            data[metric_name] = results_df[metric_name].dropna()
+            columns.append(metric_name)
+            metric_columns.append(metric_name)
         else:
             log.warning(f"Metric '{metric_name}' not found in results")
-    
-    # Add composite metrics
+
     for composite in requested_composites:
         composite_name = composite.get('name')
         if composite_name in results_df.columns:
-            data[composite_name] = results_df[composite_name].dropna()
+            columns.append(composite_name)
+            metric_columns.append(composite_name)
         else:
             log.warning(f"Composite metric '{composite_name}' not found in results")
-    
-    # Add sequence counts if available
+
     if 'seq_count' in results_df.columns:
-        data['seq_count'] = results_df['seq_count']
-    
-    return pd.DataFrame(data)
+        columns.append('seq_count')
+
+    df = results_df[columns].copy()
+    dropna_subset = ['plddt'] + metric_columns
+    return df.dropna(subset=dropna_subset)
 
 def set_axis_limits_and_ticks(
     plt_obj,
