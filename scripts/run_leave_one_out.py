@@ -77,48 +77,6 @@ Configuration file should contain:
     return parser.parse_args()
 
 
-def validate_configuration(config_file: str) -> bool:
-    """
-    Validate configuration file and dependencies.
-
-    Args:
-        config_file: Path to configuration file
-
-    Returns:
-        True if configuration is valid, False otherwise
-    """
-    logger = get_logger("config_validation")
-
-    try:
-        logger.info("Validating configuration...")
-
-        # Load configuration
-        config = load_config(config_file)
-
-        # Validation is performed during config loading
-        logger.info("✓ Configuration file loaded successfully")
-        logger.info(f"✓ Source A3M file: {config.general.source_a3m}")
-        logger.info(f"✓ Structure analysis config: {config.general.structure_analysis_config}")
-        logger.info(f"✓ Base directory: {config.general.base_dir}")
-        logger.info(f"✓ Impact metric: {config.leave_one_out.impact_metric_name}")
-
-        # Additional validations
-        if config.leave_one_out.num_seq_per_group < 2:
-            logger.error("num_seq_per_group must be at least 2")
-            return False
-
-        if config.slurm.num_models < 1:
-            logger.error("num_models must be at least 1")
-            return False
-
-        logger.info("✓ All configuration parameters are valid")
-        return True
-
-    except Exception as e:
-        logger.error(f"Configuration validation failed: {e}")
-        return False
-
-
 def display_workflow_summary(config):
     """Display a summary of the workflow configuration"""
     logger = get_logger("workflow_summary")
@@ -289,17 +247,13 @@ def main():
     logger = get_logger("run_leave_one_out")
 
     try:
-        # Validate configuration
-        if not validate_configuration(args.config_file):
-            logger.error("Configuration validation failed. Exiting.")
-            return 1
+        # Load config once — validation and workflow use the same object
+        config = load_config(args.config_file)
+        logger.info("Configuration loaded successfully.")
 
         if args.validate_only:
             logger.info("Configuration validation completed successfully.")
             return 0
-
-        # Load configuration
-        config = load_config(args.config_file)
 
         # Display workflow summary
         display_workflow_summary(config)

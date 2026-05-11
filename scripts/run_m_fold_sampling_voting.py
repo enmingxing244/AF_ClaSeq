@@ -188,16 +188,10 @@ class AFClaSeqPipeline:
         self.logger.info("=== STAGE 01_RUN: M-FOLD SAMPLING (ULTRA-PARALLEL) ===")
 
         try:
-            # Determine input A3M file
-            input_a3m = self.config.m_fold_sampling.m_fold_samp_input_a3m
+            input_a3m = self.config.general.source_a3m
             if not Path(input_a3m).exists():
-                # Use general.source_a3m as fallback if configured input doesn't exist
-                if Path(self.config.general.source_a3m).exists():
-                    input_a3m = self.config.general.source_a3m
-                    self.logger.info(f"Using source A3M as input: {input_a3m}")
-                else:
-                    self.logger.error(f"Neither configured input ({self.config.m_fold_sampling.m_fold_samp_input_a3m}) nor source A3M ({self.config.general.source_a3m}) found")
-                    return False
+                self.logger.error(f"Source A3M not found: {input_a3m}")
+                return False
 
             # Get number of rounds from configuration
             num_rounds = self.config.m_fold_sampling.rounds
