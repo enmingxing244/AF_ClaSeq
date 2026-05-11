@@ -173,7 +173,7 @@ class WorkflowOrchestrator:
 
     def _clean_directory_for_colabfold(self, input_dir: str) -> None:
         """
-        Clean directory of non-A3M files before ColabFold submission.
+        Move non-A3M files to a .colabfold_staging subdir instead of deleting.
 
         Args:
             input_dir: Directory to clean
@@ -182,15 +182,18 @@ class WorkflowOrchestrator:
         if not input_path.is_dir():
             return
 
-        cleaned_files = []
+        staging_dir = input_path / '.colabfold_staging'
+        moved_files = []
         for file in input_path.iterdir():
             if file.is_file() and file.suffix.lower() not in ['.a3m', '.fasta', '.fas']:
-                self.logger.debug(f"Removing non-sequence file: {file}")
-                file.unlink(missing_ok=True)
-                cleaned_files.append(str(file))
+                staging_dir.mkdir(exist_ok=True)
+                dest = staging_dir / file.name
+                self.logger.debug(f"Moving non-sequence file to staging: {file}")
+                file.rename(dest)
+                moved_files.append(str(file))
 
-        if cleaned_files:
-            self.logger.info(f"Cleaned {len(cleaned_files)} non-sequence files from {input_dir}")
+        if moved_files:
+            self.logger.info(f"Staged {len(moved_files)} non-sequence files from {input_dir} to {staging_dir}")
     
     def step_4_structure_analysis(self) -> None:
         """Step 4: Multi-metric structure analysis."""
@@ -335,10 +338,11 @@ class WorkflowOrchestrator:
                         clade_dir_path = os.path.join(clades_dir, clade_name)
                         if not os.path.exists(clade_dir_path):
                             os.makedirs(clade_dir_path)
-                            # Move A3M file to directory
+                            # Copy A3M file into directory (non-destructive)
+                            import shutil
                             src_path = os.path.join(clades_dir, item)
                             dst_path = os.path.join(clade_dir_path, item)
-                            os.rename(src_path, dst_path)
+                            shutil.copy2(src_path, dst_path)
                         self.clade_dirs.append(clade_dir_path)
                 self.clade_dirs.sort()
                 self.logger.info(f"Loaded {len(self.clade_dirs)} clade directories")

@@ -67,6 +67,8 @@ class GeneralConfig:
     sigmoid_steepness: float = 1.0
     min_sequence_separation: int = 10
     unique_pair_residue_range: Optional[List[int]] = None  # [start, end] to filter unique pairs, None = no filtering
+    state1_chain_id: str = "A"  # Chain ID for state1 PDB structure
+    state2_chain_id: str = "A"  # Chain ID for state2 PDB structure
 
 
 @dataclass
@@ -790,6 +792,12 @@ class ColumnShufflePipeline:
             analyzer = ProteinResidueInteractionAnalyzer(pdb_file)
         except Exception as e:
             self.logger.error(f"Failed to initialize interaction analyzer: {e}")
+            self.logger.warning(
+                f"FALLING BACK TO UNVALIDATED PAIRS for {state_name}. "
+                f"All {len(unique_pairs)} contact-map pairs will be used without "
+                f"interaction validation. Results may include pairs with no "
+                f"detectable non-bonded interactions."
+            )
             return unique_pairs, {}  # Return original pairs if analyzer fails
 
         # Analyze each pair
@@ -986,7 +994,7 @@ class ColumnShufflePipeline:
                 unique_pairs=unique_pairs_state1,
                 state_name=self.config.general.state1_name,
                 output_dir=output_dir,
-                chain_id='A'
+                chain_id=self.config.general.state1_chain_id
             )
 
             # Validate state2 pairs
@@ -995,7 +1003,7 @@ class ColumnShufflePipeline:
                 unique_pairs=unique_pairs_state2,
                 state_name=self.config.general.state2_name,
                 output_dir=output_dir,
-                chain_id='A'
+                chain_id=self.config.general.state2_chain_id
             )
 
             # Log validation summary
@@ -1023,16 +1031,40 @@ class ColumnShufflePipeline:
                 self.config.general.state2_name: unique_pairs_state2
             }
 
-            unique_pairs_dict_validated = {
-                self.config.general.state1_name: validated_pairs_state1,
-                self.config.general.state2_name: validated_pairs_state2
-            }
-
             with open(output_dir / "unique_pairs_raw.json", 'w') as f:
                 json.dump(unique_pairs_dict_raw, f, indent=2)
 
+            # Determine validation status for each state
+            # If validated pairs == raw pairs and no interaction details, validation failed/was skipped
+            state1_validated = (
+                validated_pairs_state1 != unique_pairs_state1
+                or bool(interaction_details_state1)
+            )
+            state2_validated = (
+                validated_pairs_state2 != unique_pairs_state2
+                or bool(interaction_details_state2)
+            )
+
+            if not state1_validated:
+                self.logger.warning(
+                    f"State1 ({self.config.general.state1_name}): Using UNVALIDATED pairs. "
+                    f"Interaction validation was not performed or failed."
+                )
+            if not state2_validated:
+                self.logger.warning(
+                    f"State2 ({self.config.general.state2_name}): Using UNVALIDATED pairs. "
+                    f"Interaction validation was not performed or failed."
+                )
+
             # Use validated pairs as the main unique_pairs.json for downstream analysis
-            unique_pairs_dict = unique_pairs_dict_validated
+            unique_pairs_dict = {
+                self.config.general.state1_name: validated_pairs_state1,
+                self.config.general.state2_name: validated_pairs_state2,
+                "validation_status": {
+                    self.config.general.state1_name: "validated" if state1_validated else "unvalidated",
+                    self.config.general.state2_name: "validated" if state2_validated else "unvalidated"
+                }
+            }
             with open(output_dir / "unique_pairs.json", 'w') as f:
                 json.dump(unique_pairs_dict, f, indent=2)
 
