@@ -67,16 +67,27 @@ def get_monophyletic_clades(tree, min_size=3, max_size=None):
         dist2 = getattr(node2, 'dist', 0)
         return abs(dist1 - dist2)
 
+    def _find_clade_for_node(node):
+        """Find the existing clade list that contains this node's leaves, if any."""
+        leaf_names = set(leaf.name for leaf in node.get_leaves())
+        for i, clade in enumerate(clades):
+            if leaf_names == set(clade):
+                return i
+        return None
+
     def find_best_merge_candidate(small_node):
-        """Find phylogenetically closest same-level sibling for safe merging"""
+        """Find phylogenetically closest same-level sibling for safe merging.
+
+        Considers ALL siblings (including already-emitted clades) as merge targets,
+        so small nodes can be absorbed into adjacent normal-sized clades.
+        """
         parent = small_node.up
         if not parent:
             return None
 
         small_size = len(small_node.get_leaves())
-        siblings = [child for child in parent.children if child != small_node and child not in processed_nodes]
+        siblings = [child for child in parent.children if child != small_node]
 
-        # Find valid merge candidates (won't exceed max_size)
         valid_candidates = []
         for sibling in siblings:
             sibling_size = len(sibling.get_leaves())
@@ -89,7 +100,6 @@ def get_monophyletic_clades(tree, min_size=3, max_size=None):
         if not valid_candidates:
             return None
 
-        # Choose candidate with minimum phylogenetic distance
         best_candidate = min(valid_candidates, key=lambda x: x[2])
         return best_candidate[0]
 
@@ -103,20 +113,21 @@ def get_monophyletic_clades(tree, min_size=3, max_size=None):
             processed_nodes.add(small_node)
 
             if merge_candidate:
-                # Merge the small node with its best candidate
                 small_seqs = [leaf.name for leaf in small_node.get_leaves()]
                 candidate_seqs = [leaf.name for leaf in merge_candidate.get_leaves()]
                 merged_seqs = small_seqs + candidate_seqs
 
-                clades.append(merged_seqs)
+                # If merge candidate was already emitted as a clade, replace it
+                existing_idx = _find_clade_for_node(merge_candidate)
+                if existing_idx is not None:
+                    clades[existing_idx] = merged_seqs
+                else:
+                    clades.append(merged_seqs)
                 processed_nodes.add(merge_candidate)
             else:
-                # No valid merge found - force merge with parent's other children
-                # This ensures zero unclustered sequences
                 small_seqs = [leaf.name for leaf in small_node.get_leaves()]
                 parent = small_node.up
                 if parent:
-                    # Find any other unprocessed sibling and force merge
                     for sibling in parent.children:
                         if sibling != small_node and sibling not in processed_nodes:
                             sibling_seqs = [leaf.name for leaf in sibling.get_leaves()]
@@ -125,7 +136,6 @@ def get_monophyletic_clades(tree, min_size=3, max_size=None):
                             processed_nodes.add(sibling)
                             break
                     else:
-                        # Last resort - add as individual clade
                         clades.append(small_seqs)
 
     # Execute the distance-guided splitting algorithm
@@ -202,6 +212,14 @@ def get_monophyletic_clades_with_stats(tree, min_size=3, max_size=100):
             small_nodes.append(node)
             print(f"{'  ' * depth}◦ Too small ({size} < {min_size}), marking for merge")
 
+    def _find_clade_for_node_stats(node):
+        """Find the existing clade list that contains this node's leaves, if any."""
+        leaf_names = set(leaf.name for leaf in node.get_leaves())
+        for i, clade in enumerate(clades):
+            if leaf_names == set(clade):
+                return i
+        return None
+
     def merge_with_stats():
         """Merge small clades with statistics tracking"""
         print(f"\nProcessing {len(small_nodes)} small nodes for merging...")
@@ -217,8 +235,8 @@ def get_monophyletic_clades_with_stats(tree, min_size=3, max_size=100):
             if not parent:
                 continue
 
-            # Find best merge candidate
-            siblings = [child for child in parent.children if child != small_node and child not in processed_nodes]
+            # Find best merge candidate — consider ALL siblings including already-emitted
+            siblings = [child for child in parent.children if child != small_node]
             best_candidate = None
             best_distance = float('inf')
 
@@ -236,20 +254,27 @@ def get_monophyletic_clades_with_stats(tree, min_size=3, max_size=100):
                         best_candidate = sibling
 
             if best_candidate:
-                # Perform merge
                 small_seqs = [leaf.name for leaf in small_node.get_leaves()]
                 candidate_seqs = [leaf.name for leaf in best_candidate.get_leaves()]
                 merged_seqs = small_seqs + candidate_seqs
 
-                clades.append(merged_seqs)
-                stats['clade_sizes'].append(len(merged_seqs))
+                existing_idx = _find_clade_for_node_stats(best_candidate)
+                if existing_idx is not None:
+                    old_size = len(clades[existing_idx])
+                    clades[existing_idx] = merged_seqs
+                    # Update clade_sizes: remove old, add new
+                    if old_size in stats['clade_sizes']:
+                        stats['clade_sizes'].remove(old_size)
+                    stats['clade_sizes'].append(len(merged_seqs))
+                else:
+                    clades.append(merged_seqs)
+                    stats['clade_sizes'].append(len(merged_seqs))
                 stats['merges_performed'] += 1
                 processed_nodes.add(best_candidate)
 
                 print(f"  ✓ Merged {small_size} + {len(candidate_seqs)} = {len(merged_seqs)} sequences")
 
             else:
-                # Force merge to ensure zero unclustered
                 small_seqs = [leaf.name for leaf in small_node.get_leaves()]
                 if parent:
                     for sibling in parent.children:

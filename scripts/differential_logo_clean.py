@@ -39,16 +39,21 @@ def parse_a3m_file(filename):
     return sequences
 
 def create_alignment_matrix(sequences):
-    """Validate aligned sequences have consistent length for logomaker.
+    """Strip lowercase insertions then validate aligned length for logomaker.
 
-    Sequences are kept as-is (with gaps) to preserve column correspondence.
+    Lowercase chars are A3M insertion states that don't correspond to alignment
+    columns. They must be removed before computing per-column frequencies, while
+    gap characters ('-') are preserved to maintain column correspondence.
     """
     if not sequences:
         raise ValueError("No sequences found")
 
-    seq_length = len(sequences[0])
+    # Strip lowercase insertion characters first
+    cleaned = [''.join(c for c in seq if not c.islower()) for seq in sequences]
+
+    seq_length = len(cleaned[0])
     aligned_sequences = []
-    for seq in sequences:
+    for seq in cleaned:
         if len(seq) != seq_length:
             seq = seq[:seq_length] if len(seq) > seq_length else seq + '-' * (seq_length - len(seq))
         aligned_sequences.append(seq)
