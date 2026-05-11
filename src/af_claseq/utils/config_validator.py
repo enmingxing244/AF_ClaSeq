@@ -12,6 +12,7 @@ _PATH_KEYS = {
     "source_a3m", "config_file", "structure_analysis_config",
     "config_json", "default_pdb", "a3m_file", "fasttree_binary",
     "m_fold_samp_input_a3m", "conda_env_path", "conda_env",
+    "state1_pdb", "state2_pdb", "state1_a3m", "state2_a3m",
 }
 _JSON_CONFIG_KEYS = {"config_file", "structure_analysis_config", "config_json"}
 _METRIC_NAME_KEYS = {

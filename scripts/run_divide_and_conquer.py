@@ -188,6 +188,13 @@ class WorkflowOrchestrator:
             if file.is_file() and file.suffix.lower() not in ['.a3m', '.fasta', '.fas']:
                 staging_dir.mkdir(exist_ok=True)
                 dest = staging_dir / file.name
+                # Avoid overwriting previously staged files
+                if dest.exists():
+                    stem, suffix = file.stem, file.suffix
+                    counter = 1
+                    while dest.exists():
+                        dest = staging_dir / f"{stem}_{counter}{suffix}"
+                        counter += 1
                 self.logger.debug(f"Moving non-sequence file to staging: {file}")
                 file.rename(dest)
                 moved_files.append(str(file))
@@ -333,16 +340,18 @@ class WorkflowOrchestrator:
                     if os.path.isdir(item_path) and item.startswith('clade_'):
                         self.clade_dirs.append(item_path)
                     elif item.endswith('.a3m') and item.startswith('clade_'):
-                        # Handle case where clades are still A3M files, not directories
                         clade_name = os.path.splitext(item)[0]
                         clade_dir_path = os.path.join(clades_dir, clade_name)
-                        if not os.path.exists(clade_dir_path):
-                            os.makedirs(clade_dir_path)
-                            # Copy A3M file into directory (non-destructive)
-                            import shutil
-                            src_path = os.path.join(clades_dir, item)
-                            dst_path = os.path.join(clade_dir_path, item)
-                            shutil.copy2(src_path, dst_path)
+                        # Skip if directory already exists (already processed)
+                        if os.path.isdir(clade_dir_path):
+                            if clade_dir_path not in self.clade_dirs:
+                                self.clade_dirs.append(clade_dir_path)
+                            continue
+                        os.makedirs(clade_dir_path)
+                        import shutil
+                        src_path = os.path.join(clades_dir, item)
+                        dst_path = os.path.join(clade_dir_path, item)
+                        shutil.copy2(src_path, dst_path)
                         self.clade_dirs.append(clade_dir_path)
                 self.clade_dirs.sort()
                 self.logger.info(f"Loaded {len(self.clade_dirs)} clade directories")

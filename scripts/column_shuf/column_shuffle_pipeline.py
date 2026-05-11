@@ -1034,16 +1034,10 @@ class ColumnShufflePipeline:
             with open(output_dir / "unique_pairs_raw.json", 'w') as f:
                 json.dump(unique_pairs_dict_raw, f, indent=2)
 
-            # Determine validation status for each state
-            # If validated pairs == raw pairs and no interaction details, validation failed/was skipped
-            state1_validated = (
-                validated_pairs_state1 != unique_pairs_state1
-                or bool(interaction_details_state1)
-            )
-            state2_validated = (
-                validated_pairs_state2 != unique_pairs_state2
-                or bool(interaction_details_state2)
-            )
+            # Determine validation status: validated only if the validator
+            # actually returned non-empty results with interaction details
+            state1_validated = bool(validated_pairs_state1) and bool(interaction_details_state1)
+            state2_validated = bool(validated_pairs_state2) and bool(interaction_details_state2)
 
             if not state1_validated:
                 self.logger.warning(
