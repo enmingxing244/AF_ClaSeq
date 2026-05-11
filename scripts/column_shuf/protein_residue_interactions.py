@@ -597,11 +597,9 @@ class ProteinResidueInteractionAnalyzer:
             # Arginine
             'NE': 'CD', 'NH1': 'CZ', 'NH2': 'CZ',
             # Histidine
-            'ND1': 'CG', 'NE2': 'CD2',
+            'ND1': 'CG',
             # Asparagine
             'ND2': 'CG',
-            # Glutamine
-            'NE2': 'CD',
             # Tryptophan
             'NE1': 'CD1',
             # Acceptor atoms (for reverse direction)
@@ -610,6 +608,15 @@ class ProteinResidueInteractionAnalyzer:
             'OE1': 'CD', 'OE2': 'CD',  # GLU
             'SD': 'CG',  # MET
         }
+
+        # NE2 is shared by HIS (antecedent CD2) and GLN (antecedent CD)
+        if donor_name == 'NE2':
+            resname = residue.get_resname().strip()
+            if resname == 'HIS' and 'CD2' in residue:
+                return residue['CD2']
+            elif 'CD' in residue:
+                return residue['CD']
+            return None
 
         antecedent_name = antecedent_map.get(donor_name)
         if antecedent_name and antecedent_name in residue:

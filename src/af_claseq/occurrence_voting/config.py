@@ -143,7 +143,7 @@ class OccurrenceVotingConfig:
     filtering: FilteringConfig
     voting: VotingConfig
     slurm: SlurmConfig
-    plotting: PlottingConfig = None
+    plotting: Optional[PlottingConfig] = field(default_factory=PlottingConfig)
 
     @classmethod
     def from_yaml(cls, yaml_path: str) -> 'OccurrenceVotingConfig':

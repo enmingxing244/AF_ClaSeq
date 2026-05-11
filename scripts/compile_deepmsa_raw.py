@@ -171,13 +171,11 @@ def process_a3m_files(input_files=None, output_filename="compiled_unique_sequenc
             log_file.write(f"\nDUPLICATE DETAILS:\n")
             log_file.write(f"{'='*80}\n")
             for i, dup in enumerate(duplicate_details, 1):
-                log_file.write(f"\nDuplicate group {i}:\n")
-                log_file.write(f"  - Kept header: {dup['kept_header']}\n")
+                log_file.write(f"\nDuplicate {i}:\n")
+                log_file.write(f"  - Skipped header: {dup['skipped_header']}\n")
                 log_file.write(f"  - Sequence preview: {dup['sequence']}\n")
-                log_file.write(f"  - Number of duplicates removed: {dup['duplicates_count']}\n")
-                log_file.write(f"  - Found in files: {', '.join(set(dup['source_files']))}\n")
-                if 'skipped_headers' in dup:
-                    log_file.write(f"  - Skipped headers: {', '.join(dup['skipped_headers'])}\n")
+                log_file.write(f"  - Reason: {dup['reason']}\n")
+                log_file.write(f"  - Source file: {dup['source_file']}\n")
 
     print(f"Detailed log written to {log_filename}")
 
@@ -242,6 +240,13 @@ Examples:
             return 1
     elif args.input_files:
         input_files = args.input_files
+    else:
+        import glob
+        input_files = sorted(glob.glob('*.a3m'))
+        if not input_files:
+            print("Error: No A3M files found in current directory and no input files specified.")
+            return 1
+        print(f"Auto-discovered {len(input_files)} A3M files in current directory")
 
     # Validate output directory
     output_dir = os.path.dirname(args.output)

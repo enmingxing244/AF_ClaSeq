@@ -76,12 +76,11 @@ class PhylogeneticProcessor:
             clean_header = header.lstrip('>')  # Remove '>' prefix if present
             sequences[clean_header] = sequence
 
-        # Extract query sequence (first sequence)
+        # Extract query header (first sequence) — capture sequence AFTER lowercase removal
         sequence_items = list(sequences.items())
-        query_header, query_sequence = sequence_items[0]
+        query_header = sequence_items[0][0]
         self.logger.info(f"Query sequence header: {query_header}")
-        self.logger.info(f"Query sequence length: {len(query_sequence)}")
-        
+
         # Remove lowercase letters from sequences (insertions relative to reference)
         self.logger.info("Removing lowercase letters (insertions) from sequences...")
         cleaned_sequences = {}
@@ -89,6 +88,9 @@ class PhylogeneticProcessor:
             # Remove lowercase letters, keeping only uppercase letters and gaps
             cleaned_seq = ''.join(c for c in sequence if c.isupper() or c == '-')
             cleaned_sequences[header] = cleaned_seq
+
+        query_sequence = cleaned_sequences[query_header]
+        self.logger.info(f"Query sequence length: {len(query_sequence)}")
 
         # Process sequences for header conflicts and deduplication FIRST
         processed_sequences = process_sequences_with_header_conflicts(cleaned_sequences, self.logger)

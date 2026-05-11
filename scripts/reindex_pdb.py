@@ -67,7 +67,9 @@ def reindex_pdb(input_pdb, offset, output_pdb, chain=None):
                             atoms_skipped += 1
                             continue
 
-                        # Format with proper width (right-aligned in 4 characters)
+                        if new_resnum > 9999:
+                            print(f"Error: Residue number {new_resnum} exceeds PDB 4-digit limit (9999)", file=sys.stderr)
+                            sys.exit(1)
                         new_line = f"{prefix}{new_resnum:>4}{suffix}"
                         outfile.write(new_line)
                         atoms_written += 1

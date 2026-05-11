@@ -61,6 +61,9 @@ def get_query_sequence_from_a3m(a3m_file: str) -> Tuple[str, str]:
         if not sequence:
             raise ValueError(f"Query sequence is empty in A3M file: {a3m_file}")
 
+        # Strip lowercase insertion characters to match read_a3m_to_dict behavior
+        sequence = ''.join(c for c in sequence if not c.islower())
+
         return header, sequence
 
     except Exception as e:
