@@ -428,6 +428,8 @@ class AFClaSeqPipeline:
                     mbc = get_metric_bin_config(self.config.general, metric_name)
                     n_bins = mbc.compute_num_bins() if mbc is not None and mbc.bin_width is not None else 30
 
+                    metric_df = combined_df.dropna(subset=[metric_name])
+
                     plot_m_fold_sampling_1d(
                         results_dir=all_results_dirs,
                         metric_name=metric_name,
@@ -451,7 +453,7 @@ class AFClaSeqPipeline:
                         logger=self.logger,
                         metric_colors=metric_colors,
                         x_label=x_label,
-                        results_df=combined_df,
+                        results_df=metric_df,
                     )
 
                 self.logger.info(f"Generating 2D plot for combined criteria: {metric_names[0]} vs {metric_names[1]}")
