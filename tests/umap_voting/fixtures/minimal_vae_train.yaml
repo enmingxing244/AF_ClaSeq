@@ -24,4 +24,3 @@ vae:
     early_stopping_patience: 50
 output:
   embedding_filename: "embedding.npz"
-  save_checkpoints_every: 200

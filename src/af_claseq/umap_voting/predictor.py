@@ -1,6 +1,7 @@
 """ColabFold submission wrapper using utils/slurm_utils.SlurmJobSubmitter."""
 from __future__ import annotations
 
+import shlex
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, List
@@ -28,15 +29,23 @@ class Predictor:
     def _build_colabfold_cmd(self, a3m: Path, out_dir: Path) -> str:
         sp = self.structure_prediction
         cf = Path(self.slurm["conda_env_path"]) / "bin" / "colabfold_batch"
-        flags = [
-            f"--num-models {sp['num_models']}",
-            f"--num-seeds {sp['num_seeds']}",
-            f"--num-recycle {sp['num_recycle']}",
-            "--model-type alphafold2_ptm",
-            f"--rank {sp['rank']}",
-            f"--random-seed {sp['random_seed']}",
+        model_type = (
+            "alphafold2_multimer_v3"
+            if sp["prediction_mode"] == "homodimer"
+            else "alphafold2_ptm"
+        )
+        args = [
+            str(cf),
+            "--num-models", str(sp["num_models"]),
+            "--num-seeds", str(sp["num_seeds"]),
+            "--num-recycle", str(sp["num_recycle"]),
+            "--model-type", model_type,
+            "--rank", str(sp["rank"]),
+            "--random-seed", str(sp["random_seed"]),
+            str(a3m),
+            str(out_dir),
         ]
-        return f'"{cf}" {" ".join(flags)} "{a3m}" "{out_dir}"'
+        return shlex.join(args)
 
     def run(self, dry_run: bool = False) -> pd.DataFrame:
         submitter = SlurmJobSubmitter(

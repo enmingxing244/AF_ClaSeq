@@ -11,8 +11,17 @@ from af_claseq.umap_voting.config import (
     VaeTrainConfig,
     load_config,
 )
-from af_claseq.umap_voting.vae.train import VaeTrainer
-from af_claseq.umap_voting.workflow import UmapVotingManager
+
+
+def __getattr__(name: str):
+    if name == "VaeTrainer":
+        from af_claseq.umap_voting.vae.train import VaeTrainer
+        return VaeTrainer
+    if name == "UmapVotingManager":
+        from af_claseq.umap_voting.workflow import UmapVotingManager
+        return UmapVotingManager
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+
 
 __all__ = [
     "VaeTrainConfig",

@@ -16,7 +16,6 @@ coord_extraction:
   alignment_ref_pdb: null           # optional: PDB to Kabsch-align all structures to
   alignment_ref_chain: "A"
   target_chain: "A"                 # chain to extract from sampling PDBs
-  min_present_ca: 0.9
 
 vae:
   model:
@@ -34,4 +33,3 @@ vae:
 
 output:
   embedding_filename: "embedding.npz"
-  save_checkpoints_every: 200

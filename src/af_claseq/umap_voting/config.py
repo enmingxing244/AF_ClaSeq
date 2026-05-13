@@ -135,13 +135,11 @@ class VaeInputsSection:
 @dataclass
 class VaeOutputSection:
     embedding_filename: str = "embedding.npz"
-    save_checkpoints_every: int = 200
 
     @classmethod
     def from_dict(cls, d: Dict[str, Any]) -> VaeOutputSection:
         return cls(
             embedding_filename=d.get("embedding_filename", "embedding.npz"),
-            save_checkpoints_every=d.get("save_checkpoints_every", 200),
         )
 
 
@@ -150,7 +148,6 @@ class CoordExtractionSection:
     alignment_ref_pdb: Optional[str] = None
     alignment_ref_chain: str = "A"
     target_chain: str = "A"
-    min_present_ca: float = 0.9
 
     @classmethod
     def from_dict(cls, d: Dict[str, Any]) -> CoordExtractionSection:
@@ -158,7 +155,6 @@ class CoordExtractionSection:
             alignment_ref_pdb=d.get("alignment_ref_pdb"),
             alignment_ref_chain=d.get("alignment_ref_chain", "A"),
             target_chain=d.get("target_chain", "A"),
-            min_present_ca=d.get("min_present_ca", 0.9),
         )
 
 

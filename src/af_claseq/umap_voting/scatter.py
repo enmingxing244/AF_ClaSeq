@@ -89,12 +89,15 @@ class ScatterBuilder:
         for metric, sp in specs.items():
             for _, ref in refs.iterrows():
                 try:
+                    # calculate_ca_rmsd uses one chain_id for both structures;
+                    # ColabFold predictions always use chain A, so refs must
+                    # also be single-chain reindexed PDBs with chain A.
                     rmsd = analyzer.calculate_ca_rmsd(
                         reference_pdb=str(ref["ref_pdb"]),
                         target_pdb=str(pred_path),
                         superposition_indices=sp["superposition"],
                         rmsd_indices=sp["rmsd"],
-                        chain_id=str(ref.get("ref_chain", "A")),
+                        chain_id="A",
                     )
                     results[f"{metric}_rmsd_{ref['ref_label']}"] = rmsd
                 except Exception as e:
@@ -124,6 +127,14 @@ class ScatterBuilder:
                 rows.append(row)
 
         per_pred = pd.DataFrame(rows)
+        if per_pred.empty:
+            logger.warning("no prediction PDBs found; writing empty outputs")
+            per_pred.to_csv(self.output_dir / "per_pred.csv", index=False)
+            pd.DataFrame(
+                columns=["ref_label", "n", "med_target", "med_other",
+                         "pct_lt_2A", "pct_lt_1p5A"]
+            ).to_csv(self.output_dir / "summary.csv", index=False)
+            return per_pred
         per_pred.to_csv(self.output_dir / "per_pred.csv", index=False)
 
         summary_rows: List[Dict[str, Any]] = []

@@ -80,8 +80,13 @@ class UmapVotingManager:
     def _query_info(self) -> tuple[str, str]:
         """Get query header and sequence from the configured query A3M."""
         query_a3m = self.cfg.inputs.query_a3m
-        if query_a3m and Path(query_a3m).exists():
-            header, seq = get_query_sequence_from_a3m(query_a3m)
+        if query_a3m:
+            query_path = Path(query_a3m)
+            if not query_path.exists():
+                raise WorkflowError(
+                    f"configured query_a3m file not found: {query_a3m}"
+                )
+            header, seq = get_query_sequence_from_a3m(str(query_path))
             return header, seq
         return "", ""
 

@@ -34,6 +34,8 @@ def residue_range_from_sa(
     if local is None:
         raise ValueError(f"no local_index in {sa_json_path}")
     if isinstance(local, list):
+        if not local:
+            raise ValueError(f"local_index is an empty list in {sa_json_path}")
         local = local[0]
     return list(range(int(local["start"]), int(local["end"]) + 1))
 
@@ -74,12 +76,13 @@ def _get_ca_coords_for_chain(
         logger.warning(f"chain {chain_id} not found in {pdb_path}")
         return None
 
+    target_set = set(residue_indices)
     coords = {}
     for res in chain:
         if "CA" not in res:
             continue
         resseq = res.get_id()[1]
-        if resseq in set(residue_indices):
+        if resseq in target_set:
             coords[resseq] = res["CA"].get_coord()
 
     if len(coords) < len(residue_indices):
@@ -161,14 +164,12 @@ class CoordExtractor:
         alignment_ref_pdb: Optional[str] = None,
         alignment_ref_chain: str = "A",
         target_chain: str = "A",
-        min_present_ca: float = 0.9,
     ):
         self.coord_indices = residue_range_from_sa(sa_json_path, coord_target)
         sup = superposition_indices_from_sa(sa_json_path)
         self.superposition_indices = sup if sup else self.coord_indices
         self.alignment_ref_chain = alignment_ref_chain
         self.target_chain = target_chain
-        self.min_present_ca = min_present_ca
         self.n_residues = len(self.coord_indices)
 
         self.alignment_ref_coords = None

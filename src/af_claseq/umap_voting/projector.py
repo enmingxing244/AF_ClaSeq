@@ -10,7 +10,6 @@ from typing import Optional, Tuple
 import joblib
 import numpy as np
 import pandas as pd
-import umap
 
 from af_claseq.utils.exceptions import WorkflowError
 from af_claseq.utils.logging_utils import get_logger
@@ -91,10 +90,22 @@ class Projector:
                 )
             # joblib is the standard serialization for scikit-learn/UMAP models;
             # the file is only loaded from the user's own output directory.
+            if self._config_path().exists():
+                import json as _json
+                saved_cfg = _json.loads(self._config_path().read_text())
+                for key in ("n_neighbors", "min_dist", "n_components", "metric"):
+                    saved_val = saved_cfg.get(key)
+                    current_val = getattr(self, key)
+                    if saved_val is not None and saved_val != current_val:
+                        raise RuntimeError(
+                            f"UMAP config drift: {key}={current_val} "
+                            f"vs saved {saved_val} - pass --refit-umap"
+                        )
             reducer = joblib.load(self._model_path())
             coords = reducer.embedding_
             logger.info(f"reloaded UMAP from {self._model_path()}")
         else:
+            import umap
             reducer = umap.UMAP(
                 n_neighbors=self.n_neighbors,
                 min_dist=self.min_dist,
@@ -119,7 +130,7 @@ class Projector:
                         "n_components": self.n_components,
                         "metric": self.metric,
                         "random_state": self.random_state,
-                        "umap_version": umap.__version__,
+                        "umap_version": getattr(umap, "__version__", "unknown"),
                     },
                     indent=2,
                 )

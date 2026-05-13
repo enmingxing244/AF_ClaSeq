@@ -46,7 +46,7 @@ vae:
   model: {{latent_dim: 4, hidden_channels: [8, 16], use_residual: true}}
   training: {{epochs: 3, batch_size: 4, learning_rate: 1.0e-3, kl_weight: 0.1,
               val_split: 0.1, save_best_only: true, early_stopping_patience: 50}}
-output: {{embedding_filename: embedding.npz, save_checkpoints_every: 200}}
+output: {{embedding_filename: embedding.npz}}
 """
     )
     return VaeTrainConfig.from_yaml(yml)

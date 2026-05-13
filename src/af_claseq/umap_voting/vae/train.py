@@ -79,7 +79,6 @@ class VaeTrainer:
             alignment_ref_pdb=self.cfg.coord_extraction.alignment_ref_pdb,
             alignment_ref_chain=self.cfg.coord_extraction.alignment_ref_chain,
             target_chain=self.cfg.coord_extraction.target_chain,
-            min_present_ca=self.cfg.coord_extraction.min_present_ca,
         )
 
         structures = pd.read_csv(self.cfg.inputs.structures_csv)
@@ -102,6 +101,11 @@ class VaeTrainer:
 
         x_train = torch.from_numpy(coords_n[~is_ref])
         n_train = x_train.shape[0]
+        if n_train < 2:
+            raise ValueError(
+                f"need at least 2 sampling structures for VAE training, "
+                f"got {n_train}"
+            )
         n_val = max(1, int(self.cfg.vae.training.val_split * n_train))
         train_ds, val_ds = random_split(
             TensorDataset(x_train),
