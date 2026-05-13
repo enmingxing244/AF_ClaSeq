@@ -6,6 +6,7 @@ result*/
 test*/
 !tests/
 xtc/
+docs/
 zenodo*
 af_cluster_compar*/
 pyrightconfig.json
