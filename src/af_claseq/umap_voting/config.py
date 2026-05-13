@@ -57,8 +57,10 @@ class StructureAnalysisSection:
                     f"{ALLOWED_COORD_TARGET}, got {coord_target!r}"
                 )
         metrics = d.get("metrics")
-        if not for_vae and metrics is None:
-            raise ValueError("missing required field: structure_analysis.metrics")
+        if not for_vae and (metrics is None or len(metrics) == 0):
+            raise ValueError(
+                "structure_analysis.metrics must be a non-empty list"
+            )
         return cls(
             config_json=config_json,
             coord_target=coord_target if for_vae else None,

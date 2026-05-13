@@ -118,9 +118,13 @@ class ScatterBuilder:
             if not ref_bin_dir.is_dir():
                 continue
             ref_bin_label = ref_bin_dir.name
+            # bin_{ix}_{iy}_{label} — extract label after 3rd underscore
+            parts = ref_bin_label.split("_", 3)
+            source_ref = parts[3] if len(parts) > 3 else ref_bin_label
             for pdb in sorted(ref_bin_dir.glob("*.pdb")):
                 row: Dict[str, Any] = {
                     "ref_bin_label": ref_bin_label,
+                    "source_ref": source_ref,
                     "pred_path": str(pdb),
                 }
                 row.update(self._compute_rmsd(pdb, refs, analyzer, specs))
@@ -137,16 +141,15 @@ class ScatterBuilder:
             return per_pred
         per_pred.to_csv(self.output_dir / "per_pred.csv", index=False)
 
+        summary_metric = "local" if "local" in self.metrics else self.metrics[0]
         summary_rows: List[Dict[str, Any]] = []
         for label in refs["ref_label"]:
-            in_bin = per_pred[
-                per_pred["ref_bin_label"].str.endswith(f"_{label}")
-            ]
-            tgt_col = f"local_rmsd_{label}"
+            in_bin = per_pred[per_pred["source_ref"] == label]
+            tgt_col = f"{summary_metric}_rmsd_{label}"
             other_cols = [
                 c
                 for c in in_bin.columns
-                if c.startswith("local_rmsd_") and c != tgt_col
+                if c.startswith(f"{summary_metric}_rmsd_") and c != tgt_col
             ]
             if in_bin.empty or tgt_col not in in_bin:
                 summary_rows.append(
@@ -204,9 +207,7 @@ class ScatterBuilder:
         for k, (a, b) in enumerate(pairs):
             ax = axes[k // ncols][k % ncols]
             for label in labels:
-                sub = per_pred[
-                    per_pred["ref_bin_label"].str.endswith(f"_{label}")
-                ]
+                sub = per_pred[per_pred["source_ref"] == label]
                 x_col = f"{metric}_rmsd_{a}"
                 y_col = f"{metric}_rmsd_{b}"
                 ax.scatter(

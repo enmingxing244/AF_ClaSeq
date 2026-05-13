@@ -84,20 +84,19 @@ class Projector:
                     self._hash_sidecar().read_text()
                 ).get("sha256")
             if prior_hash and prior_hash != current_hash:
-                raise RuntimeError(
+                raise WorkflowError(
                     "embedding has drifted vs. persisted UMAP "
                     "- pass --refit-umap to refit"
                 )
             # joblib is the standard serialization for scikit-learn/UMAP models;
             # the file is only loaded from the user's own output directory.
             if self._config_path().exists():
-                import json as _json
-                saved_cfg = _json.loads(self._config_path().read_text())
+                saved_cfg = json.loads(self._config_path().read_text())
                 for key in ("n_neighbors", "min_dist", "n_components", "metric"):
                     saved_val = saved_cfg.get(key)
                     current_val = getattr(self, key)
                     if saved_val is not None and saved_val != current_val:
-                        raise RuntimeError(
+                        raise WorkflowError(
                             f"UMAP config drift: {key}={current_val} "
                             f"vs saved {saved_val} - pass --refit-umap"
                         )

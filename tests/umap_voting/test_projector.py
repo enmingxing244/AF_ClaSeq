@@ -4,6 +4,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
+from af_claseq.utils.exceptions import WorkflowError
 from af_claseq.umap_voting.projector import Projector, embedding_sha256
 
 
@@ -94,7 +95,7 @@ def test_projector_refuses_silent_drift(tmp_path):
     npz2 = _make_embedding(tmp_path / "x", n_sampling=210)
     (tmp_path / "embedding.npz").unlink()
     npz2.rename(tmp_path / "embedding.npz")
-    with pytest.raises(RuntimeError, match="--refit-umap"):
+    with pytest.raises(WorkflowError, match="--refit-umap"):
         Projector(
             embedding_npz=tmp_path / "embedding.npz",
             output_dir=out,
