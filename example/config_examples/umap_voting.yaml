@@ -1,0 +1,54 @@
+general:
+  protein_name: "KRAS_HUMAN"
+  base_dir: "/path/to/output"
+  random_seed: 42
+
+inputs:
+  embedding_npz: "/path/to/vae/embedding.npz"
+  references_csv: "/path/to/references.csv"
+  query_a3m: "/path/to/query.a3m"
+  rmsd_vs_refs_csv: null   # optional, for UMAP coloring
+
+umap:
+  n_neighbors: 30
+  min_dist: 0.1
+  n_components: 2
+  metric: "euclidean"
+  umap1_range: [1.0, 11.0]   # null = auto, then pinned in grid.json
+  umap2_range: [1.0, 9.0]
+
+binning:
+  bin_size: 1.0
+  top_k: 16
+  min_records_per_bin: 50
+
+structure_prediction:
+  num_models: 5
+  num_seeds: 8
+  num_recycle: 3
+  prediction_mode: "monomer"
+  rank: "plddt"
+  random_seed: 0
+
+slurm:
+  conda_env_path: "/fs/ess/PAA0203/xing244/.conda/envs/colabfold"
+  account: "PAA0203"
+  partition: "nextgen"
+  time: "00:30:00"
+  gpus_per_task: 1
+  cpus_per_task: 4
+  check_interval: 60
+
+structure_analysis:
+  config_json: "/path/to/structure_analysis_config.json"
+  metrics: ["local", "global"]
+
+plotting:
+  formats: ["png", "pdf"]
+  metric_ranges:
+    local:  { min: 0, max: 6, ticks: [0, 1, 2, 3, 4, 5, 6] }
+    global: { min: 0, max: 4, ticks: [0, 1, 2, 3, 4] }
+  colors:
+    ref1: "#C73E3A"
+    ref2: "#2E7AB8"
+  panels_per_row: 2
