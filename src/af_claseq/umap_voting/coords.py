@@ -2,16 +2,18 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 from pathlib import Path
-from typing import Dict, List, Optional, Sequence, Union
+from typing import Dict, List, Optional, Sequence, Tuple, Union
 
 import numpy as np
+import pandas as pd
 from Bio.PDB import PDBParser
 
 from af_claseq.utils.logging_utils import get_logger
 
-from .config import CoordExtractionSection, StructureAnalysisSection
+from .config import CoordExtractionSection, StructureAnalysisSection, VaeTrainConfig
 
 logger = get_logger("umap_voting.coords")
 
@@ -234,3 +236,158 @@ class CoordExtractor:
         except Exception as e:
             logger.warning(f"Extraction failed for {pdb_path}: {e}")
             return None
+
+
+# ---------------------------------------------------------------------------
+# Parallel extraction + caching
+# ---------------------------------------------------------------------------
+
+def _coords_cache_key(config: VaeTrainConfig) -> str:
+    """Deterministic hash of the parameters that affect coord extraction."""
+    sa = config.structure_analysis
+    ce = config.coord_extraction
+    key_parts = [
+        sa.config_json,
+        sa.coord_target,
+        ce.alignment_ref_pdb or "",
+        ce.alignment_ref_chain,
+        ce.target_chain,
+        str(ce.min_superposition_atoms),
+        config.inputs.structures_csv,
+        config.inputs.references_csv,
+    ]
+    return hashlib.sha256("|".join(key_parts).encode()).hexdigest()[:16]
+
+
+def _extract_one_worker(args: Tuple) -> Optional[Tuple[np.ndarray, str, str, bool, str]]:
+    """Worker function for joblib Parallel — extracts one PDB."""
+    pdb_path, a3m_path, is_ref, ref_label, chain_id, residue_indices, \
+        superposition_indices, alignment_ref_coords, min_sup = args
+    try:
+        coords = extract_aligned_coords(
+            pdb_path, chain_id, residue_indices, superposition_indices,
+            alignment_ref_coords, min_sup,
+        )
+        if coords is None:
+            return None
+        return (coords, pdb_path, a3m_path, is_ref, ref_label)
+    except Exception:
+        return None
+
+
+def extract_all_parallel(
+    config: VaeTrainConfig,
+    n_jobs: int = 64,
+) -> Path:
+    """Extract Kabsch-aligned coords for all structures in parallel and save to coords.npz.
+
+    The saved file uses numpy's npz format (not pickle). The ``allow_pickle``
+    flag is needed only because ``pdb_paths`` / ``ref_label`` are object arrays
+    — the data originates from this pipeline, not from untrusted sources.
+    """
+    from joblib import Parallel, delayed
+
+    vae_dir = config.get_vae_dir()
+    vae_dir.mkdir(parents=True, exist_ok=True)
+    coords_path = vae_dir / "coords.npz"
+
+    cache_key = _coords_cache_key(config)
+
+    if coords_path.exists():
+        cached = np.load(coords_path, allow_pickle=True)
+        if str(cached.get("cache_key", "")) == cache_key:
+            logger.info(f"Coords cache hit ({coords_path}), skipping extraction")
+            return coords_path
+        logger.info("Coords cache key mismatch — re-extracting")
+
+    extractor = CoordExtractor(config.structure_analysis, config.coord_extraction)
+
+    structs = pd.read_csv(config.inputs.structures_csv)
+    refs = pd.read_csv(config.inputs.references_csv)
+
+    tasks = []
+    shared = (
+        extractor.chain_id,
+        extractor.residue_indices,
+        extractor.superposition_indices,
+        extractor.alignment_ref_coords,
+        extractor.min_superposition_atoms,
+    )
+
+    for _, row in structs.iterrows():
+        tasks.append((row["pdb_path"], row["a3m_path"], False, "", *shared))
+    for _, row in refs.iterrows():
+        tasks.append((row["ref_pdb"], "", True, row["ref_label"], *shared))
+
+    logger.info(f"Extracting coords from {len(tasks)} structures ({n_jobs} workers)...")
+
+    results = Parallel(n_jobs=n_jobs)(
+        delayed(_extract_one_worker)(t) for t in tasks
+    )
+
+    all_coords, pdb_paths, a3m_paths, is_ref_list, ref_labels = [], [], [], [], []
+    n_failed = 0
+    for r in results:
+        if r is None:
+            n_failed += 1
+            continue
+        c, pdb, a3m, is_r, rl = r
+        all_coords.append(c)
+        pdb_paths.append(pdb)
+        a3m_paths.append(a3m)
+        is_ref_list.append(is_r)
+        ref_labels.append(rl)
+
+    n_refs = sum(is_ref_list)
+    n_sampling = len(all_coords) - n_refs
+    logger.info(
+        f"Extracted {len(all_coords)} ({n_sampling} sampling + {n_refs} refs), "
+        f"{n_failed} failed"
+    )
+
+    if any(is_ref_list):
+        ref_count_expected = len(refs)
+        ref_count_actual = sum(is_ref_list)
+        if ref_count_actual < ref_count_expected:
+            raise RuntimeError(
+                f"Only {ref_count_actual}/{ref_count_expected} references extracted"
+            )
+
+    coords_arr = np.stack(all_coords)
+    np.savez(
+        coords_path,
+        coords=coords_arr,
+        pdb_paths=np.array(pdb_paths, dtype=object),
+        a3m_paths=np.array(a3m_paths, dtype=object),
+        is_reference=np.array(is_ref_list),
+        ref_label=np.array(ref_labels, dtype=object),
+        cache_key=np.array(cache_key),
+    )
+    logger.info(f"Saved coords ({coords_arr.shape}) to {coords_path}")
+    return coords_path
+
+
+def load_cached_coords(
+    config: VaeTrainConfig,
+) -> Tuple[np.ndarray, List[str], List[str], np.ndarray, List[str]]:
+    """Load coords.npz, validating the cache key matches the config."""
+    coords_path = config.get_vae_dir() / "coords.npz"
+    if not coords_path.exists():
+        raise FileNotFoundError(
+            f"No cached coords at {coords_path}. Run coord extraction first."
+        )
+    cache_key = _coords_cache_key(config)
+    data = np.load(coords_path, allow_pickle=True)
+    stored_key = str(data.get("cache_key", ""))
+    if stored_key != cache_key:
+        raise RuntimeError(
+            f"Coords cache key mismatch (stored={stored_key[:8]}..., "
+            f"expected={cache_key[:8]}...). Re-run coord extraction or delete coords.npz."
+        )
+    return (
+        data["coords"],
+        data["pdb_paths"].tolist(),
+        data["a3m_paths"].tolist(),
+        data["is_reference"],
+        data["ref_label"].tolist(),
+    )

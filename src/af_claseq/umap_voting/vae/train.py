@@ -14,7 +14,7 @@ from torch.utils.data import DataLoader, TensorDataset
 from af_claseq.utils.logging_utils import get_logger
 
 from ..config import VaeTrainConfig
-from ..coords import CoordExtractor
+from ..coords import CoordExtractor, load_cached_coords
 from .model import ProteinVAE
 
 logger = get_logger("umap_voting.vae_train")
@@ -87,11 +87,17 @@ class VaeTrainer:
         device = torch.device(cfg.general.device)
         logger.info(f"Device: {device}")
 
-        # ---- Extract coordinates ----
-        extractor = CoordExtractor(cfg.structure_analysis, cfg.coord_extraction)
-        coords, pdb_paths, a3m_paths, is_ref, ref_labels = _load_all_coords(
-            extractor, cfg.inputs.structures_csv, cfg.inputs.references_csv
-        )
+        # ---- Load coordinates (cached or fresh) ----
+        coords_npz = vae_dir / "coords.npz"
+        if coords_npz.exists():
+            logger.info("Loading pre-extracted coords from coords.npz")
+            coords, pdb_paths, a3m_paths, is_ref, ref_labels = load_cached_coords(cfg)
+        else:
+            logger.info("No cached coords — extracting inline (consider run_coord_extraction.py)")
+            extractor = CoordExtractor(cfg.structure_analysis, cfg.coord_extraction)
+            coords, pdb_paths, a3m_paths, is_ref, ref_labels = _load_all_coords(
+                extractor, cfg.inputs.structures_csv, cfg.inputs.references_csv
+            )
 
         n_total, n_residues, _ = coords.shape
         n_sampling = int((~is_ref).sum())
