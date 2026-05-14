@@ -9,6 +9,7 @@ A comprehensive bioinformatics toolkit for phylogenetically-guided protein struc
 - **Leave-One-Out**: Cross-validation framework for structure prediction assessment
 - **M-Fold Sampling**: Statistical sampling approach for robust structure generation
 - **Occurrence Voting**: Consensus-based sequence selection and prediction
+- **UMAP Voting**: VAE-embed structures, joint UMAP with reference projection, Option F binning (top-K most frequent sequences per ref bin), ColabFold, RMSD scatter
 
 ### Key Capabilities
 - **Intelligent Sequence Clustering**: Distance-guided phylogenetic clade detection

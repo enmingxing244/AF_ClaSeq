@@ -1,0 +1,46 @@
+# VAE Embedding Configuration
+# Phase 1: Train a ProteinVAE on Kabsch-aligned Calpha coordinates and
+# produce a latent embedding (embedding.npz) for UMAP projection.
+
+general:
+  protein_name: "PROTEIN_NAME"
+  base_dir: "/path/to/output/PROTEIN_NAME/run1"
+  random_seed: 42
+  device: "cuda"  # "cpu" or "cuda"
+
+inputs:
+  structures_csv: "/path/to/structures.csv"     # columns: pdb_path, a3m_path
+  references_csv: "/path/to/references.csv"     # columns: ref_pdb, ref_label, ref_chain
+
+structure_analysis:
+  config_json: "/path/to/config_rmsd.json"      # structure-analysis JSON with basics + filter_criteria
+  coord_target: "local"                          # "local" (switch-II loop) or "global" (full chain)
+
+coord_extraction:
+  alignment_ref_pdb: "/path/to/reference.pdb"   # PDB for Kabsch alignment (null = no alignment)
+  alignment_ref_chain: "A"
+  target_chain: "A"
+  min_superposition_atoms: 30
+
+vae:
+  model:
+    latent_dim: 6                   # 4-8 for two-state local, 8-16 for multi-state global
+    hidden_channels: [32, 64]       # [32, 64] for small inputs, [32, 64, 128] for large
+    use_residual: true
+
+  training:
+    epochs: 300
+    batch_size: 256
+    learning_rate: 1.0e-3
+    kl_weight: 0.05                 # beta parameter; 0.01-0.1 typical
+    val_split: 0.1
+    save_best_only: true
+    early_stopping_patience: 30
+    weight_decay: 0.0
+    grad_clip: 1.0
+    lr_scheduler_factor: 1.0       # set < 1.0 to enable ReduceLROnPlateau
+    lr_scheduler_patience: 30
+    normalization_mode: "global"    # "global" | "per_residue" | "center_only"
+
+output:
+  embedding_filename: "embedding.npz"

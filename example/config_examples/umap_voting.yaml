@@ -1,0 +1,58 @@
+# UMAP Voting Configuration
+# Phase 2: Project embedding to UMAP, bin the 2D space, vote sequences
+# per reference bin (Option F), predict with ColabFold, compute RMSD scatter.
+
+general:
+  protein_name: "PROTEIN_NAME"
+  base_dir: "/path/to/output/PROTEIN_NAME/run1"
+  random_seed: 42
+
+inputs:
+  embedding_npz: "/path/to/output/PROTEIN_NAME/run1/vae/embedding.npz"
+  references_csv: "/path/to/references.csv"     # columns: ref_pdb, ref_label, ref_chain
+  query_a3m: "/path/to/query.a3m"               # full MSA whose query heads the voted A3Ms
+  rmsd_vs_refs_csv: null                         # optional pre-computed RMSD table
+
+umap:
+  n_neighbors: 30
+  min_dist: 0.1
+  n_components: 2
+  metric: "euclidean"
+  umap1_range: null      # null = auto-detect from data
+  umap2_range: null
+
+binning:
+  bin_size: 1.0           # UMAP-space grid cell width
+  top_k: 16               # sequences per voted A3M
+  min_records_per_bin: 50  # warn if fewer A3Ms in a reference bin
+
+structure_prediction:
+  num_models: 5
+  num_seeds: 8
+  num_recycle: 3
+  prediction_mode: "monomer"   # "monomer" or "homodimer"
+  rank: "plddt"
+  random_seed: 0
+
+slurm:
+  conda_env_path: "/path/to/conda/envs/colabfold"
+  account: "ACCOUNT"
+  partition: "nextgen"
+  time: "00:30:00"
+  gpus_per_task: 1
+  cpus_per_task: 4
+  check_interval: 60
+
+structure_analysis:
+  config_json: "/path/to/config_rmsd.json"
+  metrics: ["local", "global"]
+
+plotting:
+  formats: ["png", "pdf"]
+  metric_ranges:
+    local:  { min: 0, max: 6, ticks: [0, 1, 2, 3, 4, 5, 6] }
+    global: { min: 0, max: 4, ticks: [0, 1, 2, 3, 4] }
+  colors:
+    ref1: "#C73E3A"
+    ref2: "#2E7AB8"
+  panels_per_row: 2
