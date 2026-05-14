@@ -89,6 +89,7 @@ class TestVaeTrainConfigFromYaml:
         structs_csv.write_text("pdb_path,a3m_path\n")
         refs_csv = tmp_path / "references.csv"
         refs_csv.write_text("ref_pdb,ref_label,ref_chain\n")
+        (tmp_path / "out").mkdir()
 
         cfg_data = {
             "general": {"protein_name": "TEST", "base_dir": str(tmp_path / "out")},

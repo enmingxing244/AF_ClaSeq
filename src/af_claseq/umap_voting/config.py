@@ -194,7 +194,6 @@ class VaeTrainConfig:
             ref_pdb = Path(self.coord_extraction.alignment_ref_pdb)
             if not ref_pdb.exists():
                 raise FileNotFoundError(f"Alignment ref PDB not found: {ref_pdb}")
-        Path(self.general.base_dir).mkdir(parents=True, exist_ok=True)
 
     def get_vae_dir(self) -> Path:
         return Path(self.general.base_dir) / "vae"
@@ -368,7 +367,6 @@ class UmapVotingConfig:
                 raise FileNotFoundError(
                     f"Structure analysis config not found: {sa_json}"
                 )
-        Path(self.general.base_dir).mkdir(parents=True, exist_ok=True)
 
     def get_umap_dir(self) -> Path:
         return Path(self.general.base_dir) / "umap"

@@ -172,7 +172,7 @@ def extract_aligned_coords(
     U, S, Vt = np.linalg.svd(H)
     d = np.linalg.det(Vt.T @ U.T)
     sign_matrix = np.diag([1.0, 1.0, d])
-    rot = (Vt.T @ sign_matrix @ U.T).T  # rotation matrix
+    rot = Vt.T @ sign_matrix @ U.T  # R maps mov onto ref
     tran = ref_center - mov_center @ rot
 
     # Extract target residues (strict)

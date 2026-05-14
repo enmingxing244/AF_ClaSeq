@@ -31,15 +31,16 @@ class UmapVotingManager:
         stop_after: Optional[str] = None,
         refit_umap: bool = False,
     ) -> None:
-        stages = self.STAGES
+        if start_from and start_from not in self.STAGES:
+            raise WorkflowError(f"Unknown stage: {start_from}")
+        if stop_after and stop_after not in self.STAGES:
+            raise WorkflowError(f"Unknown stage: {stop_after}")
+        stages = list(self.STAGES)
         if start_from:
-            if start_from not in stages:
-                raise WorkflowError(f"Unknown stage: {start_from}")
             stages = stages[stages.index(start_from):]
         if stop_after:
-            if stop_after not in stages:
-                raise WorkflowError(f"Unknown stage: {stop_after}")
-            stages = stages[: stages.index(stop_after) + 1]
+            idx = self.STAGES.index(stop_after)
+            stages = [s for s in stages if self.STAGES.index(s) <= idx]
 
         logger.info(f"Running stages: {stages}")
 

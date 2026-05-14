@@ -72,7 +72,7 @@ class Voter:
         for _, row in sampling.iterrows():
             key = (int(row["bin_ix"]), int(row["bin_iy"]))
             a3m = row["a3m_path"]
-            if a3m and str(a3m) != "" and str(a3m) != "nan":
+            if not pd.isna(a3m) and str(a3m).strip() != "":
                 bin_groups.setdefault(key, []).append(str(a3m))
 
         summary_rows = []
