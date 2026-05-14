@@ -14,7 +14,7 @@ from torch.utils.data import DataLoader, TensorDataset
 from af_claseq.utils.logging_utils import get_logger
 
 from ..config import VaeTrainConfig
-from ..coords import CoordExtractor, load_cached_coords
+from ..coords import CoordExtractor, extract_aligned_coords, load_cached_coords
 from .model import ProteinVAE
 
 logger = get_logger("umap_voting.vae_train")
@@ -58,7 +58,15 @@ def _load_all_coords(
     logger.info(f"Extracted coords from {len(all_coords)}/{len(structs)} sampling structures")
 
     for _, row in refs.iterrows():
-        c = extractor.extract(row["ref_pdb"])
+        ref_chain = row.get("ref_chain", extractor.chain_id)
+        c = extract_aligned_coords(
+            row["ref_pdb"],
+            ref_chain,
+            extractor.residue_indices,
+            extractor.superposition_indices,
+            extractor.alignment_ref_coords,
+            extractor.min_superposition_atoms,
+        )
         if c is None:
             raise RuntimeError(f"Reference extraction failed: {row['ref_pdb']}")
         all_coords.append(c)

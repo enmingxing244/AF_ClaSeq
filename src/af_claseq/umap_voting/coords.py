@@ -306,8 +306,7 @@ def extract_all_parallel(
     refs = pd.read_csv(config.inputs.references_csv)
 
     tasks = []
-    shared = (
-        extractor.chain_id,
+    shared_no_chain = (
         extractor.residue_indices,
         extractor.superposition_indices,
         extractor.alignment_ref_coords,
@@ -315,9 +314,12 @@ def extract_all_parallel(
     )
 
     for _, row in structs.iterrows():
-        tasks.append((row["pdb_path"], row["a3m_path"], False, "", *shared))
+        tasks.append((row["pdb_path"], row["a3m_path"], False, "",
+                       extractor.chain_id, *shared_no_chain))
     for _, row in refs.iterrows():
-        tasks.append((row["ref_pdb"], "", True, row["ref_label"], *shared))
+        ref_chain = row.get("ref_chain", extractor.chain_id)
+        tasks.append((row["ref_pdb"], "", True, row["ref_label"],
+                       ref_chain, *shared_no_chain))
 
     logger.info(f"Extracting coords from {len(tasks)} structures ({n_jobs} workers)...")
 
