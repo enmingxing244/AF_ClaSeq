@@ -8,7 +8,7 @@ from typing import List, Tuple
 import numpy as np
 import pandas as pd
 import torch
-from torch.utils.data import DataLoader, TensorDataset, random_split
+from torch.utils.data import ConcatDataset, DataLoader, TensorDataset, random_split
 
 from af_claseq.umap_voting.config import VaeTrainConfig
 from af_claseq.umap_voting.coords import CoordExtractor
@@ -79,6 +79,7 @@ class VaeTrainer:
             alignment_ref_pdb=self.cfg.coord_extraction.alignment_ref_pdb,
             alignment_ref_chain=self.cfg.coord_extraction.alignment_ref_chain,
             target_chain=self.cfg.coord_extraction.target_chain,
+            min_superposition_atoms=self.cfg.coord_extraction.min_superposition_atoms,
         )
 
         structures = pd.read_csv(self.cfg.inputs.structures_csv)
@@ -90,8 +91,8 @@ class VaeTrainer:
             f"loaded {(~is_ref).sum()} sampling + {is_ref.sum()} ref structures"
         )
 
-        mean = coords[~is_ref].mean(axis=(0, 1))
-        std = coords[~is_ref].std(axis=(0, 1)) + 1e-6
+        mean = coords[~is_ref].mean(axis=0)
+        std = coords[~is_ref].std(axis=0) + 1e-6
         coords_n = (coords - mean) / std
         np.savez(
             self.out_dir / "normalization_params.npz",
@@ -99,18 +100,31 @@ class VaeTrainer:
             coords_std=std,
         )
 
-        x_train = torch.from_numpy(coords_n[~is_ref])
-        n_train = x_train.shape[0]
-        if n_train < 2:
+        x_samples = torch.from_numpy(coords_n[~is_ref])
+        x_refs = torch.from_numpy(coords_n[is_ref])
+        n_samples = x_samples.shape[0]
+        n_refs = x_refs.shape[0]
+        if n_samples < 2:
             raise ValueError(
                 f"need at least 2 sampling structures for VAE training, "
-                f"got {n_train}"
+                f"got {n_samples}"
             )
-        n_val = max(1, int(self.cfg.vae.training.val_split * n_train))
-        train_ds, val_ds = random_split(
-            TensorDataset(x_train),
-            [n_train - n_val, n_val],
+        n_val = max(1, int(self.cfg.vae.training.val_split * n_samples))
+        train_samp_ds, val_ds = random_split(
+            TensorDataset(x_samples),
+            [n_samples - n_val, n_val],
             generator=torch.Generator().manual_seed(self.cfg.general.random_seed),
+        )
+        # Refs always join training (never validation) so they receive gradients.
+        train_ds = (
+            ConcatDataset([train_samp_ds, TensorDataset(x_refs)])
+            if n_refs > 0
+            else train_samp_ds
+        )
+        n_train = len(train_ds)
+        logger.info(
+            f"train={n_train} ({n_samples - n_val} samples + {n_refs} refs) "
+            f"val={n_val}"
         )
         train_dl = DataLoader(
             train_ds, batch_size=self.cfg.vae.training.batch_size, shuffle=True
@@ -123,39 +137,59 @@ class VaeTrainer:
             hidden_channels=self.cfg.vae.model.hidden_channels,
             use_residual=self.cfg.vae.model.use_residual,
         ).to(self.device)
+        tcfg = self.cfg.vae.training
         opt = torch.optim.Adam(
-            model.parameters(), lr=self.cfg.vae.training.learning_rate
+            model.parameters(),
+            lr=tcfg.learning_rate,
+            weight_decay=tcfg.weight_decay,
+        )
+        scheduler = (
+            torch.optim.lr_scheduler.ReduceLROnPlateau(
+                opt, mode="min", factor=tcfg.lr_scheduler_factor,
+                patience=tcfg.lr_scheduler_patience,
+            )
+            if tcfg.lr_scheduler_factor < 1.0
+            else None
         )
 
         best_val = float("inf")
-        patience = self.cfg.vae.training.early_stopping_patience
+        patience = tcfg.early_stopping_patience
         bad_epochs = 0
-        for epoch in range(1, self.cfg.vae.training.epochs + 1):
+        for epoch in range(1, tcfg.epochs + 1):
             model.train(True)
-            train_total = 0.0
+            train_total, train_recon, train_kl = 0.0, 0.0, 0.0
             for (xb,) in train_dl:
                 xb = xb.to(self.device)
-                loss = model.loss(xb, kl_weight=self.cfg.vae.training.kl_weight)
+                loss = model.loss(xb, kl_weight=tcfg.kl_weight)
                 opt.zero_grad()
                 loss["total"].backward()
+                if tcfg.grad_clip > 0:
+                    torch.nn.utils.clip_grad_norm_(
+                        model.parameters(), tcfg.grad_clip
+                    )
                 opt.step()
                 train_total += float(loss["total"]) * xb.shape[0]
-            train_total /= n_train - n_val
+                train_recon += float(loss["recon"]) * xb.shape[0]
+                train_kl += float(loss["kl"]) * xb.shape[0]
+            train_total /= n_train
+            train_recon /= n_train
+            train_kl /= n_train
 
             model.train(False)
             val_total = 0.0
             with torch.no_grad():
                 for (xb,) in val_dl:
                     xb = xb.to(self.device)
-                    vl = model.loss(
-                        xb, kl_weight=self.cfg.vae.training.kl_weight
-                    )
+                    vl = model.loss(xb, kl_weight=tcfg.kl_weight)
                     val_total += float(vl["total"]) * xb.shape[0]
             val_total /= n_val
+            if scheduler is not None:
+                scheduler.step(val_total)
 
             logger.info(
-                f"epoch {epoch}/{self.cfg.vae.training.epochs} "
-                f"train={train_total:.4f} val={val_total:.4f}"
+                f"epoch {epoch}/{tcfg.epochs} "
+                f"train={train_total:.4f} val={val_total:.4f} "
+                f"recon={train_recon:.4f} kl={train_kl:.4f}"
             )
 
             if val_total < best_val:
@@ -178,12 +212,17 @@ class VaeTrainer:
             )
         )
         model.train(False)
+        # Encode in batches: a single forward pass over all structures can
+        # exhaust GPU memory for large datasets / long coord targets.
+        encode_batch = max(self.cfg.vae.training.batch_size, 1)
+        mu_chunks = []
         with torch.no_grad():
-            mu = (
-                model.encode(torch.from_numpy(coords_n).to(self.device))
-                .cpu()
-                .numpy()
-            )
+            for i in range(0, coords_n.shape[0], encode_batch):
+                chunk = torch.from_numpy(coords_n[i : i + encode_batch])
+                mu_chunks.append(
+                    model.encode(chunk.to(self.device)).cpu().numpy()
+                )
+        mu = np.concatenate(mu_chunks, axis=0)
         np.savez(
             self.out_dir / self.cfg.output.embedding_filename,
             mu=mu.astype(np.float32),

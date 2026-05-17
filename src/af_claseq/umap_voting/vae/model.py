@@ -83,7 +83,7 @@ class ProteinVAE(nn.Module):
     def forward(self, x: torch.Tensor) -> Dict[str, torch.Tensor]:
         feat = self._encode_features(x)
         mu = self.fc_mu(feat)
-        logvar = self.fc_logvar(feat)
+        logvar = torch.clamp(self.fc_logvar(feat), min=-10.0, max=10.0)
         z = self.reparameterize(mu, logvar)
         recon = self.decode(z)
         return {"recon": recon, "mu": mu, "logvar": logvar, "z": z}
@@ -92,9 +92,17 @@ class ProteinVAE(nn.Module):
         self, x: torch.Tensor, kl_weight: float
     ) -> Dict[str, torch.Tensor]:
         out = self.forward(x)
-        recon = F.mse_loss(out["recon"], x, reduction="mean")
-        kl = -0.5 * torch.mean(
+        # Per-sample ELBO: sum over features / latent dims, mean over batch.
+        # Mean-reducing recon instead makes its magnitude ~data-variance and
+        # independent of n_residues, so for a large coord target whose
+        # conformational signal is small relative to the protein's overall
+        # extent, "predict the mean structure" already drives recon near zero
+        # and any kl_weight collapses the posterior. Summing keeps recon
+        # commensurate with the latent KL and makes kl_weight a true beta.
+        b = x.shape[0]
+        recon = F.mse_loss(out["recon"], x, reduction="sum") / b
+        kl = -0.5 * torch.sum(
             1 + out["logvar"] - out["mu"].pow(2) - out["logvar"].exp()
-        )
+        ) / b
         total = recon + kl_weight * kl
         return {"recon": recon, "kl": kl, "total": total}

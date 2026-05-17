@@ -255,7 +255,8 @@ class StructureAnalyzer:
         target_pdb: str | Path,
         superposition_indices: Sequence[int],
         rmsd_indices: Sequence[int],
-        chain_id: str = "A"
+        chain_id: str = "A",
+        reference_chain_id: str | None = None,
     ) -> float:
         """
         Calculate the RMSD of CA atoms between reference and target PDB for specified residues.
@@ -266,7 +267,9 @@ class StructureAnalyzer:
             target_pdb: Path to the target PDB file.
             superposition_indices: Residue indices used for superposition.
             rmsd_indices: Residue indices used for RMSD calculation.
-            chain_id: Chain identifier. Defaults to "A".
+            chain_id: Chain identifier for the target. Defaults to "A".
+            reference_chain_id: Chain identifier for the reference. Falls back to
+                ``chain_id`` when not given (references may live on a non-A chain).
 
         Returns:
             RMSD value.
@@ -274,38 +277,46 @@ class StructureAnalyzer:
         Raises:
             Exception: If RMSD calculation fails.
         """
+        ref_chain_id = reference_chain_id if reference_chain_id is not None else chain_id
         try:
             ref_structure = self.pdb_parser.get_structure("reference", reference_pdb)
             target_structure = self.pdb_parser.get_structure("target", target_pdb)
 
-            def get_ca_atoms(structure, indices):
-                atoms = []
+            def get_ca_atom_dict(structure, indices, cid):
+                atoms = {}
                 for res_id in indices:
                     try:
-                        res = structure[0][chain_id][res_id]
-                        atoms.append(res["CA"])
+                        res = structure[0][cid][res_id]
+                        atoms[res_id] = res["CA"]
                     except KeyError:
-                        logger.warning(f"Residue {res_id} not found. Skipping.")
+                        pass
                 return atoms
 
-            ref_sup_atoms = get_ca_atoms(ref_structure, superposition_indices)
-            target_sup_atoms = get_ca_atoms(target_structure, superposition_indices)
+            ref_sup_dict = get_ca_atom_dict(ref_structure, superposition_indices, ref_chain_id)
+            target_sup_dict = get_ca_atom_dict(target_structure, superposition_indices, chain_id)
+            common_sup = sorted(set(ref_sup_dict) & set(target_sup_dict))
 
-            if not ref_sup_atoms or not target_sup_atoms:
-                logger.warning("No CA atoms found for superposition.")
+            if not common_sup:
+                logger.warning("No common CA atoms found for superposition.")
                 return float('nan')
 
-            # Perform superposition
+            ref_sup_atoms = [ref_sup_dict[r] for r in common_sup]
+            target_sup_atoms = [target_sup_dict[r] for r in common_sup]
+
             super_imposer = Superimposer()
             super_imposer.set_atoms(ref_sup_atoms, target_sup_atoms)
             super_imposer.apply(target_structure.get_atoms())
 
-            ref_rmsd_atoms = get_ca_atoms(ref_structure, rmsd_indices)
-            target_rmsd_atoms = get_ca_atoms(target_structure, rmsd_indices)
+            ref_rmsd_dict = get_ca_atom_dict(ref_structure, rmsd_indices, ref_chain_id)
+            target_rmsd_dict = get_ca_atom_dict(target_structure, rmsd_indices, chain_id)
+            common_rmsd = sorted(set(ref_rmsd_dict) & set(target_rmsd_dict))
 
-            if not ref_rmsd_atoms or not target_rmsd_atoms:
-                logger.warning("No CA atoms found for RMSD calculation.")
+            if not common_rmsd:
+                logger.warning("No common CA atoms found for RMSD calculation.")
                 return float('nan')
+
+            ref_rmsd_atoms = [ref_rmsd_dict[r] for r in common_rmsd]
+            target_rmsd_atoms = [target_rmsd_dict[r] for r in common_rmsd]
 
             return self._calculate_rmsd(ref_rmsd_atoms, target_rmsd_atoms)
 

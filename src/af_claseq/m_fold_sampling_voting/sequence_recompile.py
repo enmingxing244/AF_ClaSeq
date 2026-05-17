@@ -382,7 +382,7 @@ class SequenceRecompiler:
         cbar.solids.set_rasterized(True)
         
         # Customize axes
-        ax.set_xlabel('Bin Index', fontsize=12)
+        ax.set_xlabel('Sequence Voting Bin Index', fontsize=12)
         ax.set_ylabel('Sequence Header', fontsize=12)
         
         # Adjust tick frequency based on number of bins

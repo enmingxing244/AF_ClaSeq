@@ -94,6 +94,10 @@ class VaeTrainingSection:
     val_split: float
     save_best_only: bool
     early_stopping_patience: int
+    weight_decay: float = 0.0
+    grad_clip: float = 0.0
+    lr_scheduler_factor: float = 1.0
+    lr_scheduler_patience: int = 30
 
     @classmethod
     def from_dict(cls, d: Dict[str, Any]) -> VaeTrainingSection:
@@ -105,6 +109,10 @@ class VaeTrainingSection:
             val_split=_require(d, "vae.training", "val_split"),
             save_best_only=_require(d, "vae.training", "save_best_only"),
             early_stopping_patience=_require(d, "vae.training", "early_stopping_patience"),
+            weight_decay=d.get("weight_decay", 0.0),
+            grad_clip=d.get("grad_clip", 0.0),
+            lr_scheduler_factor=d.get("lr_scheduler_factor", 1.0),
+            lr_scheduler_patience=d.get("lr_scheduler_patience", 30),
         )
 
 
@@ -150,6 +158,7 @@ class CoordExtractionSection:
     alignment_ref_pdb: Optional[str] = None
     alignment_ref_chain: str = "A"
     target_chain: str = "A"
+    min_superposition_atoms: int = 30
 
     @classmethod
     def from_dict(cls, d: Dict[str, Any]) -> CoordExtractionSection:
@@ -157,6 +166,7 @@ class CoordExtractionSection:
             alignment_ref_pdb=d.get("alignment_ref_pdb"),
             alignment_ref_chain=d.get("alignment_ref_chain", "A"),
             target_chain=d.get("target_chain", "A"),
+            min_superposition_atoms=d.get("min_superposition_atoms", 30),
         )
 
 

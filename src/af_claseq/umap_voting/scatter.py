@@ -89,15 +89,15 @@ class ScatterBuilder:
         for metric, sp in specs.items():
             for _, ref in refs.iterrows():
                 try:
-                    # calculate_ca_rmsd uses one chain_id for both structures;
-                    # ColabFold predictions always use chain A, so refs must
-                    # also be single-chain reindexed PDBs with chain A.
+                    # ColabFold predictions are always chain A; references may
+                    # live on a different chain (per references.csv ref_chain).
                     rmsd = analyzer.calculate_ca_rmsd(
                         reference_pdb=str(ref["ref_pdb"]),
                         target_pdb=str(pred_path),
                         superposition_indices=sp["superposition"],
                         rmsd_indices=sp["rmsd"],
                         chain_id="A",
+                        reference_chain_id=str(ref.get("ref_chain", "A") or "A"),
                     )
                     results[f"{metric}_rmsd_{ref['ref_label']}"] = rmsd
                 except Exception as e:
@@ -210,9 +210,12 @@ class ScatterBuilder:
                 sub = per_pred[per_pred["source_ref"] == label]
                 x_col = f"{metric}_rmsd_{a}"
                 y_col = f"{metric}_rmsd_{b}"
+                if x_col not in sub.columns or y_col not in sub.columns:
+                    continue
+                valid = sub[[x_col, y_col]].dropna()
                 ax.scatter(
-                    sub.get(x_col, []),
-                    sub.get(y_col, []),
+                    valid[x_col],
+                    valid[y_col],
                     c=self.colors.get(label, "#888"),
                     label=f"bin>{label}",
                     s=18,
