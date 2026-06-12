@@ -30,3 +30,6 @@ similarity_*.log
 
 # Internal methods/provenance roadmap (working doc, not for the public repo)
 data/source_data_method_roadmap.md
+
+# Legacy git worktree — kept on disk as a record, never tracked or pushed
+.worktree/
