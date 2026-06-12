@@ -21,3 +21,12 @@ pipeline_test/
 *samrun.yaml
 m_fold_sampling_voting.tar.gz
 logs/
+
+# VS Code editor settings (machine-specific)
+.vscode/
+
+# SLURM similarity-search job logs
+similarity_*.log
+
+# Internal methods/provenance roadmap (working doc, not for the public repo)
+data/source_data_method_roadmap.md
