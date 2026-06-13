@@ -6,7 +6,16 @@ result*/
 test*/
 !tests/
 xtc/
-docs/
+# docs/: ship the per-workflow pipeline guides only; keep design notes + manuscript PDF untracked
+docs/*
+!docs/divide_and_conquer.md
+!docs/leave_one_out.md
+!docs/m_fold_sampling_voting.md
+!docs/occurrence_voting.md
+!docs/umap_voting.md
+!docs/configuration.md
+!docs/troubleshooting.md
+!docs/background.md
 zenodo*
 af_cluster_compar*/
 pyrightconfig.json
@@ -33,3 +42,7 @@ data/
 
 # Legacy git worktree — kept on disk as a record, never tracked or pushed
 .worktree/
+
+# Untracked from the public repo (non-portable one-off / backup) — kept on disk
+/analyze_top_pred.py
+scripts/column_shuf/*_backup.py
