@@ -61,14 +61,14 @@ Here's a recommended workflow from start to finish:
 
 ### Scenario: You have a large MSA and want to predict multiple conformational states
 
-**Step 1: Divide-and-Conquer** (1-3 days)
+**Step 1: Divide-and-Conquer**
 ```bash
 # Goal: Get initial predictions from large MSA
 python scripts/run_divide_and_conquer.py --config my_dac_config.yaml
 # Output: Many predictions organized by phylogenetic clades
 ```
 
-**Step 2: Leave-One-Out** (2-5 days)
+**Step 2: Leave-One-Out**
 ```bash
 # Goal: Find impactful sequences from promising clade
 # Use sequences from best clade as input
@@ -76,7 +76,7 @@ python scripts/run_leave_one_out.py my_loo_config.yaml
 # Output: significant_impact_sequences.a3m
 ```
 
-**Step 3: Occurrence Voting** (1-2 days)
+**Step 3: Occurrence Voting**
 ```bash
 # Goal: Select optimal subset from impactful sequences
 # Use significant sequences from LOO as input
@@ -84,7 +84,7 @@ python scripts/run_occurrence_voting.py my_voting_config.yaml
 # Output: final_top_16_sequences.a3m
 ```
 
-**Step 4: M-Fold Sampling** (3-5 days)
+**Step 4: M-Fold Sampling**
 ```bash
 # Goal: Explore conformational space with optimal sequences
 # Use top sequences from voting as input

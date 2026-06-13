@@ -110,22 +110,22 @@ python scripts/run_leave_one_out.py my_loo_config.yaml
 ```
 
 **What happens**:
-1. **Group Creation** (~1-5 min): Creates random groups from your sequences
+1. **Group Creation**: Creates random groups from your sequences
    - Output: `base_dir/groups/group_001/`, `group_002/`, etc.
 
-2. **Leave-One-Out Setup** (~5-15 min): For each group, creates subsets
+2. **Leave-One-Out Setup**: For each group, creates subsets
    - Each subset is missing exactly one sequence
    - Output: `group_001_full.a3m`, `group_001_loo_1.a3m`, `group_001_loo_2.a3m`, etc.
 
-3. **ColabFold Prediction** (hours): Submits SLURM jobs for all groups and LOO subsets
+3. **ColabFold Prediction**: Submits SLURM jobs for all groups and LOO subsets
    - Output: PDB files in group directories
    - Monitor: `squeue -u $USER`
 
-4. **Impact Analysis** (~10-30 min): Calculates impact score for each sequence
+4. **Impact Analysis**: Calculates impact score for each sequence
    - Compares full group metric vs. LOO subset metric
    - Output: `base_dir/results/impact_analysis.csv`
 
-5. **Plotting** (~5 min): Generates impact visualizations
+5. **Plotting**: Generates impact visualizations
    - Output: `base_dir/plots/`
 
 ## Step 5: Analyze Results

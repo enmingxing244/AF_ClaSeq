@@ -80,20 +80,20 @@ python scripts/run_divide_and_conquer.py --config my_protein_config.yaml
 ```
 
 **What happens** (5 stages):
-1. **Phylogenetic Processing** (~5-30 min): Builds tree, splits into clades
+1. **Phylogenetic Processing**: Builds tree, splits into clades
    - Output: `working_dir/tree.nwk`, `working_dir/clades/`
 
-2. **Shuffle Management** (~1-5 min): Creates random sequence groups
+2. **Shuffle Management**: Creates random sequence groups
    - Output: `working_dir/clades/clade_*/shuffle_*/`
 
-3. **ColabFold Prediction** (hours to days): Submits SLURM jobs
+3. **ColabFold Prediction**: Submits SLURM jobs
    - Output: PDB files in shuffle directories
    - Monitor: `squeue -u $USER` to see running jobs
 
-4. **Structure Analysis** (~10-30 min): Calculates metrics
+4. **Structure Analysis**: Calculates metrics
    - Output: `working_dir/structure_analysis_results.csv`
 
-5. **Plot Generation** (~5-10 min): Creates visualizations
+5. **Plot Generation**: Creates visualizations
    - Output: `working_dir/plots/`
 
 ## Step 4: Check Your Results

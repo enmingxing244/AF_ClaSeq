@@ -85,7 +85,7 @@ pipeline_control:
 python scripts/run_m_fold_sampling_voting.py my_mfold_config.yaml
 ```
 
-**What happens** (this can take hours/days):
+**What happens**:
 - Creates multiple rounds of random sequence groups
 - Submits ColabFold jobs for all groups
 - Waits for all predictions to complete
@@ -115,7 +115,7 @@ pipeline_control:
 python scripts/run_m_fold_sampling_voting.py my_mfold_config.yaml
 ```
 
-**What happens** (~10-30 min):
+**What happens**:
 - Calculates metrics for all predictions
 - Bins predictions by metric values
 - Creates histograms showing distribution
@@ -155,7 +155,7 @@ pipeline_control:
 python scripts/run_m_fold_sampling_voting.py my_mfold_config.yaml
 ```
 
-**What happens** (~5-15 min):
+**What happens**:
 - Identifies which bins have most predictions
 - Counts sequence occurrences in top bins
 - Creates voting plots
@@ -195,7 +195,7 @@ pipeline_control:
 python scripts/run_m_fold_sampling_voting.py my_mfold_config.yaml
 ```
 
-**What happens** (hours):
+**What happens**:
 - Extracts sequences from selected bins
 - Creates new MSAs with those sequences
 - Predicts with more models and seeds for diversity
@@ -213,7 +213,7 @@ pipeline_control:
 python scripts/run_m_fold_sampling_voting.py my_mfold_config.yaml
 ```
 
-**What happens** (~10-20 min):
+**What happens**:
 - Analyzes final predictions
 - Creates comprehensive plots
 - Output: `base_dir/04_plots/`

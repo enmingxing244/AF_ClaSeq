@@ -99,20 +99,20 @@ python scripts/run_occurrence_voting.py --validate-only my_voting_config.yaml
 python scripts/run_occurrence_voting.py my_voting_config.yaml
 ```
 
-**What happens** (this can take hours to days):
+**What happens**:
 
-1. **Sampling** (~5-30 min): Creates random groups
+1. **Sampling**: Creates random groups
    - Output: `base_dir/sampling/batches/`, `groups/`
 
-2. **ColabFold** (hours to days): Predicts all groups
+2. **ColabFold**: Predicts all groups
    - Output: `base_dir/colabfold_predictions/batch_*/group_*/`
    - Monitor: `squeue -u $USER`
 
-3. **Analysis** (~30-60 min): Calculates metrics and filters
+3. **Analysis**: Calculates metrics and filters
    - Output: `base_dir/structure_analysis/metrics.csv`
    - Output: `base_dir/structure_analysis/filtered_structures.csv`
 
-4. **Voting** (~10-20 min): Counts occurrences and selects top sequences
+4. **Voting**: Counts occurrences and selects top sequences
    - Output: `base_dir/occurrence_voting/sequence_occurrences.csv`
    - Output: `base_dir/occurrence_voting/final_top_N_sequences.a3m`
 
