@@ -17,21 +17,6 @@ AF_ClaSeq is a bioinformatics toolkit for phylogenetically-guided protein struct
 
 ➡️ See **[`reproduce_results/README.md`](reproduce_results/README.md)** for the full per-figure index and provenance.
 
-## ✨ Features
-
-**Workflows:**
-- **Divide-and-Conquer** — phylogenetically-guided clade splitting + structure prediction.
-- **Leave-One-Out** — remove one sequence at a time to find which sequences drive prediction quality.
-- **M-Fold Sampling & Voting** — random m-fold sampling, bin by structural metric, vote for the best bins, then re-predict.
-- **Occurrence Voting** — count how often each sequence appears in high-quality structures and keep the top hits.
-- **UMAP Voting** — VAE-embed predicted structures, joint UMAP with reference projection, Option-F binning, then re-predict.
-
-**Key capabilities:**
-- Distance-guided phylogenetic clade detection with coverage-based quality filtering.
-- SLURM-based concurrent ColabFold job management for high-throughput prediction.
-- Smart sequence grouping that avoids small remainder groups.
-- Built-in structural analysis (RMSD / TM-score) and publication-quality plotting.
-
 ## 🛠️ Installation
 
 **External prerequisites** (install and put on your `PATH` first):
@@ -68,8 +53,6 @@ python ../../scripts/run_m_fold_sampling_voting.py KaiB_m_fold_voting_demo.yaml
 | `python scripts/run_leave_one_out.py <config>` | Leave-one-out impact validation |
 | `python scripts/run_m_fold_sampling_voting.py <config>` | M-fold sampling + voting |
 | `python scripts/run_occurrence_voting.py <config>` | Occurrence-based sequence selection |
-| `python scripts/run_vae_embedding.py <config>` | Train VAE on predicted structures |
-| `python scripts/run_umap_voting.py <config>` | UMAP projection + Option-F voting |
 
 Preprocessing & analysis helpers live in `scripts/utilities/`; an experimental MSA-column-shuffling tool is in `scripts/column_shuf/`.
 
@@ -81,9 +64,8 @@ Preprocessing & analysis helpers live in `scripts/utilities/`; an experimental M
 | Leave-One-Out | `run_leave_one_out.py` | Removes one sequence at a time to rank each sequence's impact on prediction quality | [docs/leave_one_out.md](docs/leave_one_out.md) |
 | M-Fold Sampling & Voting | `run_m_fold_sampling_voting.py` | Random sampling → bin by metric → vote for best bins → re-predict the winners | [docs/m_fold_sampling_voting.md](docs/m_fold_sampling_voting.md) |
 | Occurrence Voting | `run_occurrence_voting.py` | Counts sequence occurrences in good structures and keeps the most frequent | [docs/occurrence_voting.md](docs/occurrence_voting.md) |
-| UMAP Voting | `run_umap_voting.py` (+ `run_vae_embedding.py`) | VAE-embeds structures, projects onto reference UMAP, votes via Option F | [docs/umap_voting.md](docs/umap_voting.md) |
 
-**Which workflow should I use?** Start with **Divide-and-Conquer** for a large MSA (>500 sequences) to get initial predictions. Use **Leave-One-Out** to discover which sequences matter, **Occurrence Voting** to narrow a pool down to an optimal subset, and **M-Fold Sampling** (or **UMAP Voting**) to map the conformational landscape of a small, curated set. The workflows chain naturally — each one's output feeds the next.
+**Which workflow should I use?** Start with **Divide-and-Conquer** for a large MSA (>500 sequences) to get initial predictions. Use **Leave-One-Out** to discover which sequences matter, **Occurrence Voting** to narrow a pool down to an optimal subset, and **M-Fold Sampling** to map the conformational landscape of a small, curated set. The workflows chain naturally — each one's output feeds the next.
 
 ## 🗂️ Project structure
 
@@ -91,10 +73,10 @@ Preprocessing & analysis helpers live in `scripts/utilities/`; an experimental M
 AF_ClaSeq/
 ├── src/af_claseq/            # installable package — one subpackage per workflow
 │   ├── divide_and_conquer/   leave_one_out/   m_fold_sampling_voting/
-│   ├── occurrence_voting/    umap_voting/ (+ vae/)
+│   ├── occurrence_voting/
 │   └── utils/                # shared helpers
 ├── scripts/                  # command-line entry points
-│   ├── run_*.py              # the 6 workflow drivers
+│   ├── run_*.py              # workflow entry-point drivers
 │   ├── utilities/            # preprocessing & analysis helpers
 │   └── column_shuf/          # experimental MSA column-shuffling side-tool
 ├── docs/                     # detailed per-workflow guides
@@ -113,7 +95,6 @@ Workflows are driven by YAML config files (plus a JSON structure-analysis config
 - [docs/leave_one_out.md](docs/leave_one_out.md) — Leave-One-Out workflow guide
 - [docs/m_fold_sampling_voting.md](docs/m_fold_sampling_voting.md) — M-Fold Sampling & Voting workflow guide
 - [docs/occurrence_voting.md](docs/occurrence_voting.md) — Occurrence Voting workflow guide
-- [docs/umap_voting.md](docs/umap_voting.md) — UMAP Voting workflow guide
 - [docs/configuration.md](docs/configuration.md) — full configuration reference
 - [docs/troubleshooting.md](docs/troubleshooting.md) — common issues and fixes
 - [docs/background.md](docs/background.md) — scientific background and methods
