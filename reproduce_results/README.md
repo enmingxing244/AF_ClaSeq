@@ -8,10 +8,13 @@ short `README` explaining what's what.
 
 - 🖼️ the **figure** (`.png`)
 - 📊 the **CSV files** that produced it (one per panel)
+- 🧬 the **pure-sequence MSAs** (`.a3m`) that were folded for each prediction panel
 - 📄 a **`README.md`** mapping each file back to how it was generated
 
-> Numerical data + figures only — no predicted PDB structures. Files were copied read-only
-> from the analysis pipeline; rerun the pipeline in `af_claseq/` to regenerate from scratch.
+> Numerical data, figures, and the pure-sequence `.a3m` MSAs only — no predicted PDB
+> structures. Each `.a3m` is the exact sequence set that was folded to produce its panel
+> (paired one-to-one with that panel's CSV); re-fold it with ColabFold — or rerun the
+> pipeline in `af_claseq/` — to regenerate the structures from scratch.
 
 ## Main figures
 
