@@ -51,10 +51,11 @@ Verify with `python -c "import af_claseq; print('AF_ClaSeq installed!')"`, then 
 
 ## 🚀 Quick start — KaiB demo
 
-A complete, runnable demo on KaiB (a fold-switching protein with two known conformational states) lives in [`example/KaiB_demo/`](example/KaiB_demo/). On a SLURM cluster with GPU access:
+A complete, runnable demo on KaiB (a fold-switching protein with two known conformational states) lives in [`example/KaiB_demo/`](example/KaiB_demo/). Run it **from inside that folder** (its config uses paths relative to the demo directory), on a SLURM cluster with GPU access:
 
 ```bash
-python scripts/run_m_fold_sampling_voting.py example/KaiB_demo/KaiB_m_fold_voting_demo.yaml
+cd example/KaiB_demo
+python ../../scripts/run_m_fold_sampling_voting.py KaiB_m_fold_voting_demo.yaml
 ```
 
 ➡️ See **[`example/KaiB_demo/README.md`](example/KaiB_demo/README.md)** for the full walkthrough (including a no-SLURM local-GPU notebook and pre-computed results).

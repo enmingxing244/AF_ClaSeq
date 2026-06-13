@@ -27,13 +27,16 @@ This pulls in all Python dependencies (biopython, numpy, pandas, matplotlib, sea
 
 ## Run the demo
 
-Run the single entry point from the **repository root**, passing the demo YAML:
+The YAML uses paths **relative to the demo folder** (e.g. `source_a3m: "KaiB_demo_raw_MSA.a3m"`, `config_file: "configs/config_2qke_5jyt_tmscore.json"`, `base_dir: "m_fold_sampling_voting"`), so you must launch it from **inside this folder**:
 
 ```bash
-python scripts/run_m_fold_sampling_voting.py example/KaiB_demo/KaiB_m_fold_voting_demo.yaml
+cd example/KaiB_demo
+python ../../scripts/run_m_fold_sampling_voting.py KaiB_m_fold_voting_demo.yaml
 ```
 
-> The YAML uses paths relative to the demo folder (e.g. `source_a3m: "KaiB_demo_raw_MSA.a3m"`, `config_file: "configs/config_2qke_5jyt_tmscore.json"`, `base_dir: "m_fold_sampling_voting"`). If you prefer, `cd example/KaiB_demo` first and run `python ../../scripts/run_m_fold_sampling_voting.py KaiB_m_fold_voting_demo.yaml` — either way those paths resolve from the demo directory.
+> ⚠️ Run it from `example/KaiB_demo/`, **not** the repo root. The pipeline resolves `source_a3m`, `config_file`, `ref/*.pdb`, and `base_dir` against your *current working directory*, so launching from anywhere else fails right away with `ValueError: JSON config file not found: configs/config_2qke_5jyt_tmscore.json`.
+>
+> ⚠️ Before the prediction stages can submit jobs, edit the three SLURM placeholders in the YAML — `conda_env_path`, `slurm_account`, `slurm_partition` — to your cluster's values (see [SLURM vs local](#slurm-vs-local) below).
 
 ### The five stages
 
@@ -52,8 +55,8 @@ pipeline_control:
 To run stages **individually** (recommended the first time, since stage 1 must finish before stage 2 has data), comment out the stages you don't want yet and re-run the same command — completed stages leave their outputs on disk and are simply skipped on the next invocation:
 
 ```bash
-# Edit KaiB_m_fold_voting_demo.yaml so only "01_M_FOLD_SAMPLING_RUN" is uncommented, then:
-python scripts/run_m_fold_sampling_voting.py example/KaiB_demo/KaiB_m_fold_voting_demo.yaml
+# From example/KaiB_demo/ — edit KaiB_m_fold_voting_demo.yaml so only "01_M_FOLD_SAMPLING_RUN" is uncommented, then:
+python ../../scripts/run_m_fold_sampling_voting.py KaiB_m_fold_voting_demo.yaml
 
 # When that finishes, uncomment "01_M_FOLD_SAMPLING_PLOT" and re-run, and so on.
 ```
@@ -99,14 +102,13 @@ How to read them:
 
 The demo can ship with a full set of **pre-computed results** so you can explore the analysis and plots without any GPU work. Note that both the results directory (`example/KaiB_demo/m_fold_sampling_voting/`) and the archive `m_fold_sampling_voting.tar.gz` are **`.gitignore`d** to keep the repository light — they are **not** tracked in git.
 
-- If you obtained them as the tarball, extract it in this folder:
+- **Download** the tarball — [KaiB demo pre-computed results](https://drive.google.com/file/d/1XcMJ-yIbOlk7CoSmMC9ewydrBifhhVBc/view?usp=share_link) *(tarball archive)* — then extract it in this folder:
 
   ```bash
+  # put the downloaded m_fold_sampling_voting.tar.gz into example/KaiB_demo/, then:
   cd example/KaiB_demo
   tar -xzf m_fold_sampling_voting.tar.gz
   ```
-
-  Download link (tarball archive): see the **Pre-computed Results** section of the root [../../README.md](../../README.md).
 
 - Once extracted, browse straight to the outputs — e.g. open `m_fold_sampling_voting/01_m_fold_sampling/plot/combined_mfold_analysis.png`, inspect `m_fold_sampling_voting/02_voting/2qke_tmscore/voting_results.csv`, or view the final scatters under `m_fold_sampling_voting/04_plots/`.
 
