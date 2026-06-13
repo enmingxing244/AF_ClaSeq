@@ -28,5 +28,8 @@ logs/
 # SLURM similarity-search job logs
 similarity_*.log
 
-# Internal methods/provenance roadmap (working doc, not for the public repo)
-data/source_data_method_roadmap.md
+# Journal source-data deposit (working copy kept on disk; superseded by reproduce_results/)
+data/
+
+# Legacy git worktree — kept on disk as a record, never tracked or pushed
+.worktree/
