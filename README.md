@@ -2,6 +2,21 @@
 
 A comprehensive bioinformatics toolkit for phylogenetically-guided protein structure prediction using AlphaFold and ColabFold. AF_ClaSeq implements advanced sequence analysis strategies including divide-and-conquer phylogenetic splitting, leave-one-out validation, m-fold sampling, and occurrence voting to improve structure prediction quality.
 
+## 📊 Reproduce the paper figures
+
+**All source data and figures from the paper live in [`reproduce_results/`](reproduce_results/) — one folder per figure.** Each folder holds the figure image (`.png`), the CSV data behind every panel, and a short `README` mapping each file back to how it was generated (numerical data + figures only — no predicted PDB structures).
+
+| Figure | Protein | Folder |
+|:------:|---------|--------|
+| 3 | Adenylate kinase | [`figure_3_adenylate_kinase`](reproduce_results/figure_3_adenylate_kinase) |
+| 4 | ABL1 kinase | [`figure_4_abl1`](reproduce_results/figure_4_abl1) |
+| 5 | GLP-1 receptor | [`figure_5_glp1r`](reproduce_results/figure_5_glp1r) |
+| 6 | KaiB | [`figure_6_kaib`](reproduce_results/figure_6_kaib) |
+| 7 | GB98 (designed protein) | [`figure_7_gb98`](reproduce_results/figure_7_gb98) |
+| S1–S9 | AtaR · H-Ras · RfaH · XCL1 · Calmodulin · pyrophosphatase · PfMATE · MurJ · T1214 | [`supple_figure_1_atar` … `_9_t1214`](reproduce_results/) |
+
+➡️ See **[`reproduce_results/README.md`](reproduce_results/README.md)** for the full per-figure index and provenance.
+
 ## 🚀 Features
 
 ### Core Analysis Modules
