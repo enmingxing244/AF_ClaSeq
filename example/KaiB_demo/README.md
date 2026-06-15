@@ -77,7 +77,9 @@ How to read them:
 
 ## Interactive notebook (optional)
 
-`KaiB_mfold_demo.ipynb` walks through the same analysis cell by cell with the figures shown inline.
+`KaiB_mfold_demo.ipynb` walks through the same analysis cell by cell. It ships **pre-run against the pre-computed results**, so you can read it top to bottom — every cell already shows its example output, including the inline TM-score landscape, the voting distributions, and the final purified-vs-control panels.
+
+To re-run it yourself, extract the tarball (as above) and execute the notebook from inside `example/KaiB_demo/`. Like the script, it detects the pre-computed predictions and **skips ColabFold** at both the sampling and recompile stages, so it runs end-to-end on CPU — no GPU needed. (The prediction cells stay in place for users who *do* have a GPU and want to regenerate the structures from scratch.)
 
 ## More
 
