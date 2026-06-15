@@ -45,6 +45,8 @@ python ../../scripts/run_m_fold_sampling_voting.py KaiB_m_fold_voting_demo.yaml
 
 ➡️ See **[`example/KaiB_demo/README.md`](example/KaiB_demo/README.md)** for the full walkthrough (including a no-SLURM local-GPU notebook and pre-computed results).
 
+💡 **No GPU? Skip the compute.** Download the [pre-computed KaiB results](https://drive.google.com/file/d/1XcMJ-yIbOlk7CoSmMC9ewydrBifhhVBc/view?usp=share_link) (tarball) and extract it inside `example/KaiB_demo/` to explore all the analysis, voting results, and figures without running ColabFold.
+
 ## 🧰 Command-line tools
 
 | Command | Purpose |

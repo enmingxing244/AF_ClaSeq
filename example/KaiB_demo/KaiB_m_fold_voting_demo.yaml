@@ -95,7 +95,7 @@ sequence_voting:
   vote_figsize: [10, 5]
   vote_y_min: 0.8
   vote_y_max: 1000
-  vote_x_ticks: [1, 10, 20, 30,40,50,60]
+  vote_x_ticks: [1, 10, 20, 30]
   use_focused_bins: true
 
 # ============================================================================

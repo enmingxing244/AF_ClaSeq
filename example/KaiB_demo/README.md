@@ -13,6 +13,22 @@ KaiB is a metamorphic protein that natively adopts two completely different fold
 | `KaiB_m_fold_voting_demo.yaml` | The workflow config that drives all five pipeline stages (paths, bin/plot settings, SLURM settings, selected bins). |
 | `KaiB_mfold_demo.ipynb` | Optional interactive notebook that runs the same pipeline on a local multi-GPU box (no SLURM). |
 
+## Don't want to run ColabFold?
+
+The demo can ship with a full set of **pre-computed results** so you can explore the analysis and plots without any GPU work. Note that both the results directory (`example/KaiB_demo/m_fold_sampling_voting/`) and the archive `m_fold_sampling_voting.tar.gz` are **`.gitignore`d** to keep the repository light — they are **not** tracked in git.
+
+- **Download** the tarball — [KaiB demo pre-computed results](https://drive.google.com/file/d/1XcMJ-yIbOlk7CoSmMC9ewydrBifhhVBc/view?usp=share_link) *(tarball archive)* — then extract it in this folder:
+
+  ```bash
+  # put the downloaded m_fold_sampling_voting.tar.gz into example/KaiB_demo/, then:
+  cd example/KaiB_demo
+  tar -xzf m_fold_sampling_voting.tar.gz
+  ```
+
+- Once extracted, browse straight to the outputs — e.g. open `m_fold_sampling_voting/01_m_fold_sampling/plot/combined_mfold_analysis.png`, inspect `m_fold_sampling_voting/02_voting/2qke_tmscore/voting_results.csv`, or view the final scatters under `m_fold_sampling_voting/04_plots/`.
+
+If you have neither the directory nor the tarball, regenerate everything by running the pipeline as described in **Run the demo** below.
+
 ## Prerequisites
 
 From the repository root, install the package in editable mode:
@@ -97,22 +113,6 @@ How to read them:
 - **`01_m_fold_sampling/plot/` histograms & scatter** — the 1D TM-score histograms (one per reference) and the 2D scatter show the conformational landscape sampled across all groups. Because KaiB is bimodal, you should see populations near high `2qke_tmscore` (ground-fold-like) and, separately, near high `5jyt_tmscore` (fold-switch-like).
 - **`02_voting/<metric>/voting_results.csv`** — bins are ranked by occupancy; the **high-count bins are the signal**. Sequences that repeatedly land in the high-`2qke_tmscore` bins are the ones encoding the **2QKE ground fold**; sequences dominating the high-`5jyt_tmscore` bins encode the **5JYT fold-switch state**. The bins selected in the YAML (`[51, 52]` for 2QKE, `[37–41]` for 5JYT) come straight from these results.
 - **`04_plots/<metric>/bin_*/`** — the final per-bin `prediction_metrics.csv` (and its `control_prediction_metrics.csv`) are the payoff: the voted/purified sequences should cluster tightly at high TM-score to their target reference, well separated from the random control, confirming each sequence set reconstructs its intended fold.
-
-## Don't want to run ColabFold?
-
-The demo can ship with a full set of **pre-computed results** so you can explore the analysis and plots without any GPU work. Note that both the results directory (`example/KaiB_demo/m_fold_sampling_voting/`) and the archive `m_fold_sampling_voting.tar.gz` are **`.gitignore`d** to keep the repository light — they are **not** tracked in git.
-
-- **Download** the tarball — [KaiB demo pre-computed results](https://drive.google.com/file/d/1XcMJ-yIbOlk7CoSmMC9ewydrBifhhVBc/view?usp=share_link) *(tarball archive)* — then extract it in this folder:
-
-  ```bash
-  # put the downloaded m_fold_sampling_voting.tar.gz into example/KaiB_demo/, then:
-  cd example/KaiB_demo
-  tar -xzf m_fold_sampling_voting.tar.gz
-  ```
-
-- Once extracted, browse straight to the outputs — e.g. open `m_fold_sampling_voting/01_m_fold_sampling/plot/combined_mfold_analysis.png`, inspect `m_fold_sampling_voting/02_voting/2qke_tmscore/voting_results.csv`, or view the final scatters under `m_fold_sampling_voting/04_plots/`.
-
-If you have neither the directory nor the tarball, regenerate everything by running the pipeline as described in **Run the demo** above.
 
 ## SLURM vs local
 
