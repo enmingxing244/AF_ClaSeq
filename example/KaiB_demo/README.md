@@ -8,7 +8,8 @@ This demo lets you **reproduce all of that from a set of pre-computed ColabFold 
 
 | File | Role |
 |------|------|
-| `reproduce_figures.yaml` | **The reproduce config** — runs the figure stages only (analysis → voting → final plots) on the downloaded predictions. No GPU. |
+| `reproduce_figures.sh` | **Run this** — one command (`bash reproduce_figures.sh`) that regenerates every figure from the downloaded predictions. No GPU. |
+| `reproduce_figures.yaml` | The config it uses — the figure stages only (analysis → voting → final plots). |
 | `KaiB_demo_raw_MSA.a3m` | Input MSA — 349 sequences, 91-residue query. Maps sequences to their voted bins during reproduction. |
 | `ref/2qkeE.pdb` | Reference structure for the **ground state** (2QKE, chain E). |
 | `ref/5jytA.pdb` | Reference structure for the **fold-switch state** (5JYT, chain A). |
@@ -41,12 +42,12 @@ This creates `m_fold_sampling_voting/`, holding the predicted structures — the
 **2. Run the reproduce script** — from inside `example/KaiB_demo/`:
 
 ```bash
-python ../../scripts/run_m_fold_sampling_voting.py reproduce_figures.yaml
+bash reproduce_figures.sh
 ```
 
-> ⚠️ Run it from `example/KaiB_demo/`, **not** the repo root — the config resolves `source_a3m`, `config_file`, `ref/*.pdb`, and `base_dir` against your current working directory.
+That's it. The script checks that `m_fold_sampling_voting/` is extracted, then runs the figure-only pipeline (`python ../../scripts/run_m_fold_sampling_voting.py reproduce_figures.yaml`) for you. It re-reads the predicted structures, re-scores them with TM-align, and regenerates every analysis figure into `m_fold_sampling_voting/`. Only three figure stages run — `01_M_FOLD_SAMPLING_PLOT`, `02_VOTING_RUN`, `04_PURE_SEQ_PLOT_RUN` — so there is no prediction and no SLURM/GPU involved.
 
-The script re-reads the predicted structures, re-scores them with TM-align, and regenerates every analysis figure into `m_fold_sampling_voting/`. It runs three figure stages only — `01_M_FOLD_SAMPLING_PLOT`, `02_VOTING_RUN`, `04_PURE_SEQ_PLOT_RUN` — so there is no prediction and no SLURM/GPU involved.
+> ⚠️ The script `cd`s into its own folder, so it works from anywhere. If you call the Python driver directly instead, run it from `example/KaiB_demo/` — the config resolves `source_a3m`, `config_file`, `ref/*.pdb`, and `base_dir` against your current working directory.
 
 ## What you get
 

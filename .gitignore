@@ -29,7 +29,11 @@ setup.py
 pipeline_test/
 *samrun.yaml
 m_fold_sampling_voting.tar.gz
+m_fold_sampling_voting.tar
 logs/
+
+# Local KaiB demo test sandbox (fresh-run + precompute regression) — never tracked
+example/test_KaiB_demo/
 
 # VS Code editor settings (machine-specific)
 .vscode/
