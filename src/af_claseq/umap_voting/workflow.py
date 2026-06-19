@@ -125,6 +125,11 @@ class UmapVotingManager:
                 gpus_per_task=sl.gpus_per_task,
                 cpus_per_task=sl.cpus_per_task,
                 check_interval=sl.check_interval,
+                prediction_engine=sl.prediction_engine,
+                openfold_config=sl.openfold_config,
+                openfold_model=sl.openfold_model,
+                openfold_conda_env=sl.openfold_conda_env,
+                openfold_dir=sl.openfold_dir,
             ),
         )
         pred.run()

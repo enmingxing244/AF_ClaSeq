@@ -62,6 +62,11 @@ class Predictor:
             num_recycle=self.structure_prediction["num_recycle"],
             num_models=self.structure_prediction["num_models"],
             num_seeds=self.structure_prediction["num_seeds"],
+            prediction_engine=self.slurm.get("prediction_engine", "colabfold"),
+            openfold_config=self.slurm.get("openfold_config", "deepspeed_bf16"),
+            openfold_model=self.slurm.get("openfold_model", "model_3_ptm"),
+            openfold_conda_env=self.slurm.get("openfold_conda_env"),
+            openfold_dir=self.slurm.get("openfold_dir"),
         )
 
         a3ms = sorted(self.a3ms_dir.glob("bin_*.a3m"))

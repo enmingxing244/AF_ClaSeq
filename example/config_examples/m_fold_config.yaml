@@ -36,6 +36,13 @@ slurm:
   slurm_time: "01:00:00"
   slurm_partition: "your_partition"
   max_workers: 200
+  # --- Prediction engine (optional; default: colabfold) ---
+  prediction_engine: "colabfold"      # "colabfold" | "openfold"
+  # Used only when prediction_engine is "openfold":
+  openfold_config: "deepspeed_bf16"   # fastest verified config (~3.6x); see openfold_utils.OPENFOLD_CONFIGS
+  openfold_model: "model_3_ptm"
+  # openfold_conda_env: "/path/to/openfold2/conda/env"   # omit to use the built-in default
+  # openfold_dir: "/path/to/af-claseq-openfold/packages/openfold"   # omit to use the built-in default
 
 # ============================================================================
 # PIPELINE CONTROL

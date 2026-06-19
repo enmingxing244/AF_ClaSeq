@@ -83,6 +83,11 @@ class OccurrenceVotingManager:
             num_models=structure_config.num_models,
             num_seeds=structure_config.num_seeds,
             num_recycle=structure_config.num_recycle,
+            prediction_engine=slurm_config.prediction_engine,
+            openfold_config=slurm_config.openfold_config,
+            openfold_model=slurm_config.openfold_model,
+            openfold_conda_env=slurm_config.openfold_conda_env,
+            openfold_dir=slurm_config.openfold_dir,
             job_name_prefix="occ_vote"
         )
 
