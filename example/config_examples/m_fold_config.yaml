@@ -101,11 +101,22 @@ sequence_voting:
 # STAGE 03: RECOMPILE & PREDICTION CONFIGURATION
 # ============================================================================
 recompile_predict:
-  # Bin selection for recompilation
+  # --- Bin selection: choose ONE mode per metric ---
+  # Mode A (default, explicit bins): list the bin indices to recompile.
   bin_numbers_1: [26]        # Bin numbers for first metric
-  bin_numbers_2: [9]        # Bin numbers for second metric (if applicable)
-  combine_bins: false            # Whether to combine bins
-  
+  bin_numbers_2: [9]         # Bin numbers for second metric (if applicable)
+  combine_bins: false        # Whether to union bin_numbers_* into one prediction set
+
+  # Mode B (metric threshold): set threshold_N + threshold_direction_N to auto-select
+  # every bin whose ENTIRE range is on the reference side of the cutoff, pooled into one
+  # combined set named bin_<i>_<j>_.... Overrides bin_numbers_N for that metric.
+  # Direction is explicit: "below" (RMSD-/distance-like) or "above" (TM-/distance-like).
+  # Requires general.metric_bin_configs[<metric>] (bin_width/min/max). Examples:
+  # threshold_1: 0.9              # e.g. TM-score >= 0.9
+  # threshold_direction_1: "above"
+  # threshold_2: 2.0              # e.g. RMSD <= 2.0 A
+  # threshold_direction_2: "below"
+
   # Metric mapping (should match filter criteria names)
   metric_name_1: "2qke_tmscore"     # Name of first metric
   metric_name_2: "5jyt_tmscore"            # Name of second metric (if using two criteria)
