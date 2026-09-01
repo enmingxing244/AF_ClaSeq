@@ -3,6 +3,9 @@ __pycache__/
 .claude
 .trash
 result*/
+manuscripts
+# Fully standalone sequence-comparison audit/rerun (inputs and outputs are large).
+/results_seq_compare/
 test*/
 !tests/
 xtc/
@@ -19,9 +22,14 @@ docs/*
 zenodo*
 af_cluster_compar*/
 pyrightconfig.json
-example/KaiB_demo/m_fold_sampling_voting
+# Legacy KaiB demo: keep the local working copy after removing it from Git's index.
+/example/KaiB_demo/
 read_code/
-source_data_cp.sh
+/data_af_claseq/
+/source_data_cp.sh
+slides/
+.codex
+revision-3-manual-audit.md
 CASP*
 af_claseq.egg-info/
 *zip
@@ -50,3 +58,6 @@ data/
 # Untracked from the public repo (non-portable one-off / backup) — kept on disk
 /analyze_top_pred.py
 scripts/column_shuf/*_backup.py
+
+# Local, account-specific Slurm controller for materializing data_af_claseq in OneDrive.
+/globus_materialize_data_af_claseq.slurm
