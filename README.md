@@ -29,20 +29,34 @@ python -c "import ete3; from af_claseq.m_fold_sampling_voting.config import load
 
 ETE3 3.1.3 or newer within the 3.x series is a core dependency used to parse Newick trees in Divide-and-Conquer. It is declared in `pyproject.toml` and installed automatically by `pip install -e .`; no separate ETE/ETE3 installation step is required.
 
-Some workflows use an external executable in addition to the Python package:
+### Install the third-party executables
 
-- [TM-align](https://zhanggroup.org/TM-align/) is required when a structure-analysis JSON uses TM-score metrics, including the KaiB reproduction cases. Its executable must be available as `TMalign` on `PATH`.
-- [FastTree](https://morgannprice.github.io/fasttree/) or `FastTreeMP` is required when constructing a new phylogenetic tree with Divide-and-Conquer. Set `input.fasttree_binary` in the workflow YAML to the executable's full path. FastTree is not required for M-fold analysis, voting, or plotting from precomputed structures.
-
-If you use Conda, this tested alternative creates a single non-ColabFold environment containing Python, FastTree, and TM-align; the following `pip` command then installs AF_ClaSeq and its core Python dependencies:
+FastTree and TM-align are independent third-party programs and are not copied into this repository. The tested Conda setup below creates one non-ColabFold environment containing Python, both executables, and AF_ClaSeq:
 
 ```bash
 conda create --name af-claseq --override-channels \
   --channel conda-forge --channel bioconda \
+  --strict-channel-priority \
   python=3.10 pip fasttree tmalign
 conda activate af-claseq
 python -m pip install -e .
+
+command -v FastTreeMP || command -v FastTree
+command -v TMalign
 ```
+
+- [TM-align](https://zhanggroup.org/TM-align/) is required when a structure-analysis JSON uses TM-score metrics, including the KaiB reproduction cases. AF_ClaSeq expects the executable name `TMalign` on `PATH`.
+- [FastTree](https://morgannprice.github.io/fasttree/) or its multithreaded executable `FastTreeMP` is required only when Divide-and-Conquer constructs a new phylogenetic tree. Set `input.fasttree_binary` in the workflow YAML to the executable's full path. FastTree is not required for M-fold analysis, voting, or plotting from precomputed structures.
+
+If Conda is unavailable, use the authors' official download/build instructions linked above. FastTree provides Linux executables and `FastTree.c`; TM-align provides `TMalign.cpp`. Their documented Linux source-build commands are:
+
+```bash
+gcc -O3 -fopenmp-simd -funsafe-math-optimizations -march=native \
+  -o FastTree FastTree.c -lm
+g++ -static -O3 -ffast-math -lm -o TMalign TMalign.cpp
+```
+
+Omit `-static` on systems that do not support static linking. Put the resulting `FastTree`/`FastTreeMP` and `TMalign` executables on `PATH`, or give the full FastTree path in the YAML. Do not copy these third-party binaries into the AF_ClaSeq repository.
 
 ### Prediction setup: structure generation with ColabFold
 
