@@ -75,7 +75,7 @@ There are two levels of released results:
 1. [`reproduce_results/`](reproduce_results/) contains the manuscript figures and their numerical source data. See [`reproduce_results/README.md`](reproduce_results/README.md) for the figure-to-file index.
 2. The larger `data_af_claseq` archive contains the precomputed PDB structures, portable YAML/JSON configurations, CSV files, and plot inputs needed to rerun the analysis pipelines without ColabFold.
 
-> **Precomputed-data archive:** OneDrive download link to be added after upload (`DATA_ARCHIVE_LINK_TODO`).
+> **Precomputed-data archive:** [Download the complete `data_af_claseq` raw-data folder from OneDrive](https://buckeyemailosu-my.sharepoint.com/:f:/g/personal/xing_244_osu_edu/IgCct8g4giIaSYkqAZVbiahoAeQ4ZepXd2br7HnP-nFSeCY?e=8ysLeU).
 
 Download and extract the archive so that it sits directly below the repository root:
 
