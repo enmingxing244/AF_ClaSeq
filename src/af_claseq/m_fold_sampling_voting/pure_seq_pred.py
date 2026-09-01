@@ -85,7 +85,12 @@ class PureSequenceAF2Prediction:
             check_interval=self.config['check_interval'],
             job_name_prefix=job_prefix,
             prediction_num_model=self.config['prediction_num_model'],
-            prediction_num_seed=self.config['prediction_num_seed']
+            prediction_num_seed=self.config['prediction_num_seed'],
+            prediction_engine=self.config.get('prediction_engine', 'colabfold'),
+            openfold_config=self.config.get('openfold_config', 'deepspeed_bf16'),
+            openfold_model=self.config.get('openfold_model', 'model_3_ptm'),
+            openfold_conda_env=self.config.get('openfold_conda_env'),
+            openfold_dir=self.config.get('openfold_dir')
         )
         
     def collect_job_configs(self) -> Tuple[List[str], List[str], List[str]]:

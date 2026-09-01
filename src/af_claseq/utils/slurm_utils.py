@@ -9,6 +9,7 @@ from enum import Enum
 from pathlib import Path
 
 from af_claseq.utils.logging_utils import get_logger
+from af_claseq.utils import openfold_utils
 
 # Initialize module logger
 logger = get_logger("slurm_utils")
@@ -56,6 +57,11 @@ class SlurmJobSubmitter:
         check_interval: int = 60,
         job_name_prefix: str = "fold",
         num_recycle: int = 3,
+        prediction_engine: str = "colabfold",
+        openfold_config: str = openfold_utils.DEFAULT_OPENFOLD_CONFIG,
+        openfold_model: str = openfold_utils.DEFAULT_OPENFOLD_MODEL,
+        openfold_conda_env: Optional[str] = None,
+        openfold_dir: Optional[str] = None,
         **kwargs
     ):
         """
@@ -82,6 +88,16 @@ class SlurmJobSubmitter:
                 For pure_pred mode:
                     - prediction_num_model (int): Number of models for prediction
                     - prediction_num_seed (int): Number of seeds for prediction
+            prediction_engine (str): "colabfold" (default) or "openfold".
+            openfold_config (str): OpenFold performance config when
+                prediction_engine="openfold" (default "deepspeed_bf16"). See
+                openfold_utils.OPENFOLD_CONFIGS for valid keys.
+            openfold_model (str): OpenFold config_preset (default "model_3_ptm").
+            openfold_conda_env (str): Conda env activated *inside* the OpenFold job
+                (default openfold_utils.DEFAULT_OPENFOLD_CONDA_ENV). Kept distinct from
+                conda_env_path, which stays the ColabFold env.
+            openfold_dir (str): OpenFold source dir (default
+                openfold_utils.DEFAULT_OPENFOLD_DIR).
         """
         # Basic SLURM configuration
         self.conda_env_path = conda_env_path
@@ -97,6 +113,28 @@ class SlurmJobSubmitter:
         self.check_interval = check_interval
         self.job_name_prefix = job_name_prefix
         self.num_recycle = num_recycle
+
+        # Prediction engine selection. All OpenFold parameters are defaulted, so existing
+        # ColabFold callers are unaffected. The OpenFold job runs in its own conda env
+        # (openfold_conda_env), keeping its dependency stack separate from af_claseq.
+        self.prediction_engine = (prediction_engine or "colabfold").lower()
+        if self.prediction_engine not in ("colabfold", "openfold"):
+            raise ValueError(
+                f"Invalid prediction_engine '{prediction_engine}'. "
+                "Choose 'colabfold' or 'openfold'."
+            )
+        self.openfold_config = openfold_config
+        self.openfold_model = openfold_model
+        self.openfold_conda_env = openfold_conda_env or openfold_utils.DEFAULT_OPENFOLD_CONDA_ENV
+        self.openfold_dir = openfold_dir or openfold_utils.DEFAULT_OPENFOLD_DIR
+        if (
+            self.prediction_engine == "openfold"
+            and self.openfold_config not in openfold_utils.OPENFOLD_CONFIGS
+        ):
+            raise ValueError(
+                f"Unknown openfold_config '{self.openfold_config}'. "
+                f"Valid options: {sorted(openfold_utils.OPENFOLD_CONFIGS)}"
+            )
 
         # Determine mode based on kwargs
         if any(k.startswith('prediction_') for k in kwargs):
@@ -134,6 +172,39 @@ class SlurmJobSubmitter:
                 config['random_seed'] = self.random_seed
             return config
 
+    def _build_colabfold_wrap(self, task_dir: str, config: Dict[str, int]) -> str:
+        """Build the ColabFold sbatch --wrap (env setup + colabfold_batch in/out=task_dir)."""
+        colabfold_cmd = [
+            "colabfold_batch",
+            "--num-recycle", str(self.num_recycle),
+            "--num-models", str(config['num_models']),
+            "--num-seeds", str(config['num_seeds']),
+        ]
+        if 'random_seed' in config:
+            colabfold_cmd.extend(["--random-seed", str(config['random_seed'])])
+        colabfold_cmd.extend([task_dir, task_dir])
+        colabfold_cmd = " ".join(colabfold_cmd)
+
+        # NOTE: the conda-init step was intentionally removed -- it rewrites ~/.bashrc
+        # non-atomically, and under concurrent OSC jobs (home shared across ascend+cardinal)
+        # it truncated this user's ~/.bashrc (lost aliases/exports/API keys). `module load
+        # miniconda3` already provides the conda shell function, so `conda activate` works.
+        env_setup = (
+            "module reset && module load cuda/12.4.1 miniconda3/24.1.2-py310 && "
+            f"conda activate {self.conda_env_path}"
+        )
+        return f"{env_setup} && {colabfold_cmd}"
+
+    def _build_openfold_wrap(self, task_dir: str) -> str:
+        """Prepare OpenFold input (driver-side) and build the OpenFold sbatch --wrap."""
+        return openfold_utils.build_openfold_wrap(
+            task_dir=task_dir,
+            openfold_dir=self.openfold_dir,
+            openfold_conda_env=self.openfold_conda_env,
+            openfold_config=self.openfold_config,
+            openfold_model=self.openfold_model,
+        )
+
     def submit_job(self, task_dir: str, job_id: str, job_type: Optional[str] = None) -> Optional[str]:
         """Submit a SLURM job for the given task directory."""
         if not os.path.exists(task_dir):
@@ -142,27 +213,13 @@ class SlurmJobSubmitter:
 
         config = self._get_job_config(job_type)
         
-        # Build colabfold command
-        colabfold_cmd = [
-            "colabfold_batch",
-            "--num-recycle", str(self.num_recycle),
-            "--num-models", str(config['num_models']),
-            "--num-seeds", str(config['num_seeds']),
-            # "--templates" , "--custom-template-path",
-            # "/fs/ess/PAA0203/xing244/AF_ClaSeq/results_updated/BCCIP/deepmsa_default/finalMSAs-alpha/template_test/template"
-        ]
-        
-        if 'random_seed' in config:
-            colabfold_cmd.extend(["--random-seed", str(config['random_seed'])])
-            
-        colabfold_cmd.extend([task_dir, task_dir])
-        colabfold_cmd = " ".join(colabfold_cmd)
-
-        # Build environment setup
-        env_setup = (
-            "module reset && module load cuda/12.4.1 miniconda3/24.1.2-py310 && "
-            f"conda init && conda activate {self.conda_env_path}"
-        )
+        # Build the prediction-engine command (the sbatch --wrap payload). For OpenFold the
+        # a3m->OpenFold input conversion happens here, driver-side -- only the inference runs
+        # inside the SLURM job (in the openfold2 env, which does not contain af_claseq).
+        if self.prediction_engine == "openfold":
+            wrap_command = self._build_openfold_wrap(task_dir)
+        else:
+            wrap_command = self._build_colabfold_wrap(task_dir, config)
 
         # Build sbatch command
         job_name = f"{self.job_name_prefix}_{job_id}"
@@ -179,7 +236,7 @@ class SlurmJobSubmitter:
             f"--time={self.slurm_time}",
             f"--partition={self.slurm_partition}",
             f"--gres=gpu:{self.slurm_gpus_per_task}",
-            "--wrap", f"{env_setup} && {colabfold_cmd}"
+            "--wrap", wrap_command
         ]
 
         job_type_str = f" ({job_type})" if job_type else ""
@@ -221,12 +278,35 @@ class SlurmJobSubmitter:
 
             self.wait_for_completion(current_job_id)
 
+            # OpenFold writes PDBs into its own work dir and no completion log; collect the
+            # structures back into task_dir (ColabFold naming) and emit the done sentinel.
+            if self.prediction_engine == "openfold":
+                self._collect_openfold(task_dir)
+
             if self._check_log_file(task_dir):
                 logger.info(f"All PDB files generated for {task_dir}")
                 break
             else:
                 logger.warning(f"PDB files missing in {task_dir}. Resubmitting job.")
                 self._backup_log_file(task_dir, current_job_id)
+
+    def _collect_openfold(self, task_dir: str) -> None:
+        """Collect OpenFold PDBs into task_dir (ColabFold naming) and write the done log.
+
+        The seed suffix mirrors the submitter's configured random seed so downstream stages
+        that match an exact filename (e.g. sequence_voting) find the structures. OpenFold
+        produces a single model_3_ptm structure per chunk (num_models/num_seeds, which are
+        ColabFold concepts, do not apply).
+        """
+        seed = getattr(self, 'random_seed', None) or 0
+        collected = openfold_utils.collect_openfold_output(
+            task_dir, openfold_model=self.openfold_model, seed=seed
+        )
+        if collected > 0:
+            openfold_utils.write_done_log(task_dir)
+            logger.info(f"Collected {collected} OpenFold PDB(s) into {task_dir}")
+        else:
+            logger.warning(f"No OpenFold PDBs found to collect for {task_dir}")
 
     def process_folders_concurrently(self, 
                                    folders: List[str], 
