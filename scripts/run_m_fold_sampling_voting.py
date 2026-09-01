@@ -13,7 +13,7 @@ import json
 import numpy as np
 import pandas as pd
 from pathlib import Path
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Optional, Tuple
 
 # Import modules from AF-ClaSeq
 from af_claseq.utils.slurm_utils import SlurmJobSubmitter
@@ -26,7 +26,7 @@ from af_claseq.m_fold_sampling_voting.pure_seq_pred import PureSequenceAF2Predic
 from af_claseq.m_fold_sampling_voting.pure_seq_plot import PureSequencePlotter, create_pure_seq_plot_config_from_dict
 from af_claseq.utils.logging_utils import setup_logger 
 
-from af_claseq.m_fold_sampling_voting.config import load_pipeline_config
+from af_claseq.m_fold_sampling_voting.config import load_pipeline_config, MetricBinConfig
 
 
 class AFClaSeqPipeline:
@@ -47,7 +47,11 @@ class AFClaSeqPipeline:
         
         # Load filter configuration
         self.filter_config = self._load_filter_config()
-        
+
+        # Warn (do not error) if the deprecated above/below 'method' field is present in
+        # the structure-analysis JSON — the m-fold workflow no longer uses it.
+        self._warn_deprecated_method_field()
+
     def _setup_logging(self) -> logging.Logger:
         """Set up logging configuration"""
         # Use base_dir directly as specified in config
@@ -72,7 +76,33 @@ class AFClaSeqPipeline:
         """Load filter configuration from JSON file"""
         with open(self.config.general.config_file, 'r') as f:
             return json.load(f)
-    
+
+    def _warn_deprecated_method_field(self) -> None:
+        """Emit a one-time deprecation notice if any filter criterion still carries the
+        legacy above/below ``method`` key.
+
+        The m-fold sampling/voting workflow no longer uses it (recompile direction is now
+        set explicitly via ``recompile_predict.threshold_direction_*``), so it is ignored
+        here. The pipeline continues normally — this is a reminder, not an error.
+
+        Note: ``method`` is still used by the divide_and_conquer workflow
+        (``structure_analysis.apply_filters``) and by the legacy ``method == 'all_atom_rmsd'``
+        type alias, so it is NOT removed and only the above/below values are flagged.
+        """
+        flagged = [
+            c.get('name', '<unnamed>')
+            for c in self.filter_config.get('filter_criteria', [])
+            if isinstance(c, dict) and c.get('method') in ('above', 'below')
+        ]
+        if flagged:
+            self.logger.warning(
+                f"DEPRECATION: the 'method' (above/below) field in the structure-analysis "
+                f"JSON is no longer used by the m-fold sampling/voting workflow and can be "
+                f"removed. It is ignored here for criteria: {', '.join(flagged)}. "
+                f"(divide_and_conquer still uses 'method', so keep it in JSON configs "
+                f"shared with that workflow.)"
+            )
+
     def _init_slurm_submitter(self) -> SlurmJobSubmitter:
         """Initialize SLURM job submitter with configuration parameters"""
         return SlurmJobSubmitter(
@@ -605,6 +635,64 @@ class AFClaSeqPipeline:
             self.logger.error(f"Error in sequence voting: {str(e)}", exc_info=True)
             return False
     
+    def _resolve_recompile_bins(self, criterion_name: str, mbc: Optional[MetricBinConfig]) -> Tuple[List[int], bool, str]:
+        """Resolve which bins to recompile for one metric.
+
+        Returns ``(bin_numbers, combine_bins, description)``.
+
+        A metric threshold (``recompile_predict.threshold_N`` + ``threshold_direction_N``),
+        when set for this metric, OVERRIDES the explicit ``bin_numbers_N``: it selects
+        every bin whose entire range is on the reference side of the cutoff (via
+        ``MetricBinConfig.bins_within_threshold``) and forces those bins to be pooled into
+        one combined set (``combine_bins=True``), written as ``bin_<i>_<j>_...``. With no
+        threshold, the explicit ``bin_numbers_N`` are used with the global ``combine_bins``
+        flag — fully backward compatible.
+
+        Raises:
+            ValueError: threshold set without a direction, or without a usable
+                ``metric_bin_configs`` entry for this metric.
+        """
+        rp = self.config.recompile_predict
+        # Match this criterion to a slot exactly as the original bin_numbers logic did
+        # (metric_name_1 takes precedence over metric_name_2).
+        if criterion_name == rp.metric_name_1:
+            threshold, direction, explicit_bins = rp.threshold_1, rp.threshold_direction_1, rp.bin_numbers_1
+        elif criterion_name == rp.metric_name_2:
+            threshold, direction, explicit_bins = rp.threshold_2, rp.threshold_direction_2, rp.bin_numbers_2
+        else:
+            self.logger.warning(
+                f"'{criterion_name}' matches neither metric_name_1 nor metric_name_2; "
+                f"falling back to slot 1 (threshold_1/bin_numbers_1)."
+            )
+            threshold, direction, explicit_bins = rp.threshold_1, rp.threshold_direction_1, rp.bin_numbers_1
+
+        # bin_numbers may be a bare int (config allows Union[List[int], int]).
+        if isinstance(explicit_bins, int):
+            explicit_bins = [explicit_bins]
+
+        if threshold is not None:
+            if direction is None:
+                raise ValueError(
+                    f"threshold set for '{criterion_name}' but threshold_direction is "
+                    f"missing — specify 'below' or 'above'."
+                )
+            if mbc is None or mbc.bin_width is None:
+                raise ValueError(
+                    f"threshold-based recompile for '{criterion_name}' requires "
+                    f"general.metric_bin_configs['{criterion_name}'] with bin_width/min/max."
+                )
+            if explicit_bins:
+                self.logger.warning(
+                    f"Both threshold ({threshold}) and bin_numbers ({explicit_bins}) set "
+                    f"for '{criterion_name}'; using the threshold and ignoring bin_numbers."
+                )
+            focused = self.config.sequence_voting.use_focused_bins
+            bins = mbc.bins_within_threshold(threshold, direction, focused)
+            return bins, True, f"threshold {direction} {threshold} (focused={focused})"
+
+        # No threshold → original explicit-bin behavior.
+        return explicit_bins, rp.combine_bins, f"explicit bin_numbers {explicit_bins}"
+
     def run_recompile_and_predict(self) -> bool:
         """
         Stage 03: Recompile sequences and run structure prediction
@@ -663,26 +751,38 @@ class AFClaSeqPipeline:
                     all_successful = False
                     continue
 
-                # Determine bin numbers by matching metric name
-                bin_numbers = None
-                if criterion_name == self.config.recompile_predict.metric_name_1:
-                    bin_numbers = self.config.recompile_predict.bin_numbers_1
-                elif criterion_name == self.config.recompile_predict.metric_name_2:
-                    bin_numbers = self.config.recompile_predict.bin_numbers_2
-                else:
-                    # Fallback to bin_numbers_1
-                    self.logger.warning(f"No bin numbers specified for '{criterion_name}', using bin_numbers_1")
-                    bin_numbers = self.config.recompile_predict.bin_numbers_1
+                # Determine total bin count / bin edges from config (used for both the
+                # heatmap x-axis and the threshold-based bin selection below).
+                from af_claseq.m_fold_sampling_voting.config import get_metric_bin_config
+                mbc = get_metric_bin_config(self.config.general, criterion_name)
 
-                # If bin_numbers not specified, report error and skip this criterion
-                if not bin_numbers:
-                    self.logger.error(f"No bin numbers specified for criterion: {criterion_name}. Please specify bin_numbers_1 in the recompile_predict section of your configuration file.")
+                # Resolve which bins to recompile. A metric threshold (new) takes
+                # precedence over explicit bin_numbers (back-compat); see
+                # _resolve_recompile_bins.
+                try:
+                    bin_numbers, combine_bins, selection_desc = self._resolve_recompile_bins(
+                        criterion_name, mbc
+                    )
+                except ValueError as e:
+                    self.logger.error(f"Recompile selection failed for '{criterion_name}': {e}")
                     all_successful = False
                     continue
 
-                # Determine total bin count from config
-                from af_claseq.m_fold_sampling_voting.config import get_metric_bin_config
-                mbc = get_metric_bin_config(self.config.general, criterion_name)
+                # If no bins were selected, report error and skip this criterion.
+                if not bin_numbers:
+                    self.logger.error(
+                        f"No bins selected for criterion '{criterion_name}' ({selection_desc}). "
+                        f"Specify recompile_predict.bin_numbers_* or threshold_* (use a "
+                        f"coarser cutoff if a threshold selected zero bins)."
+                    )
+                    all_successful = False
+                    continue
+
+                self.logger.info(
+                    f"Recompile selection for '{criterion_name}': {selection_desc} "
+                    f"-> bins {bin_numbers} (combine_bins={combine_bins})"
+                )
+
                 if mbc is not None and mbc.bin_width is not None:
                     actual_num_bins = mbc.compute_num_bins()
                 else:
@@ -698,7 +798,7 @@ class AFClaSeqPipeline:
                     bin_numbers=bin_numbers,
                     num_total_bins=actual_num_bins,
                     initial_color=colors[0],
-                    combine_bins=self.config.recompile_predict.combine_bins,
+                    combine_bins=combine_bins,
                     raw_votes_json=raw_votes_json if raw_votes_json.exists() else None,
                     logger=self.logger,
                     default_pdb=self.config.general.default_pdb
@@ -711,7 +811,7 @@ class AFClaSeqPipeline:
                 prediction_config = {
                     'pure_seq_pred_base_dir': criterion_output_dir,
                     'bin_numbers': bin_numbers,
-                    'combine_bins': self.config.recompile_predict.combine_bins,
+                    'combine_bins': combine_bins,
                     'conda_env_path': self.config.slurm.conda_env_path,
                     'slurm_account': self.config.slurm.slurm_account,
                     'slurm_output': self.config.slurm.slurm_output,
