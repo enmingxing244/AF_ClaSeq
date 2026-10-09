@@ -49,7 +49,7 @@ example/test_KaiB_demo/
 # SLURM similarity-search job logs
 similarity_*.log
 
-# Journal source-data deposit (working copy kept on disk; superseded by reproduce_results/)
+# Legacy source-data deposit (working copy kept on disk; current Excel files are in source_data/)
 data/
 
 # Legacy git worktree — kept on disk as a record, never tracked or pushed
@@ -61,3 +61,6 @@ scripts/column_shuf/*_backup.py
 
 # Local, account-specific Slurm controller for materializing data_af_claseq in OneDrive.
 /globus_materialize_data_af_claseq.slurm
+
+# Reproducibility working files retained locally; submission Excel files are in source_data/.
+/reproduce_results/

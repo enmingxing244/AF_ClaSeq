@@ -72,7 +72,7 @@ The separate environments avoid dependency conflicts between this publication co
 
 There are two levels of released results:
 
-1. [`reproduce_results/`](reproduce_results/) contains the manuscript figures and their numerical source data. See [`reproduce_results/README.md`](reproduce_results/README.md) for the figure-to-file index.
+1. [`source_data/`](source_data/) contains the final numerical source data for the manuscript figures as Excel workbooks, with one workbook per figure and figure numbers in the filenames.
 2. The larger `data_af_claseq` archive contains the precomputed PDB structures, portable YAML/JSON configurations, CSV files, and plot inputs needed to rerun the analysis pipelines without ColabFold.
 
 > **Precomputed-data archive:** [Download the complete `data_af_claseq` raw-data folder from OneDrive](https://buckeyemailosu-my.sharepoint.com/:f:/g/personal/xing_244_osu_edu/IgCct8g4giIaSYkqAZVbiahoAeQ4ZepXd2br7HnP-nFSeCY?e=8ysLeU).
@@ -122,7 +122,7 @@ AF_ClaSeq/
 ├── scripts/                # Command-line entry points and utilities
 ├── docs/                   # Workflow and configuration guides
 ├── example/config_examples # Portable configuration templates
-├── reproduce_results/      # Manuscript figures and numerical source data
+├── source_data/            # Final numerical source data Excel workbooks
 └── tests/                  # Automated tests
 ```
 
