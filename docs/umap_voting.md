@@ -20,7 +20,14 @@ python scripts/run_umap_voting.py umap_voting.yaml
 
 ## Before You Start
 
+Install the optional dependencies in your AF_ClaSeq analysis environment:
+
+```bash
+python -m pip install -e ".[umap-voting]"
+```
+
 **You need**:
+
 1. ✅ A CSV of predicted structures to embed (`inputs.structures_csv`) — the structure pool to analyze
 2. ✅ A references CSV describing the reference conformations (`inputs.references_csv`)
 3. ✅ A structure analysis config JSON (`structure_analysis.config_json`) defining the metrics/references
@@ -28,17 +35,13 @@ python scripts/run_umap_voting.py umap_voting.yaml
 5. ✅ ColabFold environment + SLURM access (for the predict stage)
 6. ✅ A GPU is recommended for VAE training (`general.device: "cuda"`)
 
-The two stages are connected by the VAE embedding file: stage A writes `embedding.npz` (under the VAE `base_dir`, named by `output.embedding_filename`), and stage B reads it via `inputs.embedding_npz`.
+The two stages are connected by the VAE embedding file: stage A writes `base_dir/vae/embedding.npz` (the filename is set by `output.embedding_filename`), and stage B reads it via `inputs.embedding_npz`.
 
 ## Stage A: VAE Embedding
 
 ### Configure
 
-Copy and edit the example:
-
-```bash
-cp example/config_examples/vae_embedding.yaml my_vae_config.yaml
-```
+Save the YAML below as `my_vae_config.yaml`, then replace its input and output paths with your own.
 
 ```yaml
 general:
@@ -94,17 +97,13 @@ python scripts/run_vae_embedding.py my_vae_config.yaml
 python scripts/run_vae_embedding.py --device cuda my_vae_config.yaml
 ```
 
-**Output**: the embedding file (`embedding.npz` by default) containing the latent vector for every structure. Point `inputs.embedding_npz` in the stage-B config at this file.
+**Output**: the embedding file (`base_dir/vae/embedding.npz` by default) containing the latent vector for every structure. Point `inputs.embedding_npz` in the stage-B config at this file.
 
 ## Stage B: UMAP Voting
 
 ### Configure
 
-Copy and edit the example:
-
-```bash
-cp example/config_examples/umap_voting.yaml my_umap_config.yaml
-```
+Save the YAML below as `my_umap_config.yaml`, then replace its paths and SLURM settings with your own.
 
 ```yaml
 general:
@@ -140,9 +139,9 @@ structure_prediction:
   random_seed: 0
 
 slurm:
-  conda_env_path: "/fs/ess/PAA0203/xing244/.conda/envs/colabfold"
-  account: "PAA0203"
-  partition: "nextgen"
+  conda_env_path: "/path/to/colabfold/environment"
+  account: "your_slurm_account"
+  partition: "your_gpu_partition"
   time: "00:30:00"
   gpus_per_task: 1
   cpus_per_task: 4
