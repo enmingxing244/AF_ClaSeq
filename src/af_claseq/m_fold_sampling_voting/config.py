@@ -42,6 +42,65 @@ class MetricBinConfig:
             return None
         return max(1, math.ceil((self.max - self.min) / self.bin_width))
 
+    def bins_within_threshold(self, threshold: float, direction: str, focused: bool) -> List[int]:
+        """Return the bin indices whose ENTIRE value range lies on the reference
+        side of ``threshold`` (the "fully-below"/"fully-above" rule used by the
+        threshold-based recompile selection).
+
+        Args:
+            threshold: the metric cutoff value.
+            direction: ``"below"`` selects bins whose values are below the cutoff
+                (RMSD-/distance-like, lower = closer to the reference); ``"above"``
+                selects bins whose values are above the cutoff (TM-score-/distance-like,
+                higher = closer).
+            focused: must match the voting stage's ``use_focused_bins`` so the returned
+                indices line up with ``voting_results.csv``'s ``Bin_Assignment`` column:
+                  * ``True``  -> 1-based bins ``1..n`` plus sentinel ``0`` (values below
+                    ``min``) / ``n+1`` (values at or above ``max``);
+                  * ``False`` -> 0-based bins ``0..n-1`` (out-of-range values are clamped
+                    into the edge bins).
+
+        Returns:
+            Sorted list of qualifying bin indices. May be empty when the cutoff falls
+            inside the first/last bin so that no bin is wholly on the reference side.
+
+        Raises:
+            ValueError: if ``bin_width``/``min``/``max`` are unset, or ``direction`` is
+                not ``"below"``/``"above"``.
+        """
+        if self.bin_width is None or self.min is None or self.max is None:
+            raise ValueError(
+                "bins_within_threshold requires bin_width, min and max to be set; "
+                "define general.metric_bin_configs for this metric."
+            )
+        if direction not in ("below", "above"):
+            raise ValueError(f"direction must be 'below' or 'above', got {direction!r}")
+
+        n = self.compute_num_bins()
+        # Edge k (k = 0..n) — identical to np.linspace(min, max, n+1) used by the binners.
+        span = self.max - self.min
+        edges = [self.min + k * span / n for k in range(n + 1)]
+
+        # In-range bin k covers [edges[k], edges[k+1]); the voting stage numbers it k
+        # (0-based, non-focused) or k+1 (1-based, focused).
+        offset = 1 if focused else 0
+        selected: List[int] = []
+        for k in range(n):
+            left, right = edges[k], edges[k + 1]
+            if direction == "below" and right <= threshold:
+                selected.append(k + offset)
+            elif direction == "above" and left >= threshold:
+                selected.append(k + offset)
+
+        # Focused mode also has sentinel bins for out-of-range values.
+        if focused:
+            if direction == "below" and self.min <= threshold:
+                selected.append(0)      # sentinel: values below min
+            elif direction == "above" and self.max >= threshold:
+                selected.append(n + 1)  # sentinel: values at/above max
+
+        return sorted(selected)
+
 @dataclass
 class GeneralConfig:
     """General configuration options"""
@@ -146,6 +205,31 @@ class RecompilePredictConfig:
     # If ["bound_rmsd"] → only process that metric
     # If ["bound_rmsd", "apo_rmsd"] → process both
     metrics_to_process: Optional[List[str]] = None
+
+    # NEW: metric-threshold-based bin selection (alternative to explicit bin_numbers_*).
+    # When threshold_N is set for metric_name_N, the recompile stage selects every bin
+    # whose entire range is on the reference side of the cutoff (the "fully-below"/
+    # "fully-above" rule) and pools them into one combined set. Direction is explicit and
+    # NOT auto-derived from the metric type, because the same metric can define two
+    # opposite states (e.g. a distance: state A as dist > X, state B as dist < Y):
+    #   "below" = reference-like below the cutoff (RMSD-/distance-like)
+    #   "above" = reference-like above the cutoff (TM-score-/distance-like)
+    # threshold_N overrides bin_numbers_N when both are set. Leave threshold_N as None to
+    # keep the original explicit-bin behavior (fully backward compatible). Threshold mode
+    # requires general.metric_bin_configs[<metric>] (bin_width/min/max).
+    threshold_1: Optional[float] = None
+    threshold_2: Optional[float] = None
+    threshold_direction_1: Optional[str] = None  # "below" | "above"
+    threshold_direction_2: Optional[str] = None  # "below" | "above"
+
+    def __post_init__(self):
+        # Validate threshold directions at config-load time (mirrors MetricBinConfig).
+        for suffix, value in (("1", self.threshold_direction_1),
+                              ("2", self.threshold_direction_2)):
+            if value is not None and value not in ("below", "above"):
+                raise ValueError(
+                    f"threshold_direction_{suffix} must be 'below' or 'above', got {value!r}"
+                )
 
 @dataclass
 class PureSequencePlottingConfig:
