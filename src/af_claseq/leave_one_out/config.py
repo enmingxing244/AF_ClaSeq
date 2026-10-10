@@ -59,6 +59,12 @@ class SlurmConfig:
     max_concurrent_jobs: int = 90
     num_models: int = 5  # Required for LOO analysis
     num_seeds: int = 1
+    # Prediction engine selection (defaults preserve existing ColabFold behaviour)
+    prediction_engine: str = "colabfold"        # "colabfold" | "openfold"
+    openfold_config: str = "deepspeed_bf16"      # see openfold_utils.OPENFOLD_CONFIGS
+    openfold_model: str = "model_3_ptm"
+    openfold_conda_env: Optional[str] = None     # None -> openfold_utils default (openfold2 env)
+    openfold_dir: Optional[str] = None           # None -> openfold_utils default
 
 
 @dataclass

@@ -89,7 +89,12 @@ class AFClaSeqPipeline:
             check_interval=self.config.pipeline_control.check_interval,
             job_name_prefix=self.config.general.protein_name,
             num_models=self.config.general.num_models,
-            random_seed=self.config.general.random_seed
+            random_seed=self.config.general.random_seed,
+            prediction_engine=self.config.slurm.prediction_engine,
+            openfold_config=self.config.slurm.openfold_config,
+            openfold_model=self.config.slurm.openfold_model,
+            openfold_conda_env=self.config.slurm.openfold_conda_env,
+            openfold_dir=self.config.slurm.openfold_dir
         )
     
     def _create_directories(self) -> None:
@@ -726,6 +731,11 @@ class AFClaSeqPipeline:
                     'prediction_num_seed': self.config.recompile_predict.prediction_num_seed,
                     'check_interval': self.config.pipeline_control.check_interval,
                     'max_workers': self.config.slurm.max_workers,
+                    'prediction_engine': self.config.slurm.prediction_engine,
+                    'openfold_config': self.config.slurm.openfold_config,
+                    'openfold_model': self.config.slurm.openfold_model,
+                    'openfold_conda_env': self.config.slurm.openfold_conda_env,
+                    'openfold_dir': self.config.slurm.openfold_dir,
                     'job_name_prefix': f"{self.config.general.protein_name}_{criterion_name}"
                 }
                 

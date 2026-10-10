@@ -259,6 +259,12 @@ class SlurmSection:
     gpus_per_task: int = 1
     cpus_per_task: int = 4
     check_interval: int = 60
+    # Prediction engine selection (defaults preserve existing ColabFold behaviour)
+    prediction_engine: str = "colabfold"        # "colabfold" | "openfold"
+    openfold_config: str = "deepspeed_bf16"      # see openfold_utils.OPENFOLD_CONFIGS
+    openfold_model: str = "model_3_ptm"
+    openfold_conda_env: str | None = None        # None -> openfold_utils default (openfold2 env)
+    openfold_dir: str | None = None              # None -> openfold_utils default
 
 
 @dataclass
@@ -333,6 +339,11 @@ class UmapVotingConfig:
                 gpus_per_task=sl.get("gpus_per_task", 1),
                 cpus_per_task=sl.get("cpus_per_task", 4),
                 check_interval=sl.get("check_interval", 60),
+                prediction_engine=sl.get("prediction_engine", "colabfold"),
+                openfold_config=sl.get("openfold_config", "deepspeed_bf16"),
+                openfold_model=sl.get("openfold_model", "model_3_ptm"),
+                openfold_conda_env=sl.get("openfold_conda_env"),
+                openfold_dir=sl.get("openfold_dir"),
             ),
             structure_analysis=StructureAnalysisSection.from_dict(sa, for_vae=False),
             plotting=PlottingSection(

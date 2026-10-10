@@ -224,6 +224,11 @@ class LeaveOneOutManager:
             slurm_cpus_per_task=slurm_config.cpus,
             num_models=slurm_config.num_models,
             num_seeds=slurm_config.num_seeds,
+            prediction_engine=slurm_config.prediction_engine,
+            openfold_config=slurm_config.openfold_config,
+            openfold_model=slurm_config.openfold_model,
+            openfold_conda_env=slurm_config.openfold_conda_env,
+            openfold_dir=slurm_config.openfold_dir,
             job_name_prefix="loo"
         )
 
